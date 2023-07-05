@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "compilerOptions": {
+        "allowJs": true,
+        "allowSyntheticDefaultImports": true,
+        "declaration": true,
+        "esModuleInterop": true,
+        "lib": ["dom", "dom.iterable", "esnext"],
+        "module": "esnext",
+        "moduleResolution": "nodenext",
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "paths": {
+            "~/*": ["src/*"],
+            "~/storage/*": ["storage/*"]
+        },
+        "removeComments": true,
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "strict": true,
+        "target": "esnext"
+    },
+    "ts-node": {
+        "compilerOptions": {
+            "module": "commonjs"
+        }
+    }
+}

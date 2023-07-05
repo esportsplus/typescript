@@ -1,0 +1,17 @@
+{
+    "author": "ICJR",
+    "devDependencies": {
+        "@esportsplus/typescript": "^0.0.1"
+    },
+    "main": "build/index.js",
+    "name": "",
+    "private": false,
+    "scripts": {
+        "build": "tsc && tsc-alias",
+        "-": "-",
+        "prepare": "npm run build",
+        "prepublishOnly": "npm run build"
+    },
+    "types": "build/index.d.ts",
+    "version": "0.0.1"
+}
