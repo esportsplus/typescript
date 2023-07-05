@@ -6,11 +6,7 @@
     },
     "exports": {
         "./package.json": "./package.json",
-        "./tsconfig.base.json": "./tsconfig.base.json",
-        ".": {
-            "types": "./build/index.d.ts",
-            "default": "./build/index.js"
-        }
+        "./tsconfig.base.json": "./tsconfig.base.json"
     },
     "main": "build/index.js",
     "name": "@esportsplus/typescript",
