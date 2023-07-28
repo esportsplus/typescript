@@ -6,7 +6,7 @@ type NeverAsync<T> =
         : T extends ((...args: unknown[]) => Promise<unknown> | unknown)
             ? NeverAsync<ReturnType<T>> extends never
                 ? never
-                : T
+                : (...args: Parameters<T>) => ReturnType<T>
             : T;
 
 type Prettify<T> = {
