@@ -14,4 +14,4 @@ type SyncFunction<T, R = T extends Function ? ReturnType<T> : T> =
             : T;
 
 
-export { Prettify, SyncFunction };
+export { Function, Prettify, SyncFunction };
