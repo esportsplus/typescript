@@ -3,8 +3,8 @@ type Function = (...args: unknown[]) => Promise<unknown> | unknown;
 type NeverAsync<T> =
     T extends Promise<unknown>
         ? never
-        : T extends ((...args: unknown[]) => Promise<unknown> | unknown)
-            ? (...args: Parameters<T>) => ReturnType<T> extends NeverAsync<T>
+        : T extends (...args: unknown[]) => unknown
+            ? (...args: Parameters<T>) => ReturnType<T> extends NeverAsync<ReturnType<T>>
                 ? ReturnType<T>
                 : NeverAsync<ReturnType<T>>
             : T;
