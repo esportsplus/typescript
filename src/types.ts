@@ -4,10 +4,10 @@ type Prettify<T> = {
     [K in keyof T]: T[K];
 } & {};
 
-type SyncFunction<T, R = T extends Function ? ReturnType<T> : T> =
+type SyncFunction<T, R = T extends ((...args: unknown[]) => Promise<unknown> | unknown) ? ReturnType<T> : T> =
     T extends Promise<unknown>
         ? never
-        : T extends Function
+        : T extends ((...args: unknown[]) => Promise<unknown> | unknown)
             ? SyncFunction<R> extends never
                 ? never
                 : T
