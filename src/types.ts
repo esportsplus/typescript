@@ -9,16 +9,16 @@ type NeverAsync<T> =
                 : NeverAsync<ReturnType<T>>
             : T;
 
-type Prettify<T> = {
-    [K in keyof T]: T[K];
-} & {};
-
-type Primitive<T> =
+type NeverFunction<T> =
     T extends Promise<unknown>
         ? never
         : T extends (...args: unknown[]) => unknown
             ? never
             : T;
 
+type Prettify<T> = {
+    [K in keyof T]: T[K];
+} & {};
 
-export { Function, NeverAsync, Prettify, Primitive };
+
+export { Function, NeverAsync, NeverFunction, Prettify };
