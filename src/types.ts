@@ -13,5 +13,12 @@ type Prettify<T> = {
     [K in keyof T]: T[K];
 } & {};
 
+type Primitive<T> =
+    T extends Promise<unknown>
+        ? never
+        : T extends (...args: unknown[]) => unknown
+            ? never
+            : T;
 
-export { Function, NeverAsync, Prettify };
+
+export { Function, NeverAsync, Prettify, Primitive };
