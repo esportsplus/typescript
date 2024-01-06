@@ -6,8 +6,8 @@
         "declaration": true,
         "esModuleInterop": true,
         "lib": ["dom", "dom.iterable", "esnext"],
-        "module": "nodenext",
-        "moduleResolution": "nodenext",
+        "module": "esnext",
+        "moduleResolution": "bundler",
         "noUnusedLocals": true,
         "noUnusedParameters": true,
         "paths": {
