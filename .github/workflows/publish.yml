@@ -10,5 +10,5 @@ on:
 jobs:
   publish:
     secrets:
-      NPM_TOKEN_PUBLISHING : ${{ secrets.NPM_TOKEN_PUBLISHING  }}
+      NODE_AUTH_TOKEN : ${{ secrets.NPM_TOKEN_PUBLISHING  }}
     uses: esportsplus/workflows/.github/workflows/publish.yml@main
