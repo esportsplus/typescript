@@ -2,7 +2,7 @@
     "author": "ICJR",
     "dependencies": {
         "tsc-alias": "^1.8.10",
-        "typescript": "^5.4.5"
+        "typescript": "^5.5.2"
     },
     "exports": {
         "./package.json": "./package.json",
