@@ -3,10 +3,7 @@
     "compilerOptions": {
         "allowJs": true,
         "allowSyntheticDefaultImports": true,
-        "baseUrl": "${configDir}",
         "declaration": true,
-        "declarationDir": "${configDir}/build",
-        "outDir": "${configDir}/build",
         "esModuleInterop": true,
         "lib": ["dom", "dom.iterable", "esnext"],
         "module": "esnext",
@@ -14,8 +11,8 @@
         "noUnusedLocals": true,
         "noUnusedParameters": true,
         "paths": {
-            "~/*": ["${configDir}/src/*"],
-            "~/storage/*": ["${configDir}/storage/*"]
+            "~/*": ["src/*"],
+            "~/storage/*": ["storage/*"]
         },
         "removeComments": true,
         "resolveJsonModule": true,
@@ -23,7 +20,6 @@
         "strict": true,
         "target": "esnext"
     },
-    "include": ["${configDir}/src"],
     "ts-node": {
         "compilerOptions": {
             "module": "commonjs"
