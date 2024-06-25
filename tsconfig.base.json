@@ -3,7 +3,10 @@
     "compilerOptions": {
         "allowJs": true,
         "allowSyntheticDefaultImports": true,
+        "baseUrl": "${configDir}",
         "declaration": true,
+        "declarationDir": "build",
+        "outDir": "build",
         "esModuleInterop": true,
         "lib": ["dom", "dom.iterable", "esnext"],
         "module": "esnext",
@@ -20,6 +23,7 @@
         "strict": true,
         "target": "esnext"
     },
+    "include": ["${configDir}/src"],
     "ts-node": {
         "compilerOptions": {
             "module": "commonjs"
