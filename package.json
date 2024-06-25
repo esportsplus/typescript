@@ -6,7 +6,8 @@
     },
     "exports": {
         "./package.json": "./package.json",
-        "./tsconfig.base.json": "./tsconfig.base.json",
+        "./tsconfig.package.json": "./tsconfig.package.json",
+        "./tsconfig.project.json": "./tsconfig.project.json",
         ".": {
             "types": "./build/index.d.ts",
             "default": "./build/index.js"
