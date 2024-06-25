@@ -23,5 +23,5 @@
         "prepublishOnly": "npm run build"
     },
     "types": "build/index.d.ts",
-    "version": "0.4.3"
+    "version": "0.4.4"
 }
