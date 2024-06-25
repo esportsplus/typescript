@@ -3,5 +3,5 @@
         "declaration": true,
         "declarationDir": "${configDir}/build"
     },
-    "extends": "./tsconfig.json",
+    "extends": "./tsconfig.json"
 }
