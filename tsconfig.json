@@ -1,3 +1,31 @@
 {
-    "extends": "./tsconfig.base.json",
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "compilerOptions": {
+        "allowJs": true,
+        "allowSyntheticDefaultImports": true,
+        "baseUrl": "${configDir}",
+        "declaration": false,
+        "esModuleInterop": true,
+        "lib": ["dom", "dom.iterable", "esnext"],
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "outDir": "${configDir}/build",
+        "paths": {
+            "~/*": ["${configDir}/src/*"],
+            "~/storage/*": ["${configDir}/storage/*"]
+        },
+        "removeComments": true,
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "strict": true,
+        "target": "esnext"
+    },
+    "include": ["${configDir}/src"],
+    "ts-node": {
+        "compilerOptions": {
+            "module": "commonjs"
+        }
+    }
 }
