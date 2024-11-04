@@ -20,7 +20,7 @@ type Prettify<T> = {
     [K in keyof T]: T[K];
 } & {};
 
-type UnionRecord<U, V extends Record<string, unknown>> = U & Prettify<{ [K in keyof U]?: undefined } & V>;
+type UnionRecord<U, V extends Record<string, unknown>> = Prettify<U & { [K in keyof U]?: undefined } & V>;
 
 
 export { Function, NeverAsync, NeverFunction, Prettify, UnionRecord };
