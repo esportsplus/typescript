@@ -1,3 +1,11 @@
+type DeepReadonly<T> = T extends (...args: any[]) => any
+    ? T
+    : T extends Array<infer R>
+        ? ReadonlyArray<DeepReadonly<R>>
+        : T extends object
+            ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+            : T;
+
 type Function = (...args: unknown[]) => Promise<unknown> | unknown;
 
 type NeverAsync<T> =
@@ -23,4 +31,4 @@ type Prettify<T> = {
 type UnionRecord<U, V extends Record<string, unknown>> = Prettify<U & { [K in keyof U]?: undefined } & V>;
 
 
-export { Function, NeverAsync, NeverFunction, Prettify, UnionRecord };
+export { DeepReadonly, Function, NeverAsync, NeverFunction, Prettify, UnionRecord };
