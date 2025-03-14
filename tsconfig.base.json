@@ -2,7 +2,6 @@
     "$schema": "https://json.schemastore.org/tsconfig",
     "compilerOptions": {
         "allowJs": true,
-        "allowImportingTsExtensions": true,
         "allowSyntheticDefaultImports": true,
         "baseUrl": "${configDir}",
         "declaration": false,
@@ -33,5 +32,8 @@
     },
     "include": [
         "${configDir}/src"
-    ]
+    ],
+    "tsc-alias": {
+        "resolveFullPaths": true,
+    }
 }
