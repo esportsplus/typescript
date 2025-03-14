@@ -2,15 +2,15 @@
     "author": "ICJR",
     "dependencies": {
         "@esportsplus/tsc-alias": "^1.8.12",
-        "typescript": "^5.6.3"
+        "typescript": "^5.8.2"
     },
     "devDependencies": {
-        "tsx": "^4.19.2"
+        "tsx": "^4.19.3"
     },
     "exports": {
         "./package.json": "./package.json",
+        "./tsconfig.node.json": "./tsconfig.node.json",
         "./tsconfig.package.json": "./tsconfig.package.json",
-        "./tsconfig.project.json": "./tsconfig.project.json",
         ".": {
             "types": "./build/index.d.ts",
             "default": "./build/index.js"
