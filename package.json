@@ -5,7 +5,7 @@
         "typescript": "^5.8.3"
     },
     "devDependencies": {
-        "tsx": "^4.19.3"
+        "tsx": "^4.19.4"
     },
     "exports": {
         "./package.json": "./package.json",
