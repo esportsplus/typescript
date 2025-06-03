@@ -1,7 +1,3 @@
 {
-    "compilerOptions": {
-        "declaration": true,
-        "declarationDir": "${configDir}/build"
-    },
     "extends": "./tsconfig.base.json"
 }
