@@ -6,12 +6,14 @@
         "baseUrl": "${configDir}",
         "declaration": false,
         "esModuleInterop": true,
+        "isolatedModules": true,
         "lib": [
             "dom",
             "dom.iterable",
             "esnext"
         ],
         "module": "esnext",
+        "moduleDetection": "force",
         "moduleResolution": "bundler",
         "noUnusedLocals": true,
         "noUnusedParameters": true,
