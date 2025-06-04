@@ -32,5 +32,8 @@
     },
     "include": [
         "${configDir}/src"
-    ]
+    ],
+    "tsc-alias": {
+        "resolveFullPaths": true,
+    }
 }
