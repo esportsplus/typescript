@@ -31,4 +31,4 @@ type Prettify<T> = {
 type UnionRecord<U, V extends Record<string, unknown>> = Prettify<U & { [K in keyof U]?: undefined } & V>;
 
 
-export { DeepReadonly, Function, NeverAsync, NeverFunction, Prettify, UnionRecord };
+export type { DeepReadonly, Function, NeverAsync, NeverFunction, Prettify, UnionRecord };
