@@ -1,3 +1,10 @@
 #!/usr/bin/env node
 
-require('tsc-alias/node_modules/.bin/tsc-alias');
+const { spawn } = require('child_process');
+const path = require('path');
+
+spawn(
+    path.join(__dirname, '../node_modules/.bin/tsc-alias'),
+    process.argv.slice(2),
+    { shell: true, stdio: 'inherit' }
+);

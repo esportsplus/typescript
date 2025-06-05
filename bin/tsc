@@ -3,7 +3,8 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
-const tscPath = path.join(__dirname, '../node_modules/.bin/tsc');
-const args = process.argv.slice(2);
-
-spawn(tscPath, args, { stdio: 'inherit' });
+spawn(
+    path.join(__dirname, '../node_modules/.bin/tsc'),
+    process.argv.slice(2),
+    { shell: true, stdio: 'inherit' }
+);
