@@ -5,7 +5,7 @@
         "tsc-alias": "./bin/tsc-alias"
     },
     "dependencies": {
-        "@esportsplus/cli-passthrough": "^0.0.6",
+        "@esportsplus/cli-passthrough": "^0.0.7",
         "tsc-alias": "^1.8.16",
         "typescript": "^5.8.3"
     },
