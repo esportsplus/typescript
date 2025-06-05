@@ -1,7 +1,24 @@
 #!/usr/bin/env node
 
-require('child_process').spawn(
-    require('path').join(__dirname, '../node_modules/.bin/tsc'),
-    process.argv.slice(2),
-    { shell: true, stdio: 'inherit' }
-);
+const { spawn } = require('child_process');
+const path = require('path');
+
+
+function find(script) {
+    let dir = process.cwd();
+
+    while (dir !== path.parse(dir).root) {
+        let filepath = path.resolve(dir, `node_modules/.bin/${script}`);
+
+        if (fs.existsSync(filepath)) {
+            return filepath;
+        }
+
+        dir = path.dirname(dir);
+    }
+
+    throw new Error(`@esportsplus/cli-passthrough: ${script} could not be found`);
+}
+
+
+spawn(find('tsc'), process.argv.slice(2), { shell: true, stdio: 'inherit' });
