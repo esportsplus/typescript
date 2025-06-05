@@ -1,8 +1,8 @@
 {
     "author": "ICJR",
     "bin": {
-        "tsc": "./node_modules/.bin/tsc",
-        "tsc-alias": "./node_modules/.bin/tsc-alias"
+        "tsc": "./bin/tsc",
+        "tsc-alias": "./bin/tsc-alias"
     },
     "dependencies": {
         "tsc-alias": "^1.8.16",
@@ -24,8 +24,8 @@
     "scripts": {
         "build": "tsc && tsc-alias",
         "-": "-",
-        "prepare": "npm run build",
-        "prepublishOnly": "npm run build"
+        "prepare": "pnpm run build",
+        "prepublishOnly": "pnpm run build"
     },
     "types": "build/index.d.ts",
     "version": "0.8.0"
