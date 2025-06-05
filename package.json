@@ -2,9 +2,7 @@
     "author": "ICJR",
     "bin": {
         "tsc": "./bin/tsc",
-        "tsc2": "./node_modules/.bin/tsc",
-        "tsc-alias": "./bin/tsc-alias",
-        "tsc-alias2": "./node_modules/.bin/tsc-alias"
+        "tsc-alias": "./bin/tsc-alias"
     },
     "dependencies": {
         "tsc-alias": "^1.8.16",
