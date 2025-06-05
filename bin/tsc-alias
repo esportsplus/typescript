@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 
 function find(script) {
-    let dir = process.cwd();
+    let dir = path.resolve(__dirname, '../');
 
     while (dir !== path.parse(dir).root) {
         let filepath = path.resolve(dir, `node_modules/.bin/${script}`);
@@ -17,7 +18,7 @@ function find(script) {
         dir = path.dirname(dir);
     }
 
-    throw new Error(`@esportsplus/cli-passthrough: ${script} could not be found`);
+    throw new Error(`@esportsplus/cli-passthrough: could not find ${script}`);
 }
 
 
