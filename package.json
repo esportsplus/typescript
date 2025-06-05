@@ -1,5 +1,9 @@
 {
     "author": "ICJR",
+    "bin": {
+        "tsc": "node_modules/.bin/tsc",
+        "tsc-alias": "node_modules/.bin/tsc-alias"
+    },
     "dependencies": {
         "tsc-alias": "^1.8.16",
         "typescript": "^5.8.3"
