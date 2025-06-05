@@ -5,6 +5,7 @@
         "tsc-alias": "./bin/tsc-alias"
     },
     "dependencies": {
+        "@esportsplus/cli-passthrough": "^0.0.6",
         "tsc-alias": "^1.8.16",
         "typescript": "^5.8.3"
     },
@@ -24,9 +25,10 @@
     "scripts": {
         "build": "tsc && tsc-alias",
         "-": "-",
-        "prepare": "npm run build",
-        "prepublishOnly": "npm run build"
+        "prepare": "pnpm build",
+        "prepublishOnly": "pnpm build"
     },
+    "type": "module",
     "types": "build/index.d.ts",
     "version": "0.8.10"
 }
