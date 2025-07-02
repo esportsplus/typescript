@@ -1,7 +1,12 @@
 {
     "compilerOptions": {
         "declaration": true,
-        "declarationDir": "${configDir}/build"
+        "declarationDir": "${configDir}/build",
+        "lib": [
+            "dom",
+            "dom.iterable",
+            "es2024"
+        ]
     },
     "extends": "./tsconfig.base.json"
 }

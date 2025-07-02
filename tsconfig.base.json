@@ -8,9 +8,7 @@
         "esModuleInterop": true,
         "isolatedModules": true,
         "lib": [
-            "dom",
-            "dom.iterable",
-            "esnext"
+            "es2024"
         ],
         "module": "esnext",
         "moduleDetection": "force",
@@ -28,14 +26,15 @@
         },
         "removeComments": true,
         "resolveJsonModule": true,
+        "rootDir": "${configDir}/src",
         "skipLibCheck": true,
         "strict": true,
-        "target": "esnext"
+        "target": "es2024"
     },
     "include": [
-        "${configDir}/src"
+        "${configDir}/src/**/*"
     ],
     "tsc-alias": {
-        "resolveFullPaths": true,
+        "resolveFullPaths": true
     }
 }
