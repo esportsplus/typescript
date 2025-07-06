@@ -1,3 +1,5 @@
+type Brand<T, B extends string> = T & { __brand: B };
+
 type DeepReadonly<T> = T extends (...args: any[]) => any
     ? T
     : T extends Array<infer R>
@@ -31,4 +33,4 @@ type Prettify<T> = {
 type UnionRecord<U, V extends Record<string, unknown>> = Prettify<U & { [K in keyof U]?: undefined } & V>;
 
 
-export type { DeepReadonly, Function, NeverAsync, NeverFunction, Prettify, UnionRecord };
+export type { Brand, DeepReadonly, Function, NeverAsync, NeverFunction, Prettify, UnionRecord };
