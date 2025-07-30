@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@esportsplus/cli-passthrough':
-        specifier: ^0.0.10
-        version: 0.0.10
+        specifier: ^0.0.12
+        version: 0.0.12
       tsc-alias:
         specifier: ^1.8.16
         version: 1.8.16
@@ -20,8 +20,8 @@ importers:
 
 packages:
 
-  '@esportsplus/cli-passthrough@0.0.10':
-    resolution: {integrity: sha512-/DcLjDxIB9NponyFtMQ3ICCXUA/hH1hp4FaL6AOepG1TwvY8g9y1MVLM71Coq7e0NpxUZt1pg73z6KSrh3Xd0w==}
+  '@esportsplus/cli-passthrough@0.0.12':
+    resolution: {integrity: sha512-8gnWk5L7IG5Fl6mffDYpnkK1xJHUj/PpBuMhqrb/6wadb1UKSWk/seN2uOdITCfK/UlhmtdQqGljg3dA/bGT8w==}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -179,7 +179,7 @@ packages:
 
 snapshots:
 
-  '@esportsplus/cli-passthrough@0.0.10': {}
+  '@esportsplus/cli-passthrough@0.0.12': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
