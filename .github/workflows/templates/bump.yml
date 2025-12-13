@@ -6,4 +6,4 @@ on:
 
 jobs:
   bump:
-    uses: esportsplus/workflows/.github/workflows/bump.yml@main
+    uses: esportsplus/typescript/.github/workflows/bump.yml@main
