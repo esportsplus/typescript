@@ -1,9 +1,21 @@
-name: bump
+name: bump version
 
 on:
   push:
     branches: '**' # only trigger on branches, not on tags
+  workflow_call:
+
+permissions:
+  contents: write
 
 jobs:
   bump:
-    uses: esportsplus/workflows/.github/workflows/bump.yml@main
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+      - name: bump version
+        uses: jpb06/bump-package@latest
+        with:
+          minor-keywords: feat,minor,refactor
+          patch-keywords: fix,chore

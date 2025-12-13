@@ -1,0 +1,16 @@
+name: publish to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  workflow_run:
+    workflows: [bump]
+    types:
+      - completed
+
+jobs:
+  publish:
+    secrets:
+        NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    uses: esportsplus/workflows/.github/workflows/publish.yml@main

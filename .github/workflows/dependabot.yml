@@ -3,10 +3,60 @@ name: dependabot automerge
 on:
   pull_request:
     types: [opened, synchronize, labeled]
-  workflow_dispatch:
+  workflow_call:
+    secrets:
+      NPM_TOKEN:
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
+          version: latest
+      - uses: actions/setup-node@v4
+        with:
+          cache: 'pnpm'
+          node-version: 'latest'
+          registry-url: 'https://registry.npmjs.org'
+      - run: pnpm i && pnpm build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   automerge:
-    secrets:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-    uses: esportsplus/workflows/.github/workflows/dependabot.yml@main
+    needs: build
+    permissions:
+      pull-requests: write
+      contents: write
+    runs-on: ubuntu-latest
+    if: ${{ github.actor == 'dependabot[bot]' && github.event_name == 'pull_request' }}
+    steps:
+      - uses: dependabot/fetch-metadata@v2
+        id: metadata
+        with:
+          alert-lookup: true
+          compat-lookup: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Approve and merge Dependabot PR
+        run: |
+          gh pr review --approve "$PR_URL"
+          gh pr merge --squash --auto "$PR_URL"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}

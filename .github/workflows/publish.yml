@@ -3,6 +3,10 @@ name: publish to npm
 on:
   release:
     types: [published]
+  workflow_call:
+    secrets:
+      NPM_TOKEN:
+        required: true
   workflow_dispatch:
   workflow_run:
     workflows: [bump]
@@ -10,7 +14,25 @@ on:
       - completed
 
 jobs:
-  publish:
-    secrets:
-        NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-    uses: esportsplus/workflows/.github/workflows/publish.yml@main
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          cache: 'pnpm'
+          node-version: 'latest'
+          registry-url: 'https://registry.npmjs.org'
+      - run: pnpm config delete always-auth
+      - run: pnpm i
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: pnpm publish
