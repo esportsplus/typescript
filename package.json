@@ -6,6 +6,7 @@
     },
     "dependencies": {
         "@esportsplus/cli-passthrough": "^0.0.12",
+        "@esportsplus/utilities": "^0.27.2",
         "tsc-alias": "^1.8.16",
         "typescript": "^5.9.3"
     },
@@ -14,6 +15,10 @@
         "./tsconfig.browser.json": "./tsconfig.browser.json",
         "./tsconfig.node.json": "./tsconfig.node.json",
         "./tsconfig.package.json": "./tsconfig.package.json",
+        "./transformer": {
+            "types": "./build/transformer/index.d.ts",
+            "default": "./build/transformer/index.js"
+        },
         ".": {
             "types": "./build/index.d.ts",
             "default": "./build/index.js"
