@@ -6,11 +6,9 @@ type ImportModification = {
     specifiers: Set<string>;
 };
 
-type NodeMatch<T> = {
+type NodeMatch<T> = Range & {
     data: T;
-    end: number;
     node: ts.Node;
-    start: number;
 };
 
 type QuickCheckPattern = {
@@ -18,10 +16,13 @@ type QuickCheckPattern = {
     regex?: RegExp;
 };
 
-type Replacement = {
+type Range = {
     end: number;
-    newText: string;
     start: number;
+};
+
+type Replacement = Range & {
+    newText: string;
 };
 
 type VisitorCallback<T> = (node: ts.Node, state: T) => void;
@@ -33,6 +34,6 @@ export type {
     ImportModification,
     NodeMatch,
     QuickCheckPattern,
-    Replacement,
+    Range, Replacement,
     VisitorCallback, VisitorPredicate
 };

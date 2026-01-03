@@ -249,10 +249,5 @@ export {
     uid, updateImports,
     visitAst, visitAstWithDepth
 };
-export type {
-    ImportModification,
-    NodeMatch,
-    QuickCheckPattern,
-    Replacement,
-    VisitorCallback, VisitorPredicate
-};
+export type * from './types';
+export { BRACES_CONTENT_REGEX, REGEX_ESCAPE_PATTERN, TRAILING_SEMICOLON } from './constants';
