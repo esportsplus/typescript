@@ -2,6 +2,7 @@ import { uuid } from '@esportsplus/utilities';
 import ts from 'typescript';
 import { BRACES_CONTENT_REGEX, REGEX_ESCAPE_PATTERN, UUID_DASH_REGEX } from './constants.js';
 import type { ImportModification, NodeMatch, QuickCheckPattern, Replacement, VisitorCallback, VisitorPredicate } from './types.js';
+import program from './program';
 
 
 function buildImportRegex(escapedModule: string): RegExp {
@@ -240,5 +241,18 @@ const visitAstWithDepth = <T>(
 };
 
 
-export { addImport, applyReplacements, applyReplacementsReverse, collectNodes, mightNeedTransform, uid, updateImports, visitAst, visitAstWithDepth };
-export type { ImportModification, NodeMatch, QuickCheckPattern, Replacement, VisitorCallback, VisitorPredicate };
+export {
+    addImport, applyReplacements, applyReplacementsReverse,
+    collectNodes,
+    mightNeedTransform,
+    program,
+    uid, updateImports,
+    visitAst, visitAstWithDepth
+};
+export type {
+    ImportModification,
+    NodeMatch,
+    QuickCheckPattern,
+    Replacement,
+    VisitorCallback, VisitorPredicate
+};
