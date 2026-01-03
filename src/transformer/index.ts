@@ -250,4 +250,4 @@ export {
     visitAst, visitAstWithDepth
 };
 export type * from './types';
-export { BRACES_CONTENT_REGEX, REGEX_ESCAPE_PATTERN, TRAILING_SEMICOLON } from './constants';
+export * from './constants';
