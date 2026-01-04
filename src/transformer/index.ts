@@ -5,6 +5,10 @@ import type { ImportModification, NodeMatch, QuickCheckPattern, Replacement, Vis
 import program from './program';
 
 
+let i = 0,
+    uidSuffix = uuid().replace(UUID_DASH_REGEX, '');
+
+
 function buildImportRegex(escapedModule: string): RegExp {
     return new RegExp(`(import\\s*\\{[^}]*\\}\\s*from\\s*['"]${escapedModule}['"])`);
 }
@@ -181,8 +185,8 @@ const mightNeedTransform = (code: string, check: QuickCheckPattern): boolean => 
     return false;
 };
 
-const uid = (prefix?: string): string => {
-    return (prefix ? prefix + '_' : '_') + uuid().replace(UUID_DASH_REGEX, '_');
+const uid = (prefix: string, updateUUID = false): string => {
+    return prefix + '_' + (updateUUID ? uuid().replace(UUID_DASH_REGEX, '') : uidSuffix) + '_' + (i++).toString(36);
 };
 
 const updateImports = (code: string, modification: ImportModification): string => {
