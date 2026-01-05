@@ -1,11 +1,9 @@
 {
     "author": "ICJR",
     "bin": {
-        "tsc": "./bin/tsc",
-        "tsc-alias": "./bin/tsc-alias"
+        "tsc": "./bin/tsc"
     },
     "dependencies": {
-        "@esportsplus/cli-passthrough": "^0.0.12",
         "@esportsplus/utilities": "^0.27.2",
         "@types/node": "^25.0.3",
         "tsc-alias": "^1.8.16",
