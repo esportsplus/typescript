@@ -1,7 +1,7 @@
 {
     "author": "ICJR",
     "bin": {
-        "tsc": "./bin/tsc"
+        "esportsplus-tsc": "./bin/tsc"
     },
     "dependencies": {
         "@esportsplus/utilities": "^0.27.2",
@@ -11,13 +11,13 @@
     },
     "exports": {
         "./package.json": "./package.json",
-        "./tsconfig.browser.json": "./tsconfig.browser.json",
-        "./tsconfig.node.json": "./tsconfig.node.json",
-        "./tsconfig.package.json": "./tsconfig.package.json",
         "./transformer": {
             "types": "./build/transformer/index.d.ts",
             "default": "./build/transformer/index.js"
         },
+        "./tsconfig.browser.json": "./tsconfig.browser.json",
+        "./tsconfig.node.json": "./tsconfig.node.json",
+        "./tsconfig.package.json": "./tsconfig.package.json",
         ".": {
             "types": "./build/index.d.ts",
             "default": "./build/index.js"

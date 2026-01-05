@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@esportsplus/cli-passthrough':
-        specifier: ^0.0.12
-        version: 0.0.12
       '@esportsplus/utilities':
         specifier: ^0.27.2
         version: 0.27.2
@@ -25,9 +22,6 @@ importers:
         version: 5.9.3
 
 packages:
-
-  '@esportsplus/cli-passthrough@0.0.12':
-    resolution: {integrity: sha512-8gnWk5L7IG5Fl6mffDYpnkK1xJHUj/PpBuMhqrb/6wadb1UKSWk/seN2uOdITCfK/UlhmtdQqGljg3dA/bGT8w==}
 
   '@esportsplus/utilities@0.27.2':
     resolution: {integrity: sha512-AiBxekUWLBz0H5x4gxHQxU9DnyoTDo/VVnGfMljhCkWATuIS9eGRWTMtW6pKZBhB6Arf/1013mmhs4CVuivfOw==}
@@ -193,8 +187,6 @@ packages:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
 snapshots:
-
-  '@esportsplus/cli-passthrough@0.0.12': {}
 
   '@esportsplus/utilities@0.27.2': {}
 
