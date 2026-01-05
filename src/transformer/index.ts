@@ -1,7 +1,6 @@
 import { uuid } from '@esportsplus/utilities';
-import ts from 'typescript';
 import { BRACES_CONTENT_REGEX, REGEX_ESCAPE_PATTERN, UUID_DASH_REGEX } from './constants.js';
-import type { ImportModification, NodeMatch, QuickCheckPattern, Replacement, VisitorCallback, VisitorPredicate } from './types.js';
+import type { QuickCheckPattern, Replacement } from './types.js';
 import program from './program';
 
 
@@ -146,29 +145,6 @@ const applyReplacementsReverse = (code: string, replacements: Replacement[]): st
     return result;
 };
 
-const collectNodes = <T>(sourceFile: ts.SourceFile, predicate: (node: ts.Node) => T | null): NodeMatch<T>[] => {
-    let matches: NodeMatch<T>[] = [];
-
-    function visit(node: ts.Node): void {
-        let data = predicate(node);
-
-        if (data !== null) {
-            matches.push({
-                data,
-                end: node.end,
-                node,
-                start: node.getStart(sourceFile)
-            });
-        }
-
-        ts.forEachChild(node, visit);
-    }
-
-    visit(sourceFile);
-
-    return matches;
-};
-
 const mightNeedTransform = (code: string, check: QuickCheckPattern): boolean => {
     if (check.regex) {
         return check.regex.test(code);
@@ -189,69 +165,12 @@ const uid = (prefix: string, updateUUID = false): string => {
     return prefix + '_' + (updateUUID ? uuid().replace(UUID_DASH_REGEX, '') : uidSuffix) + '_' + (i++).toString(36);
 };
 
-const updateImports = (code: string, modification: ImportModification): string => {
-    let { module, specifiers } = modification;
-
-    if (specifiers.size === 0) {
-        return code;
-    }
-
-    let escapedModule = module.replace(REGEX_ESCAPE_PATTERN, '\\$&'),
-        importRegex = buildImportRegex(escapedModule);
-
-    return updateImportsWithRegex(code, specifiers, importRegex);
-};
-
-const visitAst = <T>(
-    sourceFile: ts.SourceFile,
-    callback: VisitorCallback<T>,
-    state: T,
-    predicate?: VisitorPredicate
-): T => {
-    function visit(node: ts.Node): void {
-        if (!predicate || predicate(node)) {
-            callback(node, state);
-        }
-
-        ts.forEachChild(node, visit);
-    }
-
-    visit(sourceFile);
-
-    return state;
-};
-
-const visitAstWithDepth = <T>(
-    sourceFile: ts.SourceFile,
-    callback: (node: ts.Node, depth: number, state: T) => void,
-    state: T,
-    depthTrigger: (node: ts.Node) => boolean
-): T => {
-    let depthStack: number[] = [0];
-
-    function visit(node: ts.Node): void {
-        let depth = depthStack[depthStack.length - 1],
-            nextDepth = depthTrigger(node) ? depth + 1 : depth;
-
-        callback(node, depth, state);
-        depthStack.push(nextDepth);
-        ts.forEachChild(node, visit);
-        depthStack.pop();
-    }
-
-    visit(sourceFile);
-
-    return state;
-};
-
 
 export {
     addImport, applyReplacements, applyReplacementsReverse,
-    collectNodes,
     mightNeedTransform,
     program,
-    uid, updateImports,
-    visitAst, visitAstWithDepth
+    uid
 };
 export type * from './types';
 export * from './constants';
