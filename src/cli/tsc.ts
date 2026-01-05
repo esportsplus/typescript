@@ -42,14 +42,64 @@ async function build(tsconfig: string, plugins: PluginConfig[]): Promise<void> {
     }
 
     await loadTransformers(plugins, root).then((transformers) => {
-        let program = ts.createProgram(parsed.fileNames, parsed.options),
-            result = program.emit(undefined, undefined, undefined, false, {
-                after: transformers.after.map(f => f(program)),
-                afterDeclarations: transformers.afterDeclarations.map(f => f(program)) as ts.TransformerFactory<ts.SourceFile | ts.Bundle>[],
-                before: transformers.before.map(f => f(program))
-            });
+        let beforeTransformers = transformers.before.map(f => f(program)),
+            printer = ts.createPrinter(),
+            program = ts.createProgram(parsed.fileNames, parsed.options),
+            transformedFiles = new Map<string, string>();
 
-        let diagnostics = ts.getPreEmitDiagnostics(program).concat(result.diagnostics);
+        for (let i = 0, n = parsed.fileNames.length; i < n; i++) {
+            let fileName = parsed.fileNames[i],
+                sourceFile = program.getSourceFile(fileName);
+
+            if (!sourceFile) {
+                continue;
+            }
+
+            let result = ts.transform(sourceFile, beforeTransformers),
+                transformed = result.transformed[0];
+
+            if (transformed !== sourceFile) {
+                transformedFiles.set(fileName, printer.printFile(transformed));
+            }
+
+            result.dispose();
+        }
+
+        if (transformedFiles.size > 0) {
+            let customHost = ts.createCompilerHost(parsed.options),
+                originalGetSourceFile = customHost.getSourceFile.bind(customHost),
+                originalReadFile = customHost.readFile.bind(customHost);
+
+            customHost.readFile = (fileName: string): string | undefined => {
+                let transformed = transformedFiles.get(path.resolve(fileName));
+
+                if (transformed) {
+                    return transformed;
+                }
+
+                return originalReadFile(fileName);
+            };
+
+            customHost.getSourceFile = (
+                fileName: string,
+                languageVersion: ts.ScriptTarget,
+                onError?: (message: string) => void,
+                shouldCreateNewSourceFile?: boolean
+            ): ts.SourceFile | undefined => {
+                let resolved = path.resolve(fileName),
+                    transformed = transformedFiles.get(resolved);
+
+                if (transformed) {
+                    return ts.createSourceFile(fileName, transformed, languageVersion, true);
+                }
+
+                return originalGetSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile);
+            };
+
+            program = ts.createProgram(parsed.fileNames, parsed.options, customHost);
+        }
+
+        let diagnostics = ts.getPreEmitDiagnostics(program).concat(program.emit().diagnostics);
 
         if (diagnostics.length > 0) {
             console.error(
@@ -61,7 +111,7 @@ async function build(tsconfig: string, plugins: PluginConfig[]): Promise<void> {
             );
         }
 
-        if (result.emitSkipped) {
+        if (program.emit().emitSkipped) {
             process.exit(1);
         }
 
