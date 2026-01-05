@@ -42,9 +42,10 @@ async function build(tsconfig: string, plugins: PluginConfig[]): Promise<void> {
     }
 
     await loadTransformers(plugins, root).then((transformers) => {
+        let printer = ts.createPrinter(),
+            program = ts.createProgram(parsed.fileNames, parsed.options);
+
         let beforeTransformers = transformers.before.map(f => f(program)),
-            printer = ts.createPrinter(),
-            program = ts.createProgram(parsed.fileNames, parsed.options),
             transformedFiles = new Map<string, string>();
 
         for (let i = 0, n = parsed.fileNames.length; i < n; i++) {
