@@ -99,6 +99,34 @@ const addImport = (code: string, module: string, specifiers: string[]): string =
     return code.substring(0, first) + adding + code.substring(first);
 };
 
+const applyReplacements = (code: string, replacements: Replacement[]): string => {
+    if (replacements.length === 0) {
+        return code;
+    }
+
+    replacements.sort((a, b) => a.start - b.start);
+
+    let parts: string[] = [],
+        pos = 0;
+
+    for (let i = 0, n = replacements.length; i < n; i++) {
+        let r = replacements[i];
+
+        if (r.start > pos) {
+            parts.push(code.substring(pos, r.start));
+        }
+
+        parts.push(r.newText);
+        pos = r.end;
+    }
+
+    if (pos < code.length) {
+        parts.push(code.substring(pos));
+    }
+
+    return parts.join('');
+};
+
 const applyReplacementsReverse = (code: string, replacements: Replacement[]): string => {
     if (replacements.length === 0) {
         return code;
@@ -139,7 +167,7 @@ const uid = (prefix: string, updateUUID = false): string => {
 
 
 export {
-    addImport, applyReplacementsReverse,
+    addImport, applyReplacements, applyReplacementsReverse,
     mightNeedTransform,
     program,
     uid

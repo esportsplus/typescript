@@ -23,8 +23,8 @@ let require = createRequire(import.meta.url),
 
 
 async function build(tsconfig: string, plugins: PluginConfig[]): Promise<void> {
-    let root = path.dirname(path.resolve(tsconfig)),
-        { config, error } = ts.readConfigFile(tsconfig, ts.sys.readFile);
+    let { config, error } = ts.readConfigFile(tsconfig, ts.sys.readFile),
+        root = path.dirname(path.resolve(tsconfig));
 
     if (error) {
         console.error(ts.flattenDiagnosticMessageText(error.messageText, '\n'));
