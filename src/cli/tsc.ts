@@ -137,10 +137,15 @@ async function build(tsconfig: string, plugins: PluginConfig[]): Promise<void> {
 }
 
 function findPackageJson(moduleName: string, root: string): string | null {
-    let nodeModulesPath = path.join(root, 'node_modules', moduleName.startsWith('@') ? moduleName.split('/').slice(0, 2).join('/') : moduleName.split('/')[0], 'package.json');
+    let file = path.join(
+            root,
+            'node_modules',
+            moduleName.startsWith('@') ? moduleName.split('/').slice(0, 2).join('/') : moduleName.split('/')[0],
+            'package.json'
+        );
 
-    if (fs.existsSync(nodeModulesPath)) {
-        return nodeModulesPath;
+    if (fs.existsSync(file)) {
+        return file;
     }
 
     return null;
