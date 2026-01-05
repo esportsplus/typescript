@@ -1,5 +1,5 @@
 import { uuid } from '@esportsplus/utilities';
-import { UUID_REGEX } from './constants.js';
+import { UUID_REGEX } from './constants';
 
 
 let cache = uuid().replace(UUID_REGEX, ''),
