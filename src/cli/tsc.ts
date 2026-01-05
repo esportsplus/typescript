@@ -18,6 +18,9 @@ type PluginConfig = {
 type TransformerCreator = (program: ts.Program) => ts.TransformerFactory<ts.SourceFile>;
 
 
+const BACKSLASH_REGEX = /\\/g;
+
+
 let require = createRequire(import.meta.url),
     skipFlags = ['--help', '--init', '--noEmit', '--showConfig', '--version', '-h', '-noEmit', '-v'];
 
@@ -72,7 +75,9 @@ async function build(tsconfig: string, plugins: PluginConfig[]): Promise<void> {
                 originalReadFile = customHost.readFile.bind(customHost);
 
             customHost.readFile = (fileName: string): string | undefined => {
-                let transformed = transformedFiles.get(path.resolve(fileName));
+                let transformed = transformedFiles.get(
+                        path.resolve(fileName).replace(BACKSLASH_REGEX, '/')
+                    );
 
                 if (transformed) {
                     return transformed;
@@ -87,8 +92,9 @@ async function build(tsconfig: string, plugins: PluginConfig[]): Promise<void> {
                 onError?: (message: string) => void,
                 shouldCreateNewSourceFile?: boolean
             ): ts.SourceFile | undefined => {
-                let resolved = path.resolve(fileName),
-                    transformed = transformedFiles.get(resolved);
+                let transformed = transformedFiles.get(
+                        path.resolve(fileName).replace(BACKSLASH_REGEX, '/')
+                    );
 
                 if (transformed) {
                     return ts.createSourceFile(fileName, transformed, languageVersion, true);
