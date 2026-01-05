@@ -1,7 +1,6 @@
 {
     "author": "ICJR",
     "bin": {
-        "esportsplus-tsc": "./bin/tsc",
         "tsc": "./bin/tsc",
         "tsc-alias": "./bin/tsc-alias"
     },
