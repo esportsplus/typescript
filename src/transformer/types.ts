@@ -1,3 +1,6 @@
+import type ts from 'typescript';
+
+
 type QuickCheckPattern = {
     patterns?: string[];
     regex?: RegExp;
@@ -12,5 +15,19 @@ type Replacement = Range & {
     newText: string;
 };
 
+type TransformFn = (sourceFile: ts.SourceFile, program: ts.Program) => TransformResult;
 
-export type { QuickCheckPattern, Range, Replacement };
+type TransformResult = {
+    changed: boolean;
+    code: string;
+    sourceFile: ts.SourceFile;
+};
+
+type VitePluginOptions = {
+    name: string;
+    onWatchChange?: () => void;
+    transform: TransformFn;
+};
+
+
+export type { QuickCheckPattern, Range, Replacement, TransformFn, TransformResult, VitePluginOptions };
