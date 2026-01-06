@@ -19,9 +19,9 @@
         "./tsconfig.browser.json": "./tsconfig.browser.json",
         "./tsconfig.node.json": "./tsconfig.node.json",
         "./tsconfig.package.json": "./tsconfig.package.json",
-        "./transformer": {
-            "types": "./build/transformer/index.d.ts",
-            "default": "./build/transformer/index.js"
+        "./compiler": {
+            "types": "./build/compiler/index.d.ts",
+            "default": "./build/compiler/index.js"
         },
         ".": {
             "types": "./build/index.d.ts",
