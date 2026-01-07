@@ -1,7 +1,8 @@
 import type { ResolvedConfig } from 'vite';
-import type { AnalyzeFn, PluginContext, TransformFn } from '../types';
-import { ts } from '../..';
-import program from '../program';
+import type { Plugin, SharedContext } from '../types.js';
+import { ts } from '~/index.js';
+import coordinator from '../coordinator.js';
+import program from '../program.js';
 
 
 type VitePlugin = {
@@ -13,20 +14,19 @@ type VitePlugin = {
 };
 
 type VitePluginOptions = {
-    analyze?: AnalyzeFn;
     name: string;
     onWatchChange?: () => void;
-    transform: TransformFn;
+    plugins: Plugin[];
 };
 
 
 const FILE_REGEX = /\.[tj]sx?$/;
 
 
-let contexts = new Map<string, PluginContext>();
+let contexts = new Map<string, SharedContext>();
 
 
-export default ({ analyze, name, onWatchChange, transform }: VitePluginOptions) => {
+export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
     return ({ root }: { root?: string } = {}): VitePlugin => {
         return {
             configResolved(config: unknown) {
@@ -40,13 +40,11 @@ export default ({ analyze, name, onWatchChange, transform }: VitePluginOptions) 
                 }
 
                 try {
-                    let context = contexts.get(root || '') ?? contexts.set(root || '', new Map()).get(root || '')!,
-                        prog = program.get(root || ''),
+                    let prog = program.get(root || ''),
+                        shared = contexts.get(root || '') ?? contexts.set(root || '', new Map()).get(root || '')!,
                         sourceFile = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
 
-                    analyze?.(sourceFile, prog, context);
-
-                    let result = transform(sourceFile, prog, context);
+                    let result = coordinator.transform(plugins, code, sourceFile, prog, shared);
 
                     if (!result.changed) {
                         return null;
@@ -62,7 +60,6 @@ export default ({ analyze, name, onWatchChange, transform }: VitePluginOptions) 
             watchChange(id: string) {
                 if (FILE_REGEX.test(id)) {
                     onWatchChange?.();
-
                     contexts.delete(root || '');
                     program.delete(root || '');
                 }

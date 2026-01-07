@@ -1,20 +1,29 @@
-import type { PluginContext, PluginDefinition } from '../types';
-import { ts } from '../..';
+import type { Plugin, SharedContext } from '../types.js';
+import type ts from 'typescript';
+import coordinator from '../coordinator.js';
 
 
-export default ({ analyze, transform }: PluginDefinition) => {
-    return (program: ts.Program, context: PluginContext) => {
+type PluginInstance = {
+    transform: ts.TransformerFactory<ts.SourceFile>;
+};
+
+
+export default (plugins: Plugin[]) => {
+    return (program: ts.Program, shared: SharedContext): PluginInstance => {
         return {
-            analyze: analyze
-                ? (sourceFile: ts.SourceFile) => analyze(sourceFile, program, context)
-                : undefined,
             transform: (() => {
-                return (sourceFile) => {
-                    let result = transform(sourceFile, program, context);
+                return (sourceFile: ts.SourceFile) => {
+                    let result = coordinator.transform(
+                            plugins,
+                            sourceFile.getFullText(),
+                            sourceFile,
+                            program,
+                            shared
+                        );
 
                     return result.changed ? result.sourceFile : sourceFile;
                 };
             }) as ts.TransformerFactory<ts.SourceFile>
         };
     };
-}
+};

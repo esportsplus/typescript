@@ -1,24 +1,16 @@
 import { spawn } from 'child_process';
 import { createRequire } from 'module';
 import { pathToFileURL } from 'url';
-
 import path from 'path';
 import ts from 'typescript';
+import coordinator from '~/compiler/coordinator';
+import type { Plugin, SharedContext } from '~/compiler/types';
 
 
 type PluginConfig = {
     after?: boolean;
     transform: string;
 };
-
-type PluginContext = Map<string, unknown>;
-
-type PluginInstance = {
-    analyze?: (sourceFile: ts.SourceFile) => void;
-    transform: ts.TransformerFactory<ts.SourceFile>;
-};
-
-type PluginFactory = (program: ts.Program, context: PluginContext) => PluginInstance;
 
 
 const BACKSLASH_REGEX = /\\/g;
@@ -28,7 +20,7 @@ let require = createRequire(import.meta.url),
     skipFlags = new Set(['--help', '--init', '--noEmit', '--showConfig', '--version', '-h', '-noEmit', '-v']);
 
 
-async function build(config: object, tsconfig: string, plugins: PluginConfig[]): Promise<void> {
+async function build(config: object, tsconfig: string, pluginConfigs: PluginConfig[]): Promise<void> {
     let root = path.dirname(path.resolve(tsconfig)),
         parsed = ts.parseJsonConfigFileContent(config, ts.sys, root);
 
@@ -42,110 +34,88 @@ async function build(config: object, tsconfig: string, plugins: PluginConfig[]):
         process.exit(1);
     }
 
-    await loadPlugins(plugins, root).then((factories) => {
-        let context: PluginContext = new Map(),
-            printer = ts.createPrinter(),
-            program = ts.createProgram(parsed.fileNames, parsed.options),
-            transformedFiles = new Map<string, string>();
+    let plugins = await loadPlugins(pluginConfigs, root);
 
-        // Create plugin instances with shared context
-        let instances = factories.before.map(f => f(program, context));
+    let program = ts.createProgram(parsed.fileNames, parsed.options),
+        shared: SharedContext = new Map(),
+        transformedFiles = new Map<string, string>();
 
-        // Phase 1: Analyze - all plugins analyze all files first
-        for (let i = 0, n = parsed.fileNames.length; i < n; i++) {
-            let fileName = parsed.fileNames[i],
-                sourceFile = program.getSourceFile(fileName);
+    for (let i = 0, n = parsed.fileNames.length; i < n; i++) {
+        let fileName = parsed.fileNames[i],
+            sourceFile = program.getSourceFile(fileName);
 
-            if (!sourceFile) {
-                continue;
+        if (!sourceFile) {
+            continue;
+        }
+
+        let result = coordinator.transform(
+            plugins,
+            sourceFile.getFullText(),
+            sourceFile,
+            program,
+            shared
+        );
+
+        if (result.changed) {
+            transformedFiles.set(normalizePath(fileName), result.code);
+        }
+    }
+
+    if (transformedFiles.size > 0) {
+        let customHost = ts.createCompilerHost(parsed.options),
+            originalGetSourceFile = customHost.getSourceFile.bind(customHost),
+            originalReadFile = customHost.readFile.bind(customHost);
+
+        customHost.getSourceFile = (
+            fileName: string,
+            languageVersion: ts.ScriptTarget,
+            onError?: (message: string) => void,
+            shouldCreateNewSourceFile?: boolean
+        ): ts.SourceFile | undefined => {
+            let transformed = transformedFiles.get(normalizePath(fileName));
+
+            if (transformed) {
+                return ts.createSourceFile(fileName, transformed, languageVersion, true);
             }
 
-            for (let j = 0, m = instances.length; j < m; j++) {
-                instances[j].analyze?.(sourceFile);
-            }
-        }
+            return originalGetSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile);
+        };
 
-        // Phase 2: Transform - all plugins transform all files
-        let transformers = instances.map(i => i.transform);
+        customHost.readFile = (fileName: string): string | undefined => {
+            return transformedFiles.get(normalizePath(fileName)) ?? originalReadFile(fileName);
+        };
 
-        for (let i = 0, n = parsed.fileNames.length; i < n; i++) {
-            let fileName = parsed.fileNames[i],
-                sourceFile = program.getSourceFile(fileName);
+        program = ts.createProgram(parsed.fileNames, parsed.options, customHost);
+    }
 
-            if (!sourceFile) {
-                continue;
-            }
+    let { diagnostics, emitSkipped } = program.emit();
 
-            let result = ts.transform(sourceFile, transformers),
-                transformed = result.transformed[0];
+    diagnostics = ts.getPreEmitDiagnostics(program).concat(diagnostics);
 
-            if (transformed !== sourceFile) {
-                transformedFiles.set(normalizePath(fileName), printer.printFile(transformed));
-            }
+    if (diagnostics.length > 0) {
+        console.error(
+            ts.formatDiagnosticsWithColorAndContext(diagnostics, {
+                getCanonicalFileName: (fileName) => fileName,
+                getCurrentDirectory: () => root,
+                getNewLine: () => '\n'
+            })
+        );
+    }
 
-            result.dispose();
-        }
+    if (emitSkipped) {
+        process.exit(1);
+    }
 
-        if (transformedFiles.size > 0) {
-            let customHost = ts.createCompilerHost(parsed.options),
-                originalGetSourceFile = customHost.getSourceFile.bind(customHost),
-                originalReadFile = customHost.readFile.bind(customHost);
-
-            customHost.getSourceFile = (
-                fileName: string,
-                languageVersion: ts.ScriptTarget,
-                onError?: (message: string) => void,
-                shouldCreateNewSourceFile?: boolean
-            ): ts.SourceFile | undefined => {
-                let transformed = transformedFiles.get(normalizePath(fileName));
-
-                if (transformed) {
-                    return ts.createSourceFile(fileName, transformed, languageVersion, true);
-                }
-
-                return originalGetSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile);
-            };
-
-            customHost.readFile = (fileName: string): string | undefined => {
-                return transformedFiles.get(normalizePath(fileName)) ?? originalReadFile(fileName);
-            };
-
-            program = ts.createProgram(parsed.fileNames, parsed.options, customHost);
-        }
-
-        let { diagnostics, emitSkipped } = program.emit();
-
-        diagnostics = ts.getPreEmitDiagnostics(program).concat(diagnostics);
-
-        if (diagnostics.length > 0) {
-            console.error(
-                ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-                    getCanonicalFileName: (fileName) => fileName,
-                    getCurrentDirectory: () => root,
-                    getNewLine: () => '\n'
-                })
-            );
-        }
-
-        if (emitSkipped) {
-            process.exit(1);
-        }
-
-        return runTscAlias(process.argv.slice(2)).then((code) => process.exit(code));
-    });
+    return runTscAlias(process.argv.slice(2)).then((code) => process.exit(code));
 }
 
-async function loadPlugins(plugins: PluginConfig[], root: string): Promise<{
-    after: PluginFactory[];
-    before: PluginFactory[];
-}> {
-    let after: PluginFactory[] = [],
-        before: PluginFactory[] = [],
+async function loadPlugins(configs: PluginConfig[], root: string): Promise<Plugin[]> {
+    let plugins: Plugin[] = [],
         promises: Promise<void>[] = [];
 
-    for (let i = 0, n = plugins.length; i < n; i++) {
-        let plugin = plugins[i],
-            pluginPath = plugin.transform;
+    for (let i = 0, n = configs.length; i < n; i++) {
+        let config = configs[i],
+            pluginPath = config.transform;
 
         if (pluginPath.startsWith('.')) {
             pluginPath = pathToFileURL(path.resolve(root, pluginPath)).href;
@@ -156,24 +126,25 @@ async function loadPlugins(plugins: PluginConfig[], root: string): Promise<{
 
         promises.push(
             import(pluginPath).then((module) => {
-                let factory = module.default ?? module.createTransformer ?? module;
+                let plugin = module.default ?? module;
 
-                if (typeof factory !== 'function') {
-                    console.error(`Plugin ${plugin.transform}: no transformer factory found`);
+                if (typeof plugin === 'function') {
+                    plugin = plugin();
+                }
+
+                if (!plugin || typeof plugin.transform !== 'function') {
+                    console.error(`Plugin ${config.transform}: invalid plugin format, expected { transform: Function }`);
                     return;
                 }
 
-                if (plugin.after) {
-                    after.push(factory);
-                }
-                else {
-                    before.push(factory);
-                }
+                plugins.push(plugin);
             })
         );
     }
 
-    return Promise.all(promises).then(() => ({ after, before }));
+    await Promise.all(promises);
+
+    return plugins;
 }
 
 function main(): void {
@@ -189,13 +160,17 @@ function main(): void {
         return passthrough();
     }
 
-    let plugins = config?.compilerOptions?.plugins?.filter(
+    let pluginConfigs = config?.compilerOptions?.plugins?.filter(
             (p: unknown) => typeof p === 'object' && p !== null && 'transform' in p
         ) ?? [];
 
-    console.log(`Found ${plugins.length} transformer plugin(s), using programmatic build...`);
+    if (pluginConfigs.length === 0) {
+        return passthrough();
+    }
 
-    build(config, tsconfig, plugins).catch((err) => {
+    console.log(`Found ${pluginConfigs.length} transformer plugin(s), using coordinated build...`);
+
+    build(config, tsconfig, pluginConfigs).catch((err) => {
         console.error(err);
         process.exit(1);
     });

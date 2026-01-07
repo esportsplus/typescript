@@ -1,5 +1,5 @@
-import tsc from './tsc';
-import vite from './vite';
+import tsc from './tsc.js';
+import vite from './vite.js';
 
 
 export default { tsc, vite };
