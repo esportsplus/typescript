@@ -40,11 +40,13 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                 }
 
                 try {
-                    let prog = program.get(root || ''),
-                        shared = contexts.get(root || '') ?? contexts.set(root || '', new Map()).get(root || '')!,
-                        sourceFile = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
-
-                    let result = coordinator.transform(plugins, code, sourceFile, prog, shared);
+                    let result = coordinator.transform(
+                            plugins,
+                            code,
+                            ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true),
+                            program.get(root || ''),
+                            contexts.get(root || '') ?? contexts.set(root || '', new Map()).get(root || '')!
+                        );
 
                     if (!result.changed) {
                         return null;

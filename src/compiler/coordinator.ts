@@ -10,89 +10,73 @@ type CoordinatorResult = {
 };
 
 
-function applyImports(
-    sourceCode: string,
-    sourceFile: ts.SourceFile,
-    intents: ImportIntent[]
-): string {
-    let result = sourceCode;
-
+function applyImports(code: string, file: ts.SourceFile, intents: ImportIntent[]): string {
     for (let i = 0, n = intents.length; i < n; i++) {
         let intent = intents[i];
 
-        result = modify(result, sourceFile, intent.package, {
+        code = modify(code, file, intent.package, {
             add: intent.add,
             namespace: intent.namespace,
             remove: intent.remove
         });
 
         if (i < n - 1) {
-            sourceFile = ts.createSourceFile(
-                sourceFile.fileName,
-                result,
-                sourceFile.languageVersion,
+            file = ts.createSourceFile(
+                file.fileName,
+                code,
+                file.languageVersion,
                 true
             );
         }
     }
 
-    return result;
+    return code;
 }
 
-function applyIntents(
-    sourceCode: string,
-    sourceFile: ts.SourceFile,
-    intents: ReplacementIntent[]
-): string {
+function applyIntents(code: string, file: ts.SourceFile, intents: ReplacementIntent[]): string {
     if (intents.length === 0) {
-        return sourceCode;
+        return code;
     }
 
     return replaceReverse(
-        sourceCode,
+        code,
         intents.map(intent => ({
             end: intent.node.end,
-            newText: intent.generate(sourceFile),
-            start: intent.node.getStart(sourceFile)
+            newText: intent.generate(file),
+            start: intent.node.getStart(file)
         }))
     );
 }
 
-function applyPrepend(sourceCode: string, sourceFile: ts.SourceFile, prepend: string[]): string {
+function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): string {
     if (prepend.length === 0) {
-        return sourceCode;
+        return code;
     }
 
-    let insertPos = findLastImportEnd(sourceFile),
-        prependText = prepend.join('\n') + '\n';
+    let position = 0,
+        text = prepend.join('\n') + '\n';
 
-    if (insertPos === 0) {
-        return prependText + sourceCode;
-    }
-
-    return sourceCode.slice(0, insertPos) + '\n' + prependText + sourceCode.slice(insertPos);
-}
-
-function findLastImportEnd(sourceFile: ts.SourceFile): number {
-    let lastEnd = 0;
-
-    for (let i = 0, n = sourceFile.statements.length; i < n; i++) {
-        let stmt = sourceFile.statements[i];
+    for (let i = 0, n = file.statements.length; i < n; i++) {
+        let stmt = file.statements[i];
 
         if (ts.isImportDeclaration(stmt)) {
-            lastEnd = stmt.end;
+            position = stmt.end;
         }
         else {
             break;
         }
     }
 
-    return lastEnd;
+    if (position === 0) {
+        return text + code;
+    }
+
+    return code.slice(0, position) + '\n' + text + code.slice(position);
 }
 
-function hasPattern(sourceCode: string, patterns: string[]): boolean {
+function hasPattern(code: string, patterns: string[]): boolean {
     for (let i = 0, n = patterns.length; i < n; i++) {
-        if (sourceCode.indexOf(patterns[i]) !== -1) {
+        if (code.indexOf(patterns[i]) !== -1) {
             return true;
         }
     }
@@ -100,39 +84,34 @@ function hasPattern(sourceCode: string, patterns: string[]): boolean {
     return false;
 }
 
-const modify = (
-    sourceCode: string,
-    sourceFile: ts.SourceFile,
-    packageName: string,
-    options: ModifyOptions
-): string => {
+function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyOptions): string {
     let { namespace } = options;
 
     // Fast path: nothing to change
     if (!options.add && !options.namespace && !options.remove) {
-        return sourceCode;
+        return code;
     }
 
     let add = options.add ? new Set(options.add) : null,
-        found = imports.find(sourceFile, packageName),
+        found = imports.find(file, pkg),
         remove = options.remove ? new Set(options.remove) : null;
 
     if (found.length === 0) {
         let statements: string[] = [];
 
         if (namespace) {
-            statements.push(`import * as ${namespace} from '${packageName}';`);
+            statements.push(`import * as ${namespace} from '${pkg}';`);
         }
 
         if (add && add.size > 0) {
-            statements.push(`import { ${[...add].sort().join(', ')} } from '${packageName}';`);
+            statements.push(`import { ${[...add].sort().join(', ')} } from '${pkg}';`);
         }
 
         if (statements.length === 0) {
-            return sourceCode;
+            return code;
         }
 
-        return statements.join('\n') + '\n' + sourceCode;
+        return statements.join('\n') + '\n' + code;
     }
 
     // Collect all non-removed specifiers from existing imports
@@ -156,11 +135,11 @@ const modify = (
     let statements: string[] = [];
 
     if (namespace) {
-        statements.push(`import * as ${namespace} from '${packageName}';`);
+        statements.push(`import * as ${namespace} from '${pkg}';`);
     }
 
     if (specifiers.size > 0) {
-        statements.push(`import { ${[...specifiers].sort().join(', ')} } from '${packageName}';`);
+        statements.push(`import { ${[...specifiers].sort().join(', ')} } from '${pkg}';`);
     }
 
     // Build replacements - replace first import, remove others
@@ -174,10 +153,10 @@ const modify = (
         });
     }
 
-    return replaceReverse(sourceCode, replacements);
+    return replaceReverse(code, replacements);
 };
 
-const replaceReverse = (code: string, replacements: Replacement[]): string => {
+function replaceReverse(code: string, replacements: Replacement[]): string {
     if (replacements.length === 0) {
         return code;
     }
@@ -202,18 +181,18 @@ const replaceReverse = (code: string, replacements: Replacement[]): string => {
  */
 const transform = (
     plugins: Plugin[],
-    sourceCode: string,
-    sourceFile: ts.SourceFile,
+    code: string,
+    file: ts.SourceFile,
     program: ts.Program,
     shared: SharedContext
 ): CoordinatorResult => {
     if (plugins.length === 0) {
-        return { changed: false, code: sourceCode, sourceFile };
+        return { changed: false, code, sourceFile: file };
     }
 
     let changed = false,
-        currentCode = sourceCode,
-        currentSourceFile = sourceFile;
+        currentCode = code,
+        currentSourceFile = file;
 
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
@@ -223,12 +202,12 @@ const transform = (
         }
 
         let result = plugin.transform({
-            checker: program.getTypeChecker(),
-            code: currentCode,
-            program,
-            shared,
-            sourceFile: currentSourceFile
-        });
+                checker: program.getTypeChecker(),
+                code: currentCode,
+                program,
+                shared,
+                sourceFile: currentSourceFile
+            });
 
         let hasChanges = (result.imports && result.imports.length > 0) ||
             (result.prepend && result.prepend.length > 0) ||
