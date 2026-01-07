@@ -11,7 +11,14 @@ type PluginConfig = {
     transform: string;
 };
 
-type TransformerCreator = (program: ts.Program) => ts.TransformerFactory<ts.SourceFile>;
+type PluginContext = Map<string, unknown>;
+
+type PluginInstance = {
+    analyze?: (sourceFile: ts.SourceFile) => void;
+    transform: ts.TransformerFactory<ts.SourceFile>;
+};
+
+type PluginFactory = (program: ts.Program, context: PluginContext) => PluginInstance;
 
 
 const BACKSLASH_REGEX = /\\/g;
@@ -35,12 +42,31 @@ async function build(config: object, tsconfig: string, plugins: PluginConfig[]):
         process.exit(1);
     }
 
-    await loadTransformers(plugins, root).then((transformers) => {
-        let printer = ts.createPrinter(),
-            program = ts.createProgram(parsed.fileNames, parsed.options);
-
-        let beforeTransformers = transformers.before.map(f => f(program)),
+    await loadPlugins(plugins, root).then((factories) => {
+        let context: PluginContext = new Map(),
+            printer = ts.createPrinter(),
+            program = ts.createProgram(parsed.fileNames, parsed.options),
             transformedFiles = new Map<string, string>();
+
+        // Create plugin instances with shared context
+        let instances = factories.before.map(f => f(program, context));
+
+        // Phase 1: Analyze - all plugins analyze all files first
+        for (let i = 0, n = parsed.fileNames.length; i < n; i++) {
+            let fileName = parsed.fileNames[i],
+                sourceFile = program.getSourceFile(fileName);
+
+            if (!sourceFile) {
+                continue;
+            }
+
+            for (let j = 0, m = instances.length; j < m; j++) {
+                instances[j].analyze?.(sourceFile);
+            }
+        }
+
+        // Phase 2: Transform - all plugins transform all files
+        let transformers = instances.map(i => i.transform);
 
         for (let i = 0, n = parsed.fileNames.length; i < n; i++) {
             let fileName = parsed.fileNames[i],
@@ -50,7 +76,7 @@ async function build(config: object, tsconfig: string, plugins: PluginConfig[]):
                 continue;
             }
 
-            let result = ts.transform(sourceFile, beforeTransformers),
+            let result = ts.transform(sourceFile, transformers),
                 transformed = result.transformed[0];
 
             if (transformed !== sourceFile) {
@@ -109,12 +135,12 @@ async function build(config: object, tsconfig: string, plugins: PluginConfig[]):
     });
 }
 
-async function loadTransformers(plugins: PluginConfig[], root: string): Promise<{
-    after: TransformerCreator[];
-    before: TransformerCreator[];
+async function loadPlugins(plugins: PluginConfig[], root: string): Promise<{
+    after: PluginFactory[];
+    before: PluginFactory[];
 }> {
-    let after: TransformerCreator[] = [],
-        before: TransformerCreator[] = [],
+    let after: PluginFactory[] = [],
+        before: PluginFactory[] = [],
         promises: Promise<void>[] = [];
 
     for (let i = 0, n = plugins.length; i < n; i++) {

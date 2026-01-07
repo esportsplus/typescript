@@ -1,5 +1,5 @@
 import type { ResolvedConfig } from 'vite';
-import type { VitePluginOptions } from '../types';
+import type { PluginContext, VitePluginOptions } from '../types';
 import { ts } from '../..';
 import program from '../program';
 
@@ -7,7 +7,10 @@ import program from '../program';
 const FILE_REGEX = /\.[tj]sx?$/;
 
 
-export default ({ name, onWatchChange, transform }: VitePluginOptions) => {
+let contexts = new Map<string, PluginContext>();
+
+
+export default ({ analyze, name, onWatchChange, transform }: VitePluginOptions) => {
     return ({ root }: { root?: string } = {}) => {
         return {
             configResolved(config: ResolvedConfig) {
@@ -21,10 +24,13 @@ export default ({ name, onWatchChange, transform }: VitePluginOptions) => {
                 }
 
                 try {
-                    let result = transform(
-                            ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true),
-                            program.get(root || '')
-                        );
+                    let context = contexts.get(root || '') ?? contexts.set(root || '', new Map()).get(root || '')!,
+                        prog = program.get(root || ''),
+                        sourceFile = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
+
+                    analyze?.(sourceFile, prog, context);
+
+                    let result = transform(sourceFile, prog, context);
 
                     if (!result.changed) {
                         return null;
@@ -40,6 +46,8 @@ export default ({ name, onWatchChange, transform }: VitePluginOptions) => {
             watchChange(id: string) {
                 if (FILE_REGEX.test(id)) {
                     onWatchChange?.();
+
+                    contexts.delete(root || '');
                     program.delete(root || '');
                 }
             }

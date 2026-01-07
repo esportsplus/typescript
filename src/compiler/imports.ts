@@ -11,6 +11,7 @@ type ImportInfo = {
 
 type ModifyOptions = {
     add?: Iterable<string>;
+    namespace?: string;
     remove?: Iterable<string>;
 };
 
@@ -59,7 +60,9 @@ const isFromPackage = (node: ts.Identifier, packageName: string, checker?: ts.Ty
 
     let origin = trace(node, checker);
 
-    return origin !== null && origin.includes(packageName);
+    // If can't resolve symbol (e.g., sourceFile not in program), assume valid
+    // False positives cause compile errors; false negatives silently skip transforms
+    return origin === null || origin.includes(packageName);
 };
 
 
@@ -70,8 +73,10 @@ const modify = (
     packageName: string,
     options: ModifyOptions
 ): string => {
+    let { namespace } = options;
+
     // Fast path: nothing to change
-    if (!options.add && !options.remove) {
+    if (!options.add && !options.namespace && !options.remove) {
         return sourceCode;
     }
 
@@ -80,11 +85,21 @@ const modify = (
         remove = options.remove ? new Set(options.remove) : null;
 
     if (imports.length === 0) {
-        if (!add || add.size === 0) {
+        let statements: string[] = [];
+
+        if (namespace) {
+            statements.push(`import * as ${namespace} from '${packageName}';`);
+        }
+
+        if (add && add.size > 0) {
+            statements.push(`import { ${[...add].sort().join(', ')} } from '${packageName}';`);
+        }
+
+        if (statements.length === 0) {
             return sourceCode;
         }
 
-        return `import { ${[...add].sort().join(', ')} } from '${packageName}';\n` + sourceCode;
+        return statements.join('\n') + '\n' + sourceCode;
     }
 
     // Collect all non-removed specifiers from existing imports
@@ -104,16 +119,24 @@ const modify = (
         }
     }
 
+    // Build replacement text - namespace import first, then named imports
+    let statements: string[] = [];
+
+    if (namespace) {
+        statements.push(`import * as ${namespace} from '${packageName}';`);
+    }
+
+    if (specifiers.size > 0) {
+        statements.push(`import { ${[...specifiers].sort().join(', ')} } from '${packageName}';`);
+    }
+
     // Build replacements - replace first import, remove others
-    let replacements: Replacement[] = [],
-        sorted = [...specifiers].sort().join(', ');
+    let replacements: Replacement[] = [];
 
     for (let i = 0, n = imports.length; i < n; i++) {
         replacements.push({
             end: imports[i].end,
-            newText: i === 0 && specifiers.size > 0
-                ? `import { ${sorted} } from '${packageName}';`
-                : '',
+            newText: i === 0 ? statements.join('\n') : '',
             start: imports[i].start
         });
     }

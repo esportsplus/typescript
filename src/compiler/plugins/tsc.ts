@@ -1,15 +1,26 @@
-import type { TransformFn } from '../types';
+import type { PluginContext, PluginDefinition } from '../types';
 import { ts } from '../..';
 
 
-export default (transform: TransformFn) => {
-    return (program: ts.Program): ts.TransformerFactory<ts.SourceFile> => {
-        return () => {
-            return (sourceFile) => {
-                let result = transform(sourceFile, program);
+type TscPluginFactory = (program: ts.Program, context: PluginContext) => {
+    analyze?: (sourceFile: ts.SourceFile) => void;
+    transform: ts.TransformerFactory<ts.SourceFile>;
+};
 
-                return result.changed ? result.sourceFile : sourceFile;
-            };
+
+export default ({ analyze, transform }: PluginDefinition): TscPluginFactory => {
+    return (program: ts.Program, context: PluginContext) => {
+        return {
+            analyze: analyze
+                ? (sourceFile: ts.SourceFile) => analyze(sourceFile, program, context)
+                : undefined,
+            transform: () => {
+                return (sourceFile) => {
+                    let result = transform(sourceFile, program, context);
+
+                    return result.changed ? result.sourceFile : sourceFile;
+                };
+            }
         };
     };
 }
