@@ -1,23 +1,23 @@
-import type { Replacement } from './types';
+const SINGLE_QUOTE_REGEX = /'/g;
 
 
-const replaceReverse = (code: string, replacements: Replacement[]): string => {
-    if (replacements.length === 0) {
-        return code;
+const code = (literals: TemplateStringsArray, ...values: unknown[]): string => {
+    let buffer = '';
+
+    for (let i = 0, n = literals.length; i < n; i++) {
+        buffer += literals[i];
+
+        if (values[i] !== undefined) {
+            buffer += values[i];
+        }
     }
 
-    replacements.sort((a, b) => b.start - a.start);
+    return buffer;
+};
 
-    let result = code;
-
-    for (let i = 0, n = replacements.length; i < n; i++) {
-        let r = replacements[i];
-
-        result = result.substring(0, r.start) + r.newText + result.substring(r.end);
-    }
-
-    return result;
+code.escape = (str: string): string => {
+    return str.replace(SINGLE_QUOTE_REGEX, "\\'");
 };
 
 
-export default { replaceReverse };
+export default code;

@@ -1,7 +1,6 @@
-import type { ImportIntent, Plugin, ReplacementIntent, SharedContext } from './types';
+import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
 import { ts } from '~/index';
-import code from './code';
-import imports from './imports';
+import imports, { ModifyOptions } from './imports';
 
 
 type CoordinatorResult = {
@@ -21,7 +20,7 @@ function applyImports(
     for (let i = 0, n = intents.length; i < n; i++) {
         let intent = intents[i];
 
-        result = imports.modify(result, sourceFile, intent.package, {
+        result = modify(result, sourceFile, intent.package, {
             add: intent.add,
             namespace: intent.namespace,
             remove: intent.remove
@@ -49,13 +48,14 @@ function applyIntents(
         return sourceCode;
     }
 
-    let replacements = intents.map(intent => ({
-        end: intent.node.end,
-        newText: intent.generate(sourceFile),
-        start: intent.node.getStart(sourceFile)
-    }));
-
-    return code.replaceReverse(sourceCode, replacements);
+    return replaceReverse(
+        sourceCode,
+        intents.map(intent => ({
+            end: intent.node.end,
+            newText: intent.generate(sourceFile),
+            start: intent.node.getStart(sourceFile)
+        }))
+    );
 }
 
 function applyPrepend(sourceCode: string, sourceFile: ts.SourceFile, prepend: string[]): string {
@@ -99,6 +99,101 @@ function hasPattern(sourceCode: string, patterns: string[]): boolean {
 
     return false;
 }
+
+const modify = (
+    sourceCode: string,
+    sourceFile: ts.SourceFile,
+    packageName: string,
+    options: ModifyOptions
+): string => {
+    let { namespace } = options;
+
+    // Fast path: nothing to change
+    if (!options.add && !options.namespace && !options.remove) {
+        return sourceCode;
+    }
+
+    let add = options.add ? new Set(options.add) : null,
+        found = imports.find(sourceFile, packageName),
+        remove = options.remove ? new Set(options.remove) : null;
+
+    if (found.length === 0) {
+        let statements: string[] = [];
+
+        if (namespace) {
+            statements.push(`import * as ${namespace} from '${packageName}';`);
+        }
+
+        if (add && add.size > 0) {
+            statements.push(`import { ${[...add].sort().join(', ')} } from '${packageName}';`);
+        }
+
+        if (statements.length === 0) {
+            return sourceCode;
+        }
+
+        return statements.join('\n') + '\n' + sourceCode;
+    }
+
+    // Collect all non-removed specifiers from existing imports
+    let specifiers = new Set<string>();
+
+    for (let i = 0, n = found.length; i < n; i++) {
+        for (let [name, alias] of found[i].specifiers) {
+            if (!remove || (!remove.has(name) && !remove.has(alias))) {
+                specifiers.add(name === alias ? name : `${name} as ${alias}`);
+            }
+        }
+    }
+
+    if (add) {
+        for (let name of add) {
+            specifiers.add(name);
+        }
+    }
+
+    // Build replacement text - namespace import first, then named imports
+    let statements: string[] = [];
+
+    if (namespace) {
+        statements.push(`import * as ${namespace} from '${packageName}';`);
+    }
+
+    if (specifiers.size > 0) {
+        statements.push(`import { ${[...specifiers].sort().join(', ')} } from '${packageName}';`);
+    }
+
+    // Build replacements - replace first import, remove others
+    let replacements: Replacement[] = [];
+
+    for (let i = 0, n = found.length; i < n; i++) {
+        replacements.push({
+            end: found[i].end,
+            newText: i === 0 ? statements.join('\n') : '',
+            start: found[i].start
+        });
+    }
+
+    return replaceReverse(sourceCode, replacements);
+};
+
+const replaceReverse = (code: string, replacements: Replacement[]): string => {
+    if (replacements.length === 0) {
+        return code;
+    }
+
+    replacements.sort((a, b) => b.start - a.start);
+
+    let result = code;
+
+    for (let i = 0, n = replacements.length; i < n; i++) {
+        let r = replacements[i];
+
+        result = result.substring(0, r.start) + r.newText + result.substring(r.end);
+    }
+
+    return result;
+};
 
 
 /**

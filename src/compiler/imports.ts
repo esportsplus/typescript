@@ -1,6 +1,4 @@
-import type { Replacement } from './types';
 import { ts } from '~/index';
-import code from './code';
 
 
 type ImportInfo = {
@@ -104,105 +102,6 @@ const inPackage = (
     return packageImports ? ts.isIdentifier(node) && packageImports.has(node.text) : false;
 };
 
-// Modify imports: remove specified, add needed, delete if empty
-const modify = (
-    sourceCode: string,
-    sourceFile: ts.SourceFile,
-    packageName: string,
-    options: ModifyOptions
-): string => {
-    let { namespace } = options;
 
-    // Fast path: nothing to change
-    if (!options.add && !options.namespace && !options.remove) {
-        return sourceCode;
-    }
-
-    let add = options.add ? new Set(options.add) : null,
-        imports = find(sourceFile, packageName),
-        remove = options.remove ? new Set(options.remove) : null;
-
-    if (imports.length === 0) {
-        let statements: string[] = [];
-
-        if (namespace) {
-            statements.push(`import * as ${namespace} from '${packageName}';`);
-        }
-
-        if (add && add.size > 0) {
-            statements.push(`import { ${[...add].sort().join(', ')} } from '${packageName}';`);
-        }
-
-        if (statements.length === 0) {
-            return sourceCode;
-        }
-
-        return statements.join('\n') + '\n' + sourceCode;
-    }
-
-    // Collect all non-removed specifiers from existing imports
-    let specifiers = new Set<string>();
-
-    for (let i = 0, n = imports.length; i < n; i++) {
-        for (let [name, alias] of imports[i].specifiers) {
-            if (!remove || (!remove.has(name) && !remove.has(alias))) {
-                specifiers.add(name === alias ? name : `${name} as ${alias}`);
-            }
-        }
-    }
-
-    if (add) {
-        for (let name of add) {
-            specifiers.add(name);
-        }
-    }
-
-    // Build replacement text - namespace import first, then named imports
-    let statements: string[] = [];
-
-    if (namespace) {
-        statements.push(`import * as ${namespace} from '${packageName}';`);
-    }
-
-    if (specifiers.size > 0) {
-        statements.push(`import { ${[...specifiers].sort().join(', ')} } from '${packageName}';`);
-    }
-
-    // Build replacements - replace first import, remove others
-    let replacements: Replacement[] = [];
-
-    for (let i = 0, n = imports.length; i < n; i++) {
-        replacements.push({
-            end: imports[i].end,
-            newText: i === 0 ? statements.join('\n') : '',
-            start: imports[i].start
-        });
-    }
-
-    return code.replaceReverse(sourceCode, replacements);
-};
-
-// Trace symbol through re-exports to find original declaration source file
-const trace = (node: ts.Identifier, checker: ts.TypeChecker): string | null => {
-    let symbol = checker.getSymbolAtLocation(node);
-
-    if (!symbol) {
-        return null;
-    }
-
-    if (symbol.flags & ts.SymbolFlags.Alias) {
-        symbol = checker.getAliasedSymbol(symbol);
-    }
-
-    let declarations = symbol.getDeclarations();
-
-    if (!declarations || declarations.length === 0) {
-        return null;
-    }
-
-    return declarations[0].getSourceFile().fileName;
-};
-
-
-export default { find, inPackage, modify, trace };
+export default { find, inPackage };
 export type { ImportInfo, ModifyOptions };
