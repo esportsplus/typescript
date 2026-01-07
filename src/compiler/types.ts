@@ -40,4 +40,11 @@ type VitePluginOptions = {
 };
 
 
-export type { AnalyzeFn, PluginContext, PluginDefinition, QuickCheckPattern, Range, Replacement, TransformFn, TransformResult, VitePluginOptions };
+export type {
+    AnalyzeFn,
+    PluginContext, PluginDefinition,
+    QuickCheckPattern,
+    Range, Replacement,
+    TransformFn, TransformResult,
+    VitePluginOptions
+};

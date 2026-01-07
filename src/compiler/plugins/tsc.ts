@@ -2,25 +2,19 @@ import type { PluginContext, PluginDefinition } from '../types';
 import { ts } from '../..';
 
 
-type TscPluginFactory = (program: ts.Program, context: PluginContext) => {
-    analyze?: (sourceFile: ts.SourceFile) => void;
-    transform: ts.TransformerFactory<ts.SourceFile>;
-};
-
-
-export default ({ analyze, transform }: PluginDefinition): TscPluginFactory => {
+export default ({ analyze, transform }: PluginDefinition) => {
     return (program: ts.Program, context: PluginContext) => {
         return {
             analyze: analyze
                 ? (sourceFile: ts.SourceFile) => analyze(sourceFile, program, context)
                 : undefined,
-            transform: () => {
+            transform: (() => {
                 return (sourceFile) => {
                     let result = transform(sourceFile, program, context);
 
                     return result.changed ? result.sourceFile : sourceFile;
                 };
-            }
+            }) as ts.TransformerFactory<ts.SourceFile>
         };
     };
 }
