@@ -1,7 +1,23 @@
 import type { ResolvedConfig } from 'vite';
-import type { PluginContext, VitePluginOptions } from '../types';
+import type { AnalyzeFn, PluginContext, TransformFn } from '../types';
 import { ts } from '../..';
 import program from '../program';
+
+
+type VitePlugin = {
+    configResolved: (config: unknown) => void;
+    enforce: 'pre';
+    name: string;
+    transform: (code: string, id: string) => { code: string; map: null } | null;
+    watchChange: (id: string) => void;
+};
+
+type VitePluginOptions = {
+    analyze?: AnalyzeFn;
+    name: string;
+    onWatchChange?: () => void;
+    transform: TransformFn;
+};
 
 
 const FILE_REGEX = /\.[tj]sx?$/;
@@ -11,10 +27,10 @@ let contexts = new Map<string, PluginContext>();
 
 
 export default ({ analyze, name, onWatchChange, transform }: VitePluginOptions) => {
-    return ({ root }: { root?: string } = {}) => {
+    return ({ root }: { root?: string } = {}): VitePlugin => {
         return {
-            configResolved(config: ResolvedConfig) {
-                root ??= config.root;
+            configResolved(config: unknown) {
+                root ??= (config as ResolvedConfig).root;
             },
             enforce: 'pre',
             name: `${name}/plugin-vite`,

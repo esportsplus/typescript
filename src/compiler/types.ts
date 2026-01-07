@@ -32,19 +32,11 @@ type TransformResult = {
     sourceFile: ts.SourceFile;
 };
 
-type VitePluginOptions = {
-    analyze?: AnalyzeFn;
-    name: string;
-    onWatchChange?: () => void;
-    transform: TransformFn;
-};
-
 
 export type {
     AnalyzeFn,
     PluginContext, PluginDefinition,
     QuickCheckPattern,
     Range, Replacement,
-    TransformFn, TransformResult,
-    VitePluginOptions
+    TransformFn, TransformResult
 };

@@ -46,7 +46,7 @@ const find = (sourceFile: ts.SourceFile, packageName: string): ImportInfo[] => {
             }
         }
 
-        imports.push({ end: stmt.end, specifiers, start: stmt.getStart() });
+        imports.push({ end: stmt.end, specifiers, start: stmt.getStart(sourceFile) });
     }
 
     return imports;
