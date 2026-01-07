@@ -53,15 +53,28 @@ const find = (sourceFile: ts.SourceFile, packageName: string): ImportInfo[] => {
 };
 
 // Check if node's symbol originates from a specific package (with optional symbol name validation)
-const isFromPackage = (
+const inPackage = (
     checker: ts.TypeChecker,
     node: ts.Node,
-    packageName: string,
-    symbolName?: string
+    pkg: string,
+    symbolName?: string,
+    packageImports?: Set<string>
 ): boolean => {
+    // Fast path: identifier matches known import and expected name
+    if (packageImports && ts.isIdentifier(node) && packageImports.has(node.text)) {
+        if (!symbolName || node.text === symbolName) {
+            return true;
+        }
+    }
+
     let symbol = checker.getSymbolAtLocation(node);
 
     if (!symbol) {
+        // Fallback: aliased import - check if local name is in imports
+        if (packageImports && ts.isIdentifier(node) && packageImports.has(node.text)) {
+            return true;
+        }
+
         return false;
     }
 
@@ -72,23 +85,23 @@ const isFromPackage = (
 
     // Check symbol name if specified
     if (symbolName && symbol.name !== symbolName) {
-        return false;
+        return packageImports ? ts.isIdentifier(node) && packageImports.has(node.text) : false;
     }
 
     let declarations = symbol.getDeclarations();
 
     if (!declarations || declarations.length === 0) {
-        return false;
+        return packageImports ? ts.isIdentifier(node) && packageImports.has(node.text) : false;
     }
 
     // Check if any declaration is from the expected package
     for (let i = 0, n = declarations.length; i < n; i++) {
-        if (declarations[i].getSourceFile().fileName.includes(packageName)) {
+        if (declarations[i].getSourceFile().fileName.includes(pkg)) {
             return true;
         }
     }
 
-    return false;
+    return packageImports ? ts.isIdentifier(node) && packageImports.has(node.text) : false;
 };
 
 // Modify imports: remove specified, add needed, delete if empty
@@ -191,5 +204,5 @@ const trace = (node: ts.Identifier, checker: ts.TypeChecker): string | null => {
 };
 
 
-export default { find, isFromPackage, modify, trace };
+export default { find, inPackage, modify, trace };
 export type { ImportInfo, ModifyOptions };
