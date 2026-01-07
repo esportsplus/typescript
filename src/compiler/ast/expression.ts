@@ -1,4 +1,4 @@
-import { ts } from '../..';
+import ts from 'typescript';
 
 
 const getExpressionName = (node: ts.Expression): string | null => {
@@ -7,13 +7,13 @@ const getExpressionName = (node: ts.Expression): string | null => {
     }
 
     if (ts.isPropertyAccessExpression(node)) {
-        return getPropertyPathString(node);
+        return getPropertyPath(node);
     }
 
     return null;
-}
+};
 
-const getPropertyPath = (node: ts.Expression): string[] | null => {
+const getPropertyPath = (node: ts.Expression): string | null => {
     let current: ts.Node = node,
         parts: string[] = [];
 
@@ -24,25 +24,11 @@ const getPropertyPath = (node: ts.Expression): string[] | null => {
 
     if (ts.isIdentifier(current)) {
         parts.push(current.text);
-        return parts.reverse();
+        return parts.reverse().join('.');
     }
 
     return null;
-}
-
-const getPropertyPathString = (node: ts.Expression): string | null => {
-    let parts = getPropertyPath(node);
-
-    return parts ? parts.join('.') : null;
-}
-
-const unwrapParentheses = (expr: ts.Expression): ts.Expression => {
-    while (ts.isParenthesizedExpression(expr)) {
-        expr = expr.expression;
-    }
-
-    return expr;
-}
+};
 
 
-export { getExpressionName, getPropertyPath, getPropertyPathString, unwrapParentheses };
+export { getExpressionName, getPropertyPath };

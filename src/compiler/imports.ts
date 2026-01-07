@@ -1,6 +1,6 @@
-import type { Replacement } from './types.js';
-import { ts } from '~/index.js';
-import code from './code.js';
+import type { Replacement } from './types';
+import { ts } from '~/index';
+import code from './code';
 
 
 type ImportInfo = {
@@ -65,6 +65,44 @@ const isFromPackage = (node: ts.Identifier, packageName: string, checker?: ts.Ty
     return origin === null || origin.includes(packageName);
 };
 
+// Check if node's symbol originates from a specific package (with optional symbol name validation)
+const isSymbolFromPackage = (
+    checker: ts.TypeChecker,
+    node: ts.Node,
+    packageName: string,
+    symbolName?: string
+): boolean => {
+    let symbol = checker.getSymbolAtLocation(node);
+
+    if (!symbol) {
+        return false;
+    }
+
+    // Follow aliases to original symbol (handles re-exports and aliased imports)
+    if (symbol.flags & ts.SymbolFlags.Alias) {
+        symbol = checker.getAliasedSymbol(symbol);
+    }
+
+    // Check symbol name if specified
+    if (symbolName && symbol.name !== symbolName) {
+        return false;
+    }
+
+    let declarations = symbol.getDeclarations();
+
+    if (!declarations || declarations.length === 0) {
+        return false;
+    }
+
+    // Check if any declaration is from the expected package
+    for (let i = 0, n = declarations.length; i < n; i++) {
+        if (declarations[i].getSourceFile().fileName.includes(packageName)) {
+            return true;
+        }
+    }
+
+    return false;
+};
 
 // Modify imports: remove specified, add needed, delete if empty
 const modify = (
@@ -166,5 +204,5 @@ const trace = (node: ts.Identifier, checker: ts.TypeChecker): string | null => {
 };
 
 
-export default { find, isFromPackage, modify, trace };
+export default { find, isFromPackage, isSymbolFromPackage, modify, trace };
 export type { ImportInfo, ModifyOptions };

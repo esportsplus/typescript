@@ -4,10 +4,6 @@ type Range = {
 };
 
 
-const containsPosition = (range: Range, pos: number): boolean => {
-    return pos >= range.start && pos <= range.end;
-}
-
 const inRange = (ranges: Range[], start: number, end: number): boolean => {
     for (let i = 0, n = ranges.length; i < n; i++) {
         let r = ranges[i];
@@ -18,8 +14,8 @@ const inRange = (ranges: Range[], start: number, end: number): boolean => {
     }
 
     return false;
-}
+};
 
 
-export { containsPosition, inRange };
+export { inRange };
 export type { Range };

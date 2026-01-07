@@ -24,11 +24,6 @@ type Plugin = {
 
 type PluginFactory = (options?: Record<string, unknown>) => Plugin;
 
-type QuickCheckPattern = {
-    patterns?: string[];
-    regex?: RegExp;
-};
-
 type Range = {
     end: number;
     start: number;
@@ -82,7 +77,6 @@ type TransformResult = {
 export type {
     ImportIntent,
     Plugin, PluginFactory,
-    QuickCheckPattern,
     Range, Replacement, ReplacementIntent,
     SharedContext,
     TransformContext, TransformResult

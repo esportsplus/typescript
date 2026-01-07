@@ -1,15 +1,10 @@
-import type { Plugin, SharedContext } from '../types.js';
+import type { Plugin, SharedContext } from '../types';
 import type ts from 'typescript';
-import coordinator from '../coordinator.js';
-
-
-type PluginInstance = {
-    transform: ts.TransformerFactory<ts.SourceFile>;
-};
+import coordinator from '../coordinator';
 
 
 export default (plugins: Plugin[]) => {
-    return (program: ts.Program, shared: SharedContext): PluginInstance => {
+    return (program: ts.Program, shared: SharedContext) => {
         return {
             transform: (() => {
                 return (sourceFile: ts.SourceFile) => {

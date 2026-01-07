@@ -1,7 +1,7 @@
-import type { ImportIntent, Plugin, ReplacementIntent, SharedContext } from './types.js';
-import { ts } from '~/index.js';
-import code from './code.js';
-import imports from './imports.js';
+import type { ImportIntent, Plugin, ReplacementIntent, SharedContext } from './types';
+import { ts } from '~/index';
+import code from './code';
+import imports from './imports';
 
 
 type CoordinatorResult = {

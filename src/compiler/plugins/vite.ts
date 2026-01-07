@@ -1,8 +1,8 @@
 import type { ResolvedConfig } from 'vite';
-import type { Plugin, SharedContext } from '../types.js';
-import { ts } from '~/index.js';
-import coordinator from '../coordinator.js';
-import program from '../program.js';
+import type { Plugin, SharedContext } from '../types';
+import { ts } from '~/index';
+import coordinator from '../coordinator';
+import program from '../program';
 
 
 type VitePlugin = {
