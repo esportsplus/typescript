@@ -53,8 +53,7 @@ function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): str
         return code;
     }
 
-    let position = 0,
-        text = prepend.join('\n') + '\n';
+    let position = 0;
 
     for (let i = 0, n = file.statements.length; i < n; i++) {
         let stmt = file.statements[i];
@@ -68,10 +67,10 @@ function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): str
     }
 
     if (position === 0) {
-        return text + code;
+        return prepend.join('\n') + code;
     }
 
-    return code.slice(0, position) + '\n' + text + code.slice(position);
+    return code.slice(0, position) + prepend.join('\n') + code.slice(position);
 }
 
 function hasPattern(code: string, patterns: string[]): boolean {
@@ -85,16 +84,13 @@ function hasPattern(code: string, patterns: string[]): boolean {
 }
 
 function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyOptions): string {
-    let { namespace } = options;
-
-    // Fast path: nothing to change
     if (!options.add && !options.namespace && !options.remove) {
         return code;
     }
 
-    let add = options.add ? new Set(options.add) : null,
-        found = imports.find(file, pkg),
-        remove = options.remove ? new Set(options.remove) : null;
+    let { namespace } = options,
+        add = options.add ? new Set(options.add) : null,
+        found = imports.find(file, pkg);
 
     if (found.length === 0) {
         let statements: string[] = [];
@@ -114,8 +110,9 @@ function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyO
         return statements.join('\n') + '\n' + code;
     }
 
-    // Collect all non-removed specifiers from existing imports
-    let specifiers = new Set<string>();
+    let remove = options.remove ? new Set(options.remove) : null,
+        // Collect all non-removed specifiers from existing imports
+        specifiers = new Set<string>();
 
     for (let i = 0, n = found.length; i < n; i++) {
         for (let [name, alias] of found[i].specifiers) {
