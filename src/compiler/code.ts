@@ -7,9 +7,13 @@ const code = (literals: TemplateStringsArray, ...values: unknown[]): string => {
     for (let i = 0, n = literals.length; i < n; i++) {
         buffer += literals[i];
 
-        if (values[i] !== undefined) {
-            buffer += values[i];
+        let value = values[i];
+
+        if (value == null || value === false) {
+            value = '';
         }
+
+        buffer += value;
     }
 
     return buffer;
