@@ -52,21 +52,8 @@ const find = (sourceFile: ts.SourceFile, packageName: string): ImportInfo[] => {
     return imports;
 };
 
-// Check if identifier traces back to a specific package
-const isFromPackage = (node: ts.Identifier, packageName: string, checker?: ts.TypeChecker): boolean => {
-    if (!checker) {
-        return true;
-    }
-
-    let origin = trace(node, checker);
-
-    // If can't resolve symbol (e.g., sourceFile not in program), assume valid
-    // False positives cause compile errors; false negatives silently skip transforms
-    return origin === null || origin.includes(packageName);
-};
-
 // Check if node's symbol originates from a specific package (with optional symbol name validation)
-const isSymbolFromPackage = (
+const isFromPackage = (
     checker: ts.TypeChecker,
     node: ts.Node,
     packageName: string,
@@ -204,5 +191,5 @@ const trace = (node: ts.Identifier, checker: ts.TypeChecker): string | null => {
 };
 
 
-export default { find, isFromPackage, isSymbolFromPackage, modify, trace };
+export default { find, isFromPackage, modify, trace };
 export type { ImportInfo, ModifyOptions };
