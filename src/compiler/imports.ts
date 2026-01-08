@@ -14,12 +14,15 @@ type ModifyOptions = {
 };
 
 
+let cache = new WeakMap<ts.SourceFile, Map<string, Set<string>>>();
+
+
 // Find all named imports from a specific package
-const find = (sourceFile: ts.SourceFile, packageName: string): ImportInfo[] => {
+const all = (file: ts.SourceFile, pkg: string): ImportInfo[] => {
     let imports: ImportInfo[] = [];
 
-    for (let i = 0, n = sourceFile.statements.length; i < n; i++) {
-        let stmt = sourceFile.statements[i];
+    for (let i = 0, n = file.statements.length; i < n; i++) {
+        let stmt = file.statements[i];
 
         if (!ts.isImportDeclaration(stmt)) {
             continue;
@@ -27,7 +30,7 @@ const find = (sourceFile: ts.SourceFile, packageName: string): ImportInfo[] => {
 
         let moduleSpecifier = stmt.moduleSpecifier;
 
-        if (!ts.isStringLiteral(moduleSpecifier) || moduleSpecifier.text !== packageName) {
+        if (!ts.isStringLiteral(moduleSpecifier) || moduleSpecifier.text !== pkg) {
             continue;
         }
 
@@ -44,32 +47,46 @@ const find = (sourceFile: ts.SourceFile, packageName: string): ImportInfo[] => {
             }
         }
 
-        imports.push({ end: stmt.end, specifiers, start: stmt.getStart(sourceFile) });
+        imports.push({ end: stmt.end, specifiers, start: stmt.getStart(file) });
     }
 
     return imports;
 };
 
 // Check if node's symbol originates from a specific package (with optional symbol name validation)
-const inPackage = (
-    checker: ts.TypeChecker,
-    node: ts.Node,
-    pkg: string,
-    symbolName?: string,
-    packageImports?: Set<string>
-): boolean => {
-    // Fast path: identifier matches known import and expected name
-    if (packageImports && ts.isIdentifier(node) && packageImports.has(node.text)) {
-        if (!symbolName || node.text === symbolName) {
-            return true;
+const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolName?: string): boolean => {
+    let file = node.getSourceFile(),
+        imports = cache.get(file);
+
+    if (!imports) {
+        imports = new Map();
+        cache.set(file, imports);
+    }
+
+    let varnames = imports.get(pkg);
+
+    if (!varnames) {
+        varnames = new Set();
+
+        for (let info of all(file, pkg)) {
+            for (let [, varname] of info.specifiers) {
+                varnames.add(varname);
+            }
         }
+
+        imports.set(pkg, varnames);
+    }
+
+    // Fast path: identifier matches known import and expected name
+    if (ts.isIdentifier(node) && varnames.has(node.text) && (!symbolName || node.text === symbolName)) {
+        return true;
     }
 
     let symbol = checker.getSymbolAtLocation(node);
 
     if (!symbol) {
         // Fallback: aliased import - check if local name is in imports
-        if (packageImports && ts.isIdentifier(node) && packageImports.has(node.text)) {
+        if (ts.isIdentifier(node) && varnames.has(node.text)) {
             return true;
         }
 
@@ -83,13 +100,13 @@ const inPackage = (
 
     // Check symbol name if specified
     if (symbolName && symbol.name !== symbolName) {
-        return packageImports ? ts.isIdentifier(node) && packageImports.has(node.text) : false;
+        return ts.isIdentifier(node) && varnames.has(node.text);
     }
 
     let declarations = symbol.getDeclarations();
 
     if (!declarations || declarations.length === 0) {
-        return packageImports ? ts.isIdentifier(node) && packageImports.has(node.text) : false;
+        return ts.isIdentifier(node) && varnames.has(node.text);
     }
 
     // Check if any declaration is from the expected package
@@ -99,9 +116,9 @@ const inPackage = (
         }
     }
 
-    return packageImports ? ts.isIdentifier(node) && packageImports.has(node.text) : false;
+    return ts.isIdentifier(node) && varnames.has(node.text);
 };
 
 
-export default { find, inPackage };
+export default { all, includes };
 export type { ImportInfo, ModifyOptions };

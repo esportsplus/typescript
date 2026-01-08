@@ -90,7 +90,7 @@ function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyO
 
     let { namespace } = options,
         add = options.add ? new Set(options.add) : null,
-        found = imports.find(file, pkg);
+        found = imports.all(file, pkg);
 
     if (found.length === 0) {
         let statements: string[] = [];
@@ -187,9 +187,8 @@ const transform = (
         return { changed: false, code, sourceFile: file };
     }
 
-    let changed = false,
-        currentCode = code,
-        currentSourceFile = file;
+    let currentCode = code,
+        currentFile = file;
 
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
@@ -198,56 +197,50 @@ const transform = (
             continue;
         }
 
-        let result = plugin.transform({
+        let { imports, prepend, replacements } = plugin.transform({
                 checker: program.getTypeChecker(),
                 code: currentCode,
                 program,
                 shared,
-                sourceFile: currentSourceFile
+                sourceFile: currentFile
             });
 
-        let hasChanges = (result.imports && result.imports.length > 0) ||
-            (result.prepend && result.prepend.length > 0) ||
-            (result.replacements && result.replacements.length > 0);
-
-        if (!hasChanges) {
-            continue;
-        }
-
-        changed = true;
-
-        if (result.replacements && result.replacements.length > 0) {
-            currentCode = applyIntents(currentCode, currentSourceFile, result.replacements);
-            currentSourceFile = ts.createSourceFile(
-                currentSourceFile.fileName,
+        if (replacements?.length) {
+            currentCode = applyIntents(currentCode, currentFile, replacements);
+            currentFile = ts.createSourceFile(
+                currentFile.fileName,
                 currentCode,
-                currentSourceFile.languageVersion,
+                currentFile.languageVersion,
                 true
             );
         }
 
-        if (result.prepend && result.prepend.length > 0) {
-            currentCode = applyPrepend(currentCode, currentSourceFile, result.prepend);
-            currentSourceFile = ts.createSourceFile(
-                currentSourceFile.fileName,
+        if (prepend?.length) {
+            currentCode = applyPrepend(currentCode, currentFile, prepend);
+            currentFile = ts.createSourceFile(
+                currentFile.fileName,
                 currentCode,
-                currentSourceFile.languageVersion,
+                currentFile.languageVersion,
                 true
             );
         }
 
-        if (result.imports && result.imports.length > 0) {
-            currentCode = applyImports(currentCode, currentSourceFile, result.imports);
-            currentSourceFile = ts.createSourceFile(
-                currentSourceFile.fileName,
+        if (imports?.length) {
+            currentCode = applyImports(currentCode, currentFile, imports);
+            currentFile = ts.createSourceFile(
+                currentFile.fileName,
                 currentCode,
-                currentSourceFile.languageVersion,
+                currentFile.languageVersion,
                 true
             );
         }
     }
 
-    return { changed, code: currentCode, sourceFile: currentSourceFile };
+    return {
+        changed: currentCode !== code,
+        code: currentCode,
+        sourceFile: currentFile
+    };
 };
 
 
