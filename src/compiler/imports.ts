@@ -63,60 +63,75 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
         cache.set(file, imports);
     }
 
-    let varnames = imports.get(pkg);
+    let names = imports.get(pkg);
 
-    if (!varnames) {
-        varnames = new Set();
+    if (!names) {
+        names = new Set();
 
-        for (let info of all(file, pkg)) {
-            for (let [, varname] of info.specifiers) {
-                varnames.add(varname);
+        let packages = all(file, pkg);
+
+        for (let i = 0, n = packages.length; i < n; i++) {
+            for (let [, localName] of packages[i].specifiers) {
+                names.add(localName);
             }
         }
 
-        imports.set(pkg, varnames);
+        imports.set(pkg, names);
     }
 
-    // Fast path: identifier matches known import and expected name
-    if (ts.isIdentifier(node) && varnames.has(node.text) && (!symbolName || node.text === symbolName)) {
-        return true;
-    }
-
-    let symbol = checker.getSymbolAtLocation(node);
-
-    if (!symbol) {
-        // Fallback: aliased import - check if local name is in imports
-        if (ts.isIdentifier(node) && varnames.has(node.text)) {
-            return true;
-        }
-
+    // If no imports from this package, definitely not from it
+    if (names.size === 0) {
         return false;
     }
 
-    // Follow aliases to original symbol (handles re-exports and aliased imports)
-    if (symbol.flags & ts.SymbolFlags.Alias) {
-        symbol = checker.getAliasedSymbol(symbol);
-    }
-
-    // Check symbol name if specified
-    if (symbolName && symbol.name !== symbolName) {
-        return ts.isIdentifier(node) && varnames.has(node.text);
-    }
-
-    let declarations = symbol.getDeclarations();
-
-    if (!declarations || declarations.length === 0) {
-        return ts.isIdentifier(node) && varnames.has(node.text);
-    }
-
-    // Check if any declaration is from the expected package
-    for (let i = 0, n = declarations.length; i < n; i++) {
-        if (declarations[i].getSourceFile().fileName.includes(pkg)) {
-            return true;
+    // For identifiers, check if name matches an import AND verify via symbol
+    if (ts.isIdentifier(node)) {
+        if (!names.has(node.text)) {
+            return false;
         }
+
+        if (symbolName && node.text !== symbolName) {
+            return false;
+        }
+
+        // Try to verify via checker that this identifier refers to the import
+        let symbol = checker.getSymbolAtLocation(node);
+
+        if (symbol) {
+            // Check if the symbol's declaration is an import specifier from this package
+            let declarations = symbol.getDeclarations();
+
+            if (declarations && declarations.length > 0) {
+                for (let i = 0, n = declarations.length; i < n; i++) {
+                    let decl = declarations[i];
+
+                    // If declaration is an ImportSpecifier, check the import's module
+                    if (ts.isImportSpecifier(decl)) {
+                        let importDecl = decl.parent?.parent?.parent;
+
+                        if (importDecl && ts.isImportDeclaration(importDecl) && ts.isStringLiteral(importDecl.moduleSpecifier)) {
+                            if (importDecl.moduleSpecifier.text === pkg) {
+                                return true;
+                            }
+                        }
+                    }
+
+                    // Also check if declaration is from a file in the package
+                    if (decl.getSourceFile().fileName.includes(pkg)) {
+                        return true;
+                    }
+                }
+
+                // Symbol resolved but doesn't match package - it's shadowed
+                return false;
+            }
+        }
+
+        // Checker couldn't resolve - trust the name match if it's in import list
+        return true;
     }
 
-    return ts.isIdentifier(node) && varnames.has(node.text);
+    return false;
 };
 
 
