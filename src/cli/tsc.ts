@@ -5,6 +5,7 @@ import path from 'path';
 import ts from 'typescript';
 import coordinator from '~/compiler/coordinator';
 import type { Plugin, SharedContext } from '~/compiler/types';
+import { PACKAGE_NAME } from '~/constants';
 
 
 type PluginConfig = {
@@ -109,6 +110,10 @@ async function build(config: object, tsconfig: string, pluginConfigs: PluginConf
     return runTscAlias(process.argv.slice(2)).then((code) => process.exit(code));
 }
 
+function isPlugin(value: unknown): value is Plugin {
+    return typeof value === 'object' && value !== null && 'transform' in value && typeof (value as Plugin).transform === 'function';
+}
+
 async function loadPlugins(configs: PluginConfig[], root: string): Promise<Plugin[]> {
     let plugins: Plugin[] = [],
         promises: Promise<void>[] = [];
@@ -132,8 +137,21 @@ async function loadPlugins(configs: PluginConfig[], root: string): Promise<Plugi
                     plugin = plugin();
                 }
 
-                if (!plugin || typeof plugin.transform !== 'function') {
-                    console.error(`Plugin ${config.transform}: invalid plugin format, expected { transform: Function }`);
+                if (Array.isArray(plugin)) {
+                    for (let j = 0, m = plugin.length; j < m; j++) {
+                        if (isPlugin(plugin[j])) {
+                            plugins.push(plugin[j]);
+                        }
+                        else {
+                            console.error(`${PACKAGE_NAME}: plugin ${config.transform}[${j}] uses an invalid plugin format`);
+                        }
+                    }
+
+                    return;
+                }
+
+                if (!isPlugin(plugin)) {
+                    console.error(`${PACKAGE_NAME}: plugin ${config.transform} uses an invalid plugin format, expected { transform: Function } or Plugin[]`);
                     return;
                 }
 
@@ -168,10 +186,10 @@ function main(): void {
         return passthrough();
     }
 
-    console.log(`Found ${pluginConfigs.length} transformer plugin(s), using coordinated build...`);
+    console.log(`${PACKAGE_NAME}: found ${pluginConfigs.length} transformer plugin(s), using coordinated build...`);
 
     build(config, tsconfig, pluginConfigs).catch((err) => {
-        console.error(err);
+        console.error(`${PACKAGE_NAME}: ${err}`);
         process.exit(1);
     });
 }

@@ -1,5 +1,6 @@
 import path from 'path';
 import ts from 'typescript';
+import { PACKAGE_NAME } from '~/constants';
 
 
 let cache = new Map<string, ts.Program>();
@@ -15,7 +16,7 @@ function create(root: string): ts.Program {
     let file = ts.readConfigFile(tsconfig, ts.sys.readFile);
 
     if (file.error) {
-        throw new Error(`Error reading tsconfig.json: ${file.error.messageText}`);
+        throw new Error(`${PACKAGE_NAME}: error reading tsconfig.json ${file.error.messageText}`);
     }
 
     let parsed = ts.parseJsonConfigFileContent(
@@ -25,7 +26,7 @@ function create(root: string): ts.Program {
         );
 
     if (parsed.errors.length > 0) {
-        throw new Error(`Error parsing tsconfig.json: ${parsed.errors[0].messageText}`);
+        throw new Error(`${PACKAGE_NAME}: error parsing tsconfig.json ${parsed.errors[0].messageText}`);
     }
 
     return ts.createProgram({
