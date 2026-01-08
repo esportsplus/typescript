@@ -33,7 +33,7 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                 root ??= (config as ResolvedConfig).root;
             },
             enforce: 'pre',
-            name: `${name}/plugin-vite`,
+            name: `${name}/compiler/vite`,
             transform(code: string, id: string) {
                 if (!FILE_REGEX.test(id) || id.includes('node_modules')) {
                     return null;
