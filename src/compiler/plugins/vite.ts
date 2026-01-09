@@ -22,6 +22,8 @@ type VitePluginOptions = {
 
 const FILE_REGEX = /\.[tj]sx?$/;
 
+const DIRECTORY_SEPARATOR_REGEX = /\\/g;
+
 
 let contexts = new Map<string, SharedContext>();
 
@@ -40,11 +42,18 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                 }
 
                 try {
+                    let prog = program.get(root || ''),
+                        sourceFile = prog.getSourceFile(id.replace(DIRECTORY_SEPARATOR_REGEX, '/')) || prog.getSourceFile(id);
+
+                    if (!sourceFile || sourceFile.getText() !== code) {
+                        sourceFile = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
+                    }
+
                     let result = coordinator.transform(
                             plugins,
                             code,
-                            ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true),
-                            program.get(root || ''),
+                            sourceFile,
+                            prog,
                             contexts.get(root || '') ?? contexts.set(root || '', new Map()).get(root || '')!
                         );
 
