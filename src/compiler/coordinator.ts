@@ -10,9 +10,6 @@ type CoordinatorResult = {
 };
 
 
-const DIRECTORY_SEPARATOR = /\\/g;
-
-
 function applyImports(code: string, file: ts.SourceFile, intents: ImportIntent[]): string {
     for (let i = 0, n = intents.length; i < n; i++) {
         let intent = intents[i];
@@ -76,51 +73,6 @@ function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): str
     return code.slice(0, position) + prepend.join('\n') + code.slice(position);
 }
 
-function createUpdatedProgram(
-    originalProgram: ts.Program,
-    fileName: string,
-    newCode: string
-): ts.Program {
-    let options = originalProgram.getCompilerOptions(),
-        originalHost = ts.createCompilerHost(options),
-        originalGetSourceFile = originalHost.getSourceFile.bind(originalHost),
-        originalReadFile = originalHost.readFile.bind(originalHost);
-
-    originalHost.getSourceFile = (
-        name: string,
-        languageVersion: ts.ScriptTarget,
-        onError?: (message: string) => void,
-        shouldCreateNewSourceFile?: boolean
-    ): ts.SourceFile | undefined => {
-        if (
-            name === fileName ||
-            name.replace(DIRECTORY_SEPARATOR, '/') === fileName.replace(DIRECTORY_SEPARATOR, '/')
-        ) {
-            return ts.createSourceFile(name, newCode, languageVersion, true);
-        }
-
-        return originalGetSourceFile(name, languageVersion, onError, shouldCreateNewSourceFile);
-    };
-
-    originalHost.readFile = (name: string): string | undefined => {
-        if (
-            name === fileName ||
-            name.replace(DIRECTORY_SEPARATOR, '/') === fileName.replace(DIRECTORY_SEPARATOR, '/')
-        ) {
-            return newCode;
-        }
-
-        return originalReadFile(name);
-    };
-
-    return ts.createProgram(
-        originalProgram.getRootFileNames(),
-        options,
-        originalHost,
-        originalProgram
-    );
-}
-
 function hasPattern(code: string, patterns: string[]): boolean {
     for (let i = 0, n = patterns.length; i < n; i++) {
         if (code.indexOf(patterns[i]) !== -1) {
@@ -159,7 +111,6 @@ function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyO
     }
 
     let remove = options.remove ? new Set(options.remove) : null,
-        // Collect all non-removed specifiers from existing imports
         specifiers = new Set<string>();
 
     for (let i = 0, n = found.length; i < n; i++) {
@@ -176,7 +127,6 @@ function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyO
         }
     }
 
-    // Build replacement text - namespace import first, then named imports
     let statements: string[] = [];
 
     if (namespace) {
@@ -187,7 +137,6 @@ function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyO
         statements.push(`import { ${[...specifiers].sort().join(', ')} } from '${pkg}';`);
     }
 
-    // Build replacements - replace first import, remove others
     let replacements: Replacement[] = [];
 
     for (let i = 0, n = found.length; i < n; i++) {
@@ -222,7 +171,8 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
 
 /**
  * Transform source through all plugins sequentially.
- * Each plugin receives fresh AST and TypeChecker with accurate positions.
+ * Each plugin receives fresh AST with accurate positions.
+ * All plugins share the original program type checker for import resolution.
  */
 const transform = (
     plugins: Plugin[],
@@ -235,11 +185,10 @@ const transform = (
         return { changed: false, code, sourceFile: file };
     }
 
-    let currentCode = code,
+    let checker = program.getTypeChecker(),
+        currentCode = code,
         currentFile = file,
-        currentProgram = program,
-        fileName = file.fileName,
-        transformed = false;
+        fileName = file.fileName;
 
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
@@ -249,14 +198,12 @@ const transform = (
         }
 
         let { imports, prepend, replacements } = plugin.transform({
-                checker: currentProgram.getTypeChecker(),
+                checker,
                 code: currentCode,
-                program: currentProgram,
+                program,
                 shared,
                 sourceFile: currentFile
             });
-
-        let pluginChanged = false;
 
         if (replacements?.length) {
             currentCode = applyIntents(currentCode, currentFile, replacements);
@@ -266,7 +213,6 @@ const transform = (
                 currentFile.languageVersion,
                 true
             );
-            pluginChanged = true;
         }
 
         if (prepend?.length) {
@@ -277,7 +223,6 @@ const transform = (
                 currentFile.languageVersion,
                 true
             );
-            pluginChanged = true;
         }
 
         if (imports?.length) {
@@ -288,18 +233,11 @@ const transform = (
                 currentFile.languageVersion,
                 true
             );
-            pluginChanged = true;
-        }
-
-        // Rebuild program with updated source so next plugin gets valid checker
-        if (pluginChanged) {
-            transformed = true;
-            currentProgram = createUpdatedProgram(currentProgram, fileName, currentCode);
         }
     }
 
     return {
-        changed: transformed,
+        changed: currentCode !== code,
         code: currentCode,
         sourceFile: currentFile
     };
