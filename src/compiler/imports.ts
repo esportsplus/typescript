@@ -89,7 +89,7 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
 
     // Fast path: direct import from package
     if (names.has(node.text)) {
-        let symbol = checker?.getSymbolAtLocation(node);
+        let symbol = checker.getSymbolAtLocation(node);
 
         if (symbol) {
             let declarations = symbol.getDeclarations();
@@ -120,7 +120,7 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
     }
 
     // Slow path: check for re-exports via aliased symbol
-    let symbol = checker?.getSymbolAtLocation(node);
+    let symbol = checker.getSymbolAtLocation(node);
 
     if (!symbol) {
         return false;
