@@ -73,6 +73,28 @@ function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): str
     return code.slice(0, position) + prepend.join('\n') + code.slice(position);
 }
 
+function createPatchedProgram(baseProgram: ts.Program, fileName: string, newContent: string) {
+    let baseHost = ts.createCompilerHost(baseProgram.getCompilerOptions()),
+        options = baseProgram.getCompilerOptions();
+
+    return ts.createProgram(
+        baseProgram.getRootFileNames(),
+        options,
+        {
+            ...baseHost,
+            getSourceFile: (name, languageVersion) => {
+                if (name === fileName || name === fileName.replace(/\\/g, '/')) {
+                    return ts.createSourceFile(name, newContent, languageVersion, true);
+                }
+                return baseProgram.getSourceFile(name) ?? baseHost.getSourceFile(name, languageVersion);
+            },
+            fileExists: (name) => baseHost.fileExists(name),
+            readFile: (name) => name === fileName ? newContent : baseHost.readFile(name)
+        },
+        baseProgram
+    );
+}
+
 function hasPattern(code: string, patterns: string[]): boolean {
     for (let i = 0, n = patterns.length; i < n; i++) {
         if (code.indexOf(patterns[i]) !== -1) {
@@ -148,7 +170,7 @@ function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyO
     }
 
     return replaceReverse(code, replacements);
-};
+}
 
 function replaceReverse(code: string, replacements: Replacement[]): string {
     if (replacements.length === 0) {
@@ -166,8 +188,7 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
     }
 
     return result;
-};
-
+}
 
 const transform = (
     plugins: Plugin[],
@@ -180,88 +201,58 @@ const transform = (
         return { changed: false, code, sourceFile: file };
     }
 
-    let allImports = [],
-        allPrepend = [],
-        allReplacements = [],
-        checker = program.getTypeChecker(),
-        fileName = file.fileName,
-        // Keep original source file for symbol resolution - checker operations
-        // require nodes from a file that's part of the program's module graph
-        originalFile = file;
+    let changed = false,
+        currentCode = code,
+        currentFile = file,
+        currentProgram = program,
+        fileName = file.fileName;
 
-    // Phase 1: Collect intents from all plugins using original source file
-    // This ensures checker.getSymbolAtLocation() and getAliasedSymbol() work
-    // correctly for re-exports and module resolution
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
 
-        if (plugin.patterns && !hasPattern(code, plugin.patterns)) {
+        if (plugin.patterns && !hasPattern(currentCode, plugin.patterns)) {
             continue;
         }
 
         let { imports, prepend, replacements } = plugin.transform({
-            checker,
-            code,
-            program,
-            shared,
-            sourceFile: originalFile
-        });
+                checker: currentProgram.getTypeChecker(),
+                code: currentCode,
+                program: currentProgram,
+                shared,
+                sourceFile: currentFile
+            }),
+            pluginChanged = false;
 
         if (replacements?.length) {
-            allReplacements.push(...replacements);
+            currentCode = applyIntents(currentCode, currentFile, replacements);
+            pluginChanged = true;
         }
 
         if (prepend?.length) {
-            allPrepend.push(...prepend);
+            currentCode = applyPrepend(currentCode, currentFile, prepend);
+            pluginChanged = true;
         }
 
         if (imports?.length) {
-            allImports.push(...imports);
+            currentCode = applyImports(currentCode, currentFile, imports);
+            pluginChanged = true;
         }
-    }
 
-    // Phase 2: Apply all collected intents
-    let currentCode = code,
-        currentFile = originalFile;
-
-    if (allReplacements.length > 0) {
-        // Sort by start position to detect overlaps
-        allReplacements.sort((a, b) => a.node.getStart(originalFile) - b.node.getStart(originalFile));
-
-        // Check for overlapping replacements
-        for (let i = 1, n = allReplacements.length; i < n; i++) {
-            let prev = allReplacements[i - 1],
-                curr = allReplacements[i],
-                prevEnd = prev.node.end,
-                currStart = curr.node.getStart(originalFile);
-
-            if (currStart < prevEnd) {
-                console.warn(
-                    `[coordinator] Overlapping replacements detected at ${fileName}:`,
-                    `[${prev.node.getStart(originalFile)}-${prevEnd}] overlaps [${currStart}-${curr.node.end}]`
-                );
+        if (pluginChanged) {
+            changed = true;
+            // Create patched program for next plugin
+            if (i < n - 1) {
+                currentProgram = createPatchedProgram(program, fileName, currentCode);
+                currentFile = currentProgram.getSourceFile(fileName) ||
+                    ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
+            }
+            else {
+                currentFile = ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
             }
         }
-
-        currentCode = applyIntents(currentCode, currentFile, allReplacements);
-        currentFile = ts.createSourceFile(fileName, currentCode, currentFile.languageVersion, true);
     }
 
-    if (allPrepend.length > 0) {
-        currentCode = applyPrepend(currentCode, currentFile, allPrepend);
-        currentFile = ts.createSourceFile(fileName, currentCode, currentFile.languageVersion, true);
-    }
-
-    if (allImports.length > 0) {
-        currentCode = applyImports(currentCode, currentFile, allImports);
-        currentFile = ts.createSourceFile(fileName, currentCode, currentFile.languageVersion, true);
-    }
-
-    return {
-        changed: currentCode !== code,
-        code: currentCode,
-        sourceFile: currentFile
-    };
+    return { changed, code: currentCode, sourceFile: currentFile };
 };
 
 
