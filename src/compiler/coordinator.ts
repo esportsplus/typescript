@@ -169,71 +169,92 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
 };
 
 
-/**
- * Transform source through all plugins sequentially.
- * Each plugin receives fresh AST with accurate positions.
- * All plugins share the original program type checker for import resolution.
- */
 const transform = (
     plugins: Plugin[],
     code: string,
     file: ts.SourceFile,
     program: ts.Program,
     shared: SharedContext
-): CoordinatorResult => {
+) => {
     if (plugins.length === 0) {
         return { changed: false, code, sourceFile: file };
     }
 
-    let checker = program.getTypeChecker(),
-        currentCode = code,
-        currentFile = file,
-        fileName = file.fileName;
+    let allImports = [],
+        allPrepend = [],
+        allReplacements = [],
+        checker = program.getTypeChecker(),
+        fileName = file.fileName,
+        // Keep original source file for symbol resolution - checker operations
+        // require nodes from a file that's part of the program's module graph
+        originalFile = file;
 
+    // Phase 1: Collect intents from all plugins using original source file
+    // This ensures checker.getSymbolAtLocation() and getAliasedSymbol() work
+    // correctly for re-exports and module resolution
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
 
-        if (plugin.patterns && !hasPattern(currentCode, plugin.patterns)) {
+        if (plugin.patterns && !hasPattern(code, plugin.patterns)) {
             continue;
         }
 
         let { imports, prepend, replacements } = plugin.transform({
-                checker,
-                code: currentCode,
-                program,
-                shared,
-                sourceFile: currentFile
-            });
+            checker,
+            code,
+            program,
+            shared,
+            sourceFile: originalFile
+        });
 
         if (replacements?.length) {
-            currentCode = applyIntents(currentCode, currentFile, replacements);
-            currentFile = ts.createSourceFile(
-                fileName,
-                currentCode,
-                currentFile.languageVersion,
-                true
-            );
+            allReplacements.push(...replacements);
         }
 
         if (prepend?.length) {
-            currentCode = applyPrepend(currentCode, currentFile, prepend);
-            currentFile = ts.createSourceFile(
-                fileName,
-                currentCode,
-                currentFile.languageVersion,
-                true
-            );
+            allPrepend.push(...prepend);
         }
 
         if (imports?.length) {
-            currentCode = applyImports(currentCode, currentFile, imports);
-            currentFile = ts.createSourceFile(
-                fileName,
-                currentCode,
-                currentFile.languageVersion,
-                true
-            );
+            allImports.push(...imports);
         }
+    }
+
+    // Phase 2: Apply all collected intents
+    let currentCode = code,
+        currentFile = originalFile;
+
+    if (allReplacements.length > 0) {
+        // Sort by start position to detect overlaps
+        allReplacements.sort((a, b) => a.node.getStart(originalFile) - b.node.getStart(originalFile));
+
+        // Check for overlapping replacements
+        for (let i = 1, n = allReplacements.length; i < n; i++) {
+            let prev = allReplacements[i - 1],
+                curr = allReplacements[i],
+                prevEnd = prev.node.end,
+                currStart = curr.node.getStart(originalFile);
+
+            if (currStart < prevEnd) {
+                console.warn(
+                    `[coordinator] Overlapping replacements detected at ${fileName}:`,
+                    `[${prev.node.getStart(originalFile)}-${prevEnd}] overlaps [${currStart}-${curr.node.end}]`
+                );
+            }
+        }
+
+        currentCode = applyIntents(currentCode, currentFile, allReplacements);
+        currentFile = ts.createSourceFile(fileName, currentCode, currentFile.languageVersion, true);
+    }
+
+    if (allPrepend.length > 0) {
+        currentCode = applyPrepend(currentCode, currentFile, allPrepend);
+        currentFile = ts.createSourceFile(fileName, currentCode, currentFile.languageVersion, true);
+    }
+
+    if (allImports.length > 0) {
+        currentCode = applyImports(currentCode, currentFile, allImports);
+        currentFile = ts.createSourceFile(fileName, currentCode, currentFile.languageVersion, true);
     }
 
     return {

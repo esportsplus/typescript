@@ -24,6 +24,8 @@ const FILE_REGEX = /\.[tj]sx?$/;
 
 const DIRECTORY_SEPARATOR_REGEX = /\\/g;
 
+const LINE_ENDINGS_REGEX = /\r\n/g;
+
 
 let contexts = new Map<string, SharedContext>();
 
@@ -45,7 +47,10 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                     let prog = program.get(root || ''),
                         sourceFile = prog.getSourceFile(id.replace(DIRECTORY_SEPARATOR_REGEX, '/')) || prog.getSourceFile(id);
 
-                    if (!sourceFile || sourceFile.getText() !== code) {
+                    if (
+                        !sourceFile ||
+                        sourceFile.getText().replace(LINE_ENDINGS_REGEX, '\n') !== code.replace(LINE_ENDINGS_REGEX, '\n')
+                    ) {
                         sourceFile = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
                     }
 
