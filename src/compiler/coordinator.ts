@@ -73,28 +73,6 @@ function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): str
     return code.slice(0, position) + prepend.join('\n') + code.slice(position);
 }
 
-function createPatchedProgram(baseProgram: ts.Program, fileName: string, newContent: string) {
-    let baseHost = ts.createCompilerHost(baseProgram.getCompilerOptions()),
-        options = baseProgram.getCompilerOptions();
-
-    return ts.createProgram(
-        baseProgram.getRootFileNames(),
-        options,
-        {
-            ...baseHost,
-            getSourceFile: (name, languageVersion) => {
-                if (name === fileName || name === fileName.replace(/\\/g, '/')) {
-                    return ts.createSourceFile(name, newContent, languageVersion, true);
-                }
-                return baseProgram.getSourceFile(name) ?? baseHost.getSourceFile(name, languageVersion);
-            },
-            fileExists: (name) => baseHost.fileExists(name),
-            readFile: (name) => name === fileName ? newContent : baseHost.readFile(name)
-        },
-        baseProgram
-    );
-}
-
 function hasPattern(code: string, patterns: string[]): boolean {
     for (let i = 0, n = patterns.length; i < n; i++) {
         if (code.indexOf(patterns[i]) !== -1) {
@@ -190,6 +168,29 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
     return result;
 }
 
+
+const createPatchedProgram = (baseProgram: ts.Program, fileName: string, newContent: string) => {
+    let baseHost = ts.createCompilerHost(baseProgram.getCompilerOptions()),
+        options = baseProgram.getCompilerOptions();
+
+    return ts.createProgram(
+        baseProgram.getRootFileNames(),
+        options,
+        {
+            ...baseHost,
+            getSourceFile: (name, languageVersion) => {
+                if (name === fileName || name === fileName.replace(/\\/g, '/')) {
+                    return ts.createSourceFile(name, newContent, languageVersion, true);
+                }
+                return baseProgram.getSourceFile(name) ?? baseHost.getSourceFile(name, languageVersion);
+            },
+            fileExists: (name) => baseHost.fileExists(name),
+            readFile: (name) => name === fileName ? newContent : baseHost.readFile(name)
+        },
+        baseProgram
+    );
+};
+
 const transform = (
     plugins: Plugin[],
     code: string,
@@ -256,5 +257,5 @@ const transform = (
 };
 
 
-export default { transform };
+export default { createPatchedProgram, transform };
 export type { CoordinatorResult };

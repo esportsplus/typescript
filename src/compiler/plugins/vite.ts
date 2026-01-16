@@ -44,14 +44,18 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                 }
 
                 try {
-                    let prog = program.get(root || ''),
-                        sourceFile = prog.getSourceFile(id.replace(DIRECTORY_SEPARATOR_REGEX, '/')) || prog.getSourceFile(id);
+                    let normalizedId = id.replace(DIRECTORY_SEPARATOR_REGEX, '/'),
+                        prog = program.get(root || ''),
+                        sourceFile = prog.getSourceFile(normalizedId) || prog.getSourceFile(id);
 
-                    if (
-                        !sourceFile ||
-                        sourceFile.getText().replace(LINE_ENDINGS_REGEX, '\n') !== code.replace(LINE_ENDINGS_REGEX, '\n')
-                    ) {
-                        sourceFile = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
+                    // Check if file content matches (existing file may have changed)
+                    if (sourceFile && sourceFile.getText().replace(LINE_ENDINGS_REGEX, '\n') !== code.replace(LINE_ENDINGS_REGEX, '\n')) {
+                        sourceFile = undefined;
+                    }
+
+                    if (!sourceFile) {
+                        prog = coordinator.createPatchedProgram(prog, normalizedId, code);
+                        sourceFile = prog.getSourceFile(normalizedId) || ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
                     }
 
                     let result = coordinator.transform(
