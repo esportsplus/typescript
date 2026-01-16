@@ -1,6 +1,7 @@
 import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
 import { ts } from '~/index';
 import imports, { ModifyOptions } from './imports';
+import languageService from './language-service';
 
 
 type CoordinatorResult = {
@@ -169,33 +170,12 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
 }
 
 
-const createPatchedProgram = (baseProgram: ts.Program, fileName: string, newContent: string) => {
-    let baseHost = ts.createCompilerHost(baseProgram.getCompilerOptions()),
-        options = baseProgram.getCompilerOptions();
-
-    return ts.createProgram(
-        baseProgram.getRootFileNames(),
-        options,
-        {
-            ...baseHost,
-            getSourceFile: (name, languageVersion) => {
-                if (name === fileName || name === fileName.replace(/\\/g, '/')) {
-                    return ts.createSourceFile(name, newContent, languageVersion, true);
-                }
-                return baseProgram.getSourceFile(name) ?? baseHost.getSourceFile(name, languageVersion);
-            },
-            fileExists: (name) => baseHost.fileExists(name),
-            readFile: (name) => name === fileName ? newContent : baseHost.readFile(name)
-        },
-        baseProgram
-    );
-};
-
 const transform = (
     plugins: Plugin[],
     code: string,
     file: ts.SourceFile,
     program: ts.Program,
+    root: string,
     shared: SharedContext
 ) => {
     if (plugins.length === 0) {
@@ -206,7 +186,8 @@ const transform = (
         currentCode = code,
         currentFile = file,
         currentProgram = program,
-        fileName = file.fileName;
+        fileName = file.fileName,
+        last = plugins.length - 1;
 
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
@@ -241,9 +222,9 @@ const transform = (
 
         if (pluginChanged) {
             changed = true;
-            // Create patched program for next plugin
-            if (i < n - 1) {
-                currentProgram = createPatchedProgram(program, fileName, currentCode);
+
+            if (i < last) {
+                currentProgram = languageService.update(root, fileName, currentCode);
                 currentFile = currentProgram.getSourceFile(fileName) ||
                     ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
             }
@@ -257,5 +238,5 @@ const transform = (
 };
 
 
-export default { createPatchedProgram, transform };
+export default { transform };
 export type { CoordinatorResult };

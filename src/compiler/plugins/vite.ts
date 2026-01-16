@@ -2,7 +2,7 @@ import type { ResolvedConfig } from 'vite';
 import type { Plugin, SharedContext } from '../types';
 import { ts } from '~/index';
 import coordinator from '../coordinator';
-import program from '../program';
+import languageService from '../language-service';
 
 
 type VitePlugin = {
@@ -20,11 +20,9 @@ type VitePluginOptions = {
 };
 
 
-const FILE_REGEX = /\.[tj]sx?$/;
-
 const DIRECTORY_SEPARATOR_REGEX = /\\/g;
 
-const LINE_ENDINGS_REGEX = /\r\n/g;
+const FILE_REGEX = /\.[tj]sx?$/;
 
 
 let contexts = new Map<string, SharedContext>();
@@ -45,17 +43,11 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
 
                 try {
                     let normalizedId = id.replace(DIRECTORY_SEPARATOR_REGEX, '/'),
-                        prog = program.get(root || ''),
-                        sourceFile = prog.getSourceFile(normalizedId) || prog.getSourceFile(id);
-
-                    // Check if file content matches (existing file may have changed)
-                    if (sourceFile && sourceFile.getText().replace(LINE_ENDINGS_REGEX, '\n') !== code.replace(LINE_ENDINGS_REGEX, '\n')) {
-                        sourceFile = undefined;
-                    }
+                        prog = languageService.update(root || '', normalizedId, code),
+                        sourceFile = prog.getSourceFile(normalizedId);
 
                     if (!sourceFile) {
-                        prog = coordinator.createPatchedProgram(prog, normalizedId, code);
-                        sourceFile = prog.getSourceFile(normalizedId) || ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
+                        sourceFile = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
                     }
 
                     let result = coordinator.transform(
@@ -63,6 +55,7 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                             code,
                             sourceFile,
                             prog,
+                            root || '',
                             contexts.get(root || '') ?? contexts.set(root || '', new Map()).get(root || '')!
                         );
 
@@ -81,7 +74,7 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                 if (FILE_REGEX.test(id)) {
                     onWatchChange?.();
                     contexts.delete(root || '');
-                    program.delete(root || '');
+                    languageService.invalidate(root || '', id);
                 }
             }
         };

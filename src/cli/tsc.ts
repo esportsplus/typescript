@@ -54,6 +54,7 @@ async function build(config: object, tsconfig: string, pluginConfigs: PluginConf
             sourceFile.getFullText(),
             sourceFile,
             program,
+            root,
             shared
         );
 
