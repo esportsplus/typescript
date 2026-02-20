@@ -40,4 +40,4 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: pnpm build
-      - run: pnpm publish --provenance --no-git-checks
+      - run: pnpm publish --no-git-checks
