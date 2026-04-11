@@ -1,0 +1,326 @@
+{
+  "project": "@esportsplus/typescript",
+  "version": "0.29.0",
+  "target": "src/ tests/",
+  "runs": [
+    {
+      "date": "2026-04-11",
+      "commit": "e0657fe",
+      "mode": "full",
+      "files_audited": 13,
+      "files_skipped": 0,
+      "findings_new": 2,
+      "findings_recurring": 0,
+      "sqale_rating": "A",
+      "agent_results": {
+        "correctness": { "status": "ok", "symbols": 26, "sub_targets": 1, "findings": 1 },
+        "security": { "status": "ok", "symbols": 14, "sub_targets": 1, "findings": 0 },
+        "performance": { "status": "ok", "symbols": 15, "sub_targets": 1, "findings": 1 },
+        "architecture": { "status": "ok", "symbols": 32, "sub_targets": 1, "findings": 0 },
+        "testing": { "status": "ok", "symbols": 16, "sub_targets": 1, "findings": 1 }
+      },
+      "agent_overlap": {},
+      "estimated_remaining": null
+    },
+    {
+      "date": "2026-04-11",
+      "commit": "e0657fe",
+      "mode": "incremental",
+      "files_audited": 13,
+      "files_skipped": 0,
+      "findings_new": 0,
+      "findings_recurring": 1,
+      "sqale_rating": "A",
+      "agent_results": {
+        "correctness": { "status": "ok", "symbols": 26, "sub_targets": 1, "findings": 0 },
+        "security": { "status": "ok", "symbols": 14, "sub_targets": 1, "findings": 0 },
+        "performance": { "status": "ok", "symbols": 15, "sub_targets": 1, "findings": 0 },
+        "architecture": { "status": "ok", "symbols": 32, "sub_targets": 1, "findings": 0 },
+        "testing": { "status": "ok", "symbols": 16, "sub_targets": 1, "findings": 1 }
+      },
+      "agent_overlap": {},
+      "estimated_remaining": null
+    },
+    {
+      "date": "2026-04-11",
+      "commit": "e0657fe",
+      "mode": "incremental",
+      "files_audited": 13,
+      "files_skipped": 0,
+      "findings_new": 0,
+      "findings_recurring": 0,
+      "sqale_rating": "A",
+      "agent_results": {
+        "correctness": { "status": "ok", "symbols": 26, "sub_targets": 1, "findings": 0 },
+        "security": { "status": "ok", "symbols": 14, "sub_targets": 1, "findings": 0 },
+        "performance": { "status": "ok", "symbols": 15, "sub_targets": 1, "findings": 0 },
+        "architecture": { "status": "ok", "symbols": 32, "sub_targets": 1, "findings": 0 },
+        "testing": { "status": "ok", "symbols": 16, "sub_targets": 1, "findings": 0 }
+      },
+      "agent_overlap": {},
+      "estimated_remaining": null
+    },
+    {
+      "date": "2026-04-11",
+      "commit": "59ea7a3",
+      "mode": "incremental",
+      "files_audited": 19,
+      "files_skipped": 0,
+      "findings_new": 9,
+      "findings_recurring": 1,
+      "sqale_rating": "B",
+      "agent_results": {
+        "correctness": { "status": "ok", "symbols": 26, "sub_targets": 1, "findings": 0 },
+        "security": { "status": "ok", "symbols": 14, "sub_targets": 1, "findings": 0 },
+        "performance": { "status": "ok", "symbols": 15, "sub_targets": 1, "findings": 0 },
+        "architecture": { "status": "ok", "symbols": 32, "sub_targets": 1, "findings": 2 },
+        "testing": { "status": "ok", "symbols": 35, "sub_targets": 1, "findings": 7 }
+      },
+      "agent_overlap": {},
+      "estimated_remaining": null
+    },
+    {
+      "date": "2026-04-11",
+      "commit": "59ea7a3",
+      "mode": "incremental",
+      "files_audited": 21,
+      "files_skipped": 0,
+      "findings_new": 0,
+      "findings_recurring": 0,
+      "sqale_rating": "A",
+      "agent_results": {
+        "correctness": { "status": "ok", "symbols": 24, "sub_targets": 1, "findings": 0 },
+        "security": { "status": "ok", "symbols": 14, "sub_targets": 1, "findings": 0 },
+        "performance": { "status": "ok", "symbols": 13, "sub_targets": 1, "findings": 0 },
+        "architecture": { "status": "ok", "symbols": 30, "sub_targets": 1, "findings": 0 },
+        "testing": { "status": "ok", "symbols": 35, "sub_targets": 1, "findings": 0 }
+      },
+      "agent_overlap": {},
+      "estimated_remaining": null
+    },
+    {
+      "date": "2026-04-11",
+      "commit": "59ea7a3",
+      "mode": "incremental",
+      "files_audited": 21,
+      "files_skipped": 0,
+      "findings_new": 0,
+      "findings_recurring": 0,
+      "sqale_rating": "A",
+      "agent_results": {
+        "correctness": { "status": "ok", "symbols": 24, "sub_targets": 1, "findings": 0 },
+        "security": { "status": "ok", "symbols": 14, "sub_targets": 1, "findings": 0 },
+        "performance": { "status": "ok", "symbols": 13, "sub_targets": 1, "findings": 0 },
+        "architecture": { "status": "ok", "symbols": 30, "sub_targets": 1, "findings": 0 },
+        "testing": { "status": "ok", "symbols": 35, "sub_targets": 1, "findings": 0 }
+      },
+      "agent_overlap": {},
+      "estimated_remaining": null
+    }
+  ],
+  "findings": {
+    "F-001": {
+      "status": "implemented",
+      "file": "src/compiler/coordinator.ts",
+      "symbol": "transform",
+      "category": "correctness",
+      "title": "AST Position Staleness After Code Modification",
+      "content_hash": "ast-position-staleness-coordinator-transform",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["correctness"],
+      "priority_score": 66
+    },
+    "F-002": {
+      "status": "deferred",
+      "file": "src/compiler/coordinator.ts",
+      "symbol": "applyImports",
+      "category": "optimize",
+      "title": "Redundant SourceFile Recreation in applyImports Loop",
+      "content_hash": "redundant-sourcefile-recreation-applyimports",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["performance"],
+      "priority_score": 44
+    },
+    "F-003": {
+      "status": "implemented",
+      "file": "src/",
+      "symbol": "*",
+      "category": "coverage",
+      "title": "Complete Absence of Test Infrastructure",
+      "content_hash": "missing-test-infrastructure",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["testing"],
+      "priority_score": 114
+    },
+    "F-004": {
+      "status": "implemented",
+      "file": "src/compiler/language-service.ts",
+      "symbol": "get",
+      "category": "loc",
+      "title": "languageService.get() is dead code",
+      "content_hash": "dead-code-language-service-get",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["architecture"],
+      "priority_score": 45
+    },
+    "F-005": {
+      "status": "implemented",
+      "file": "src/compiler/language-service.ts",
+      "symbol": "delete",
+      "category": "loc",
+      "title": "languageService.delete() is dead code",
+      "content_hash": "dead-code-language-service-delete",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["architecture"],
+      "priority_score": 45
+    },
+    "F-006": {
+      "status": "implemented",
+      "file": "src/compiler/language-service.ts",
+      "symbol": "*",
+      "category": "coverage",
+      "title": "language-service.ts has 0 test coverage",
+      "content_hash": "no-test-coverage-language-service",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["testing"],
+      "priority_score": 50
+    },
+    "F-007": {
+      "status": "open",
+      "file": "src/cli/tsc.ts",
+      "symbol": "*",
+      "category": "coverage",
+      "title": "cli/tsc.ts has 0 test coverage",
+      "content_hash": "no-test-coverage-cli-tsc",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["testing"],
+      "priority_score": 35
+    },
+    "F-008": {
+      "status": "implemented",
+      "file": "src/compiler/coordinator.ts",
+      "symbol": "transform",
+      "category": "test-quality",
+      "title": "coordinator plugin.transform() throw path untested",
+      "content_hash": "test-quality-coordinator-throw-path",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["testing"],
+      "priority_score": 48
+    },
+    "F-009": {
+      "status": "implemented",
+      "file": "src/compiler/coordinator.ts",
+      "symbol": "transform",
+      "category": "test-quality",
+      "title": "coordinator null sourceFile fallback path untested",
+      "content_hash": "test-quality-coordinator-null-sourcefile",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["testing"],
+      "priority_score": 48
+    },
+    "F-010": {
+      "status": "implemented",
+      "file": "src/compiler/plugins/vite.ts",
+      "symbol": "transform",
+      "category": "test-quality",
+      "title": "vite plugin error catch path untested",
+      "content_hash": "test-quality-vite-error-catch",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["testing"],
+      "priority_score": 48
+    },
+    "F-011": {
+      "status": "implemented",
+      "file": "src/compiler/plugins/vite.ts",
+      "symbol": "transform",
+      "category": "test-quality",
+      "title": "vite plugin sourceFile undefined fallback untested",
+      "content_hash": "test-quality-vite-sourcefile-fallback",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["testing"],
+      "priority_score": 45
+    },
+    "F-012": {
+      "status": "implemented",
+      "file": "src/compiler/imports.ts",
+      "symbol": "includes",
+      "category": "test-quality",
+      "title": "imports.includes() getAliasedSymbol catch block untested",
+      "content_hash": "test-quality-imports-aliased-catch",
+      "file_hash": "",
+      "first_seen": "2026-04-11",
+      "last_seen": "2026-04-11",
+      "found_by": ["testing"],
+      "priority_score": 42
+    }
+  },
+  "clean_symbols": {},
+  "convergence": {
+    "per_category": {
+      "correctness": {
+        "findings_per_run": [1, 0, 0, 0, 0, 0],
+        "successful_runs": 6,
+        "consecutive_zero": 5,
+        "last_agent_success": true,
+        "status": "CONVERGED",
+        "reason": "0 new findings on 5 consecutive successful runs"
+      },
+      "security": {
+        "findings_per_run": [0, 0, 0, 0, 0, 0],
+        "successful_runs": 6,
+        "consecutive_zero": 6,
+        "last_agent_success": true,
+        "status": "CONVERGED",
+        "reason": "0 new findings on 6 consecutive successful runs"
+      },
+      "performance": {
+        "findings_per_run": [1, 0, 0, 0, 0, 0],
+        "successful_runs": 6,
+        "consecutive_zero": 5,
+        "last_agent_success": true,
+        "status": "CONVERGED",
+        "reason": "0 new findings on 5 consecutive successful runs"
+      },
+      "architecture": {
+        "findings_per_run": [0, 0, 0, 2, 0, 0],
+        "successful_runs": 6,
+        "consecutive_zero": 2,
+        "last_agent_success": true,
+        "status": "CONVERGED",
+        "reason": "0 new findings on 2 consecutive runs after fixes"
+      },
+      "testing": {
+        "findings_per_run": [1, 1, 0, 7, 0, 0],
+        "successful_runs": 6,
+        "consecutive_zero": 2,
+        "last_agent_success": true,
+        "status": "CONVERGED",
+        "reason": "0 new findings on 2 consecutive runs after fixes"
+      }
+    },
+    "overall": "CONVERGED",
+    "reason": "all 5 categories converged with 0 findings on 2+ consecutive runs"
+  }
+}

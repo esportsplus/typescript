@@ -136,4 +136,37 @@ describe('plugin.vite', () => {
 
         expect(languageService.update).toHaveBeenCalledWith('/my/root', expect.any(String), expect.any(String));
     });
+
+    it('catches coordinator.transform() error and returns null', () => {
+        vi.mocked(coordinator.transform).mockImplementationOnce(() => {
+            throw new Error('transform failed');
+        });
+
+        let consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {}),
+            plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+        let result = plugin.transform('let x = 1;', 'src/app.ts');
+
+        expect(result).toBeNull();
+        expect(consoleSpy).toHaveBeenCalledWith(
+            expect.stringContaining('test-pkg'),
+            expect.any(Error)
+        );
+
+        consoleSpy.mockRestore();
+    });
+
+    it('falls back to createSourceFile when getSourceFile returns undefined', () => {
+        vi.mocked(languageService.update).mockReturnValueOnce({
+            getSourceFile: () => undefined,
+            getTypeChecker: () => ({} as ts.TypeChecker)
+        } as unknown as ts.Program);
+
+        let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+        let result = plugin.transform('let x = 1;', 'src/app.ts');
+
+        expect(result).toBeNull();
+        expect(coordinator.transform).toHaveBeenCalled();
+    });
 });

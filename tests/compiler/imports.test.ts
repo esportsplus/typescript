@@ -148,4 +148,20 @@ describe('imports.includes', () => {
         expect(node).toBeDefined();
         expect(imports.includes(mockChecker, node!, 'my-pkg')).toBe(false);
     });
+
+    it('returns false when getAliasedSymbol throws', () => {
+        let file = parse("import { foo } from 'my-pkg';\nbar();"),
+            node = findIdentifier(file, 'bar');
+
+        expect(node).toBeDefined();
+
+        let checker = {
+            getSymbolAtLocation: () => ({
+                getDeclarations: () => []
+            }),
+            getAliasedSymbol: () => { throw new Error('not an alias'); }
+        } as unknown as ts.TypeChecker;
+
+        expect(imports.includes(checker, node!, 'my-pkg')).toBe(false);
+    });
 });

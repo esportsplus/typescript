@@ -8,8 +8,6 @@ import coordinator from '~/compiler/coordinator';
 
 vi.mock('~/compiler/language-service', () => ({
     default: {
-        delete: vi.fn(),
-        get: vi.fn(),
         invalidate: vi.fn(),
         update: vi.fn((_root: string, fileName: string, content: string) => {
             let file = ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, true);
@@ -740,5 +738,41 @@ describe('coordinator.transform', () => {
         expect(result.code).toContain('b');
         expect(result.code).not.toMatch(/import\s*\{[^}]*a[^}]*\}\s*from\s*'pkg'/);
         expect(result.code).toContain("import { b } from 'pkg';");
+    });
+
+    it('propagates plugin.transform() exception', () => {
+        let code = 'let x = 1;',
+            file = parse(code),
+            program = makeProgram(file),
+            plugin = makePlugin(() => { throw new Error('plugin crashed'); });
+
+        expect(() => coordinator.transform([plugin], code, file, program, '/root', new Map())).toThrow('plugin crashed');
+    });
+
+    it('falls back to createSourceFile when getSourceFile returns undefined', async () => {
+        let code = 'let x = 1;',
+            file = parse(code),
+            program = makeProgram(file);
+
+        let languageService = await import('~/compiler/language-service');
+
+        vi.mocked(languageService.default.update).mockReturnValueOnce({
+            getSourceFile: () => undefined,
+            getTypeChecker: () => ({} as ts.TypeChecker)
+        } as unknown as ts.Program);
+
+        let plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
+            plugin2 = makePlugin((ctx) => {
+                if (ctx.code.includes('const A = 1;')) {
+                    return { prepend: ['const B = 2;'] };
+                }
+
+                return {};
+            }),
+            result = coordinator.transform([plugin1, plugin2], code, file, program, '/root', new Map());
+
+        expect(result.changed).toBe(true);
+        expect(result.code).toContain('const A = 1;');
+        expect(result.code).toContain('const B = 2;');
     });
 });

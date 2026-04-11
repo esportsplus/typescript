@@ -85,21 +85,6 @@ function getEntry(root: string): LanguageServiceEntry {
 }
 
 
-const del = (root: string): void => {
-    cache.delete(root);
-};
-
-const get = (root: string): ts.Program => {
-    let entry = getEntry(root),
-        program = entry.service.getProgram();
-
-    if (!program) {
-        throw new Error(`${PACKAGE_NAME}: failed to get program from language service`);
-    }
-
-    return program;
-};
-
 const invalidate = (root: string, fileName: string): void => {
     let entry = cache.get(root);
 
@@ -132,5 +117,5 @@ const update = (root: string, fileName: string, content: string): ts.Program => 
 };
 
 
-export default { delete: del, get, invalidate, update };
-export { get, invalidate, update };
+export default { invalidate, update };
+export { invalidate, update };
