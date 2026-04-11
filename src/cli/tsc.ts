@@ -227,4 +227,9 @@ function runTscAlias(args: string[]): Promise<number> {
 }
 
 
-main();
+if (process.env.VITEST === undefined) {
+    main();
+}
+
+
+export { build, isPlugin, loadPlugins, normalizePath, runTscAlias };
