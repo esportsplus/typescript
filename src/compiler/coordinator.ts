@@ -1,6 +1,8 @@
 import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
+import type { ModifyOptions } from './imports';
 import { ts } from '~/index';
-import imports, { ModifyOptions } from './imports';
+
+import imports from './imports';
 import languageService from './language-service';
 
 
@@ -68,10 +70,10 @@ function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): str
     }
 
     if (position === 0) {
-        return prepend.join('\n') + code;
+        return prepend.join('\n') + '\n' + code;
     }
 
-    return code.slice(0, position) + prepend.join('\n') + code.slice(position);
+    return code.slice(0, position) + '\n' + prepend.join('\n') + '\n' + code.slice(position);
 }
 
 function hasPattern(code: string, patterns: string[]): boolean {
@@ -158,15 +160,25 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
 
     replacements.sort((a, b) => b.start - a.start);
 
-    let result = code;
+    let parts: string[] = [],
+        pos = code.length;
 
     for (let i = 0, n = replacements.length; i < n; i++) {
         let r = replacements[i];
 
-        result = result.substring(0, r.start) + r.newText + result.substring(r.end);
+        if (r.end < pos) {
+            parts.push(code.substring(r.end, pos));
+        }
+
+        parts.push(r.newText);
+        pos = r.start;
     }
 
-    return result;
+    if (pos > 0) {
+        parts.push(code.substring(0, pos));
+    }
+
+    return parts.reverse().join('');
 }
 
 
@@ -211,11 +223,19 @@ const transform = (
         }
 
         if (prepend?.length) {
+            if (pluginChanged) {
+                currentFile = ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
+            }
+
             currentCode = applyPrepend(currentCode, currentFile, prepend);
             pluginChanged = true;
         }
 
         if (imports?.length) {
+            if (pluginChanged) {
+                currentFile = ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
+            }
+
             currentCode = applyImports(currentCode, currentFile, imports);
             pluginChanged = true;
         }

@@ -1,15 +1,15 @@
-import { spawn } from 'child_process';
+import type { Plugin, SharedContext } from '~/compiler/types';
 import { createRequire } from 'module';
+import { PACKAGE_NAME } from '~/constants';
 import { pathToFileURL } from 'url';
+import { spawn } from 'child_process';
+
+import coordinator from '~/compiler/coordinator';
 import path from 'path';
 import ts from 'typescript';
-import coordinator from '~/compiler/coordinator';
-import type { Plugin, SharedContext } from '~/compiler/types';
-import { PACKAGE_NAME } from '~/constants';
 
 
 type PluginConfig = {
-    after?: boolean;
     transform: string;
 };
 

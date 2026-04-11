@@ -1,10 +1,5 @@
-import ts from 'typescript';
-
-
-type Range = {
-    end: number;
-    start: number;
-};
+import type { Range } from './types';
+import { ts } from '~/index';
 
 
 const expression = {

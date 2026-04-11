@@ -7,14 +7,15 @@
         "tsc-alias": "./bin/tsc-alias"
     },
     "dependencies": {
-        "@esportsplus/cli-passthrough": "^0.0.12",
-        "@esportsplus/utilities": "^0.27.2",
-        "@types/node": "^25.0.3",
+        "@esportsplus/cli-passthrough": "^0.0.15",
+        "@esportsplus/utilities": "^0.27.3",
+        "@types/node": "^25.6.0",
         "tsc-alias": "^1.8.16",
-        "typescript": "^5.9.3"
+        "typescript": "^6.0.2"
     },
     "devDependencies": {
-        "vite": "^6.0.7"
+        "vite": "^8.0.8",
+        "vitest": "^4.1.4"
     },
     "exports": {
         "./package.json": "./package.json",
@@ -41,7 +42,8 @@
         "build": "tsc && tsc-alias",
         "-": "-",
         "prepare": "pnpm build",
-        "prepublishOnly": "pnpm build"
+        "prepublishOnly": "pnpm build",
+        "test": "vitest run"
     },
     "type": "module",
     "types": "build/index.d.ts",

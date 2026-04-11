@@ -17,6 +17,14 @@ type ModifyOptions = {
 let cache = new WeakMap<ts.SourceFile, Map<string, Set<string>>>();
 
 
+function fileNameMatchesPackage(fileName: string, pkg: string): boolean {
+    let normalized = fileName.replace(/\\/g, '/'),
+        marker = `/node_modules/${pkg}/`;
+
+    return normalized.includes(marker);
+}
+
+
 // Find all named imports from a specific package
 const all = (file: ts.SourceFile, pkg: string): ImportInfo[] => {
     let imports: ImportInfo[] = [];
@@ -108,7 +116,7 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
                         }
                     }
 
-                    if (decl.getSourceFile().fileName.includes(pkg)) {
+                    if (fileNameMatchesPackage(decl.getSourceFile().fileName, pkg)) {
                         return true;
                     }
                 }
@@ -133,7 +141,7 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
         for (let i = 0, n = declarations.length; i < n; i++) {
             let decl = declarations[i];
 
-            if (decl.getSourceFile().fileName.includes(pkg)) {
+            if (fileNameMatchesPackage(decl.getSourceFile().fileName, pkg)) {
                 return true;
             }
         }
@@ -148,7 +156,7 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
 
             if (aliasedDecls) {
                 for (let i = 0, n = aliasedDecls.length; i < n; i++) {
-                    if (aliasedDecls[i].getSourceFile().fileName.includes(pkg)) {
+                    if (fileNameMatchesPackage(aliasedDecls[i].getSourceFile().fileName, pkg)) {
                         return true;
                     }
                 }

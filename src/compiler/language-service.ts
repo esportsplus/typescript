@@ -1,6 +1,7 @@
-import path from 'path';
-import ts from 'typescript';
 import { PACKAGE_NAME } from '~/constants';
+import { ts } from '~/index';
+
+import path from 'path';
 
 
 type LanguageServiceEntry = {

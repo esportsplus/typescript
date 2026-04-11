@@ -1,6 +1,7 @@
-import type { ResolvedConfig } from 'vite';
 import type { Plugin, SharedContext } from '../types';
+import type { ResolvedConfig } from 'vite';
 import { ts } from '~/index';
+
 import coordinator from '../coordinator';
 import languageService from '../language-service';
 
@@ -47,7 +48,15 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                         sourceFile = prog.getSourceFile(normalizedId);
 
                     if (!sourceFile) {
-                        sourceFile = ts.createSourceFile(id, code, ts.ScriptTarget.Latest, true);
+                        sourceFile = ts.createSourceFile(normalizedId, code, ts.ScriptTarget.Latest, true);
+                    }
+
+                    let key = root || '',
+                        ctx = contexts.get(key);
+
+                    if (!ctx) {
+                        ctx = new Map();
+                        contexts.set(key, ctx);
                     }
 
                     let result = coordinator.transform(
@@ -55,8 +64,8 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                             code,
                             sourceFile,
                             prog,
-                            root || '',
-                            contexts.get(root || '') ?? contexts.set(root || '', new Map()).get(root || '')!
+                            key,
+                            ctx
                         );
 
                     if (!result.changed) {
