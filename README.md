@@ -144,7 +144,3 @@ pnpm build       # tsc && tsc-alias
 pnpm test        # vitest run
 pnpm bench:run   # vitest bench --run
 ```
-
-## License
-
-MIT
