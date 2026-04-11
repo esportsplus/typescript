@@ -14,22 +14,39 @@ type CoordinatorResult = {
 
 
 function applyImports(code: string, file: ts.SourceFile, intents: ImportIntent[]): string {
-    for (let i = 0, n = intents.length; i < n; i++) {
-        let intent = intents[i];
+    let merged = new Map<string, { add?: string[]; namespace?: string; remove?: string[] }>();
 
-        code = modify(code, file, intent.package, {
-            add: intent.add,
-            namespace: intent.namespace,
-            remove: intent.remove
-        });
+    for (let i = 0, n = intents.length; i < n; i++) {
+        let intent = intents[i],
+            existing = merged.get(intent.package);
+
+        if (existing) {
+            if (intent.add) {
+                (existing.add ??= []).push(...intent.add);
+            }
+            if (intent.namespace) {
+                existing.namespace = intent.namespace;
+            }
+            if (intent.remove) {
+                (existing.remove ??= []).push(...intent.remove);
+            }
+        }
+        else {
+            merged.set(intent.package, {
+                add: intent.add ? [...intent.add] : undefined,
+                namespace: intent.namespace,
+                remove: intent.remove ? [...intent.remove] : undefined
+            });
+        }
+    }
+
+    let keys = [...merged.keys()];
+
+    for (let i = 0, n = keys.length; i < n; i++) {
+        code = modify(code, file, keys[i], merged.get(keys[i])!);
 
         if (i < n - 1) {
-            file = ts.createSourceFile(
-                file.fileName,
-                code,
-                file.languageVersion,
-                true
-            );
+            file = ts.createSourceFile(file.fileName, code, file.languageVersion, true);
         }
     }
 

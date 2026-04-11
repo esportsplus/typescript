@@ -775,4 +775,81 @@ describe('coordinator.transform', () => {
         expect(result.code).toContain('const A = 1;');
         expect(result.code).toContain('const B = 2;');
     });
+
+    // F-003: applyImports batching
+
+    describe('applyImports batching', () => {
+        it('batches multiple intents for the same package into one modify call', () => {
+            let code = 'let x = 1;',
+                file = parse(code),
+                program = makeProgram(file),
+                plugin = makePlugin(() => ({
+                    imports: [
+                        { add: ['foo'], package: '@pkg/a' },
+                        { add: ['bar'], package: '@pkg/a' },
+                        { add: ['baz'], package: '@pkg/a' }
+                    ]
+                })),
+                result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+
+            expect(result.changed).toBe(true);
+            expect(result.code).toContain("import { bar, baz, foo } from '@pkg/a';");
+
+            let importMatches = result.code.match(/import\s*\{[^}]+\}\s*from\s*'@pkg\/a'/g);
+
+            expect(importMatches).toHaveLength(1);
+        });
+
+        it('re-parses only between distinct packages', () => {
+            let code = 'let x = 1;',
+                file = parse(code),
+                program = makeProgram(file),
+                plugin = makePlugin(() => ({
+                    imports: [
+                        { add: ['foo'], package: '@pkg/a' },
+                        { add: ['bar'], package: '@pkg/a' },
+                        { add: ['qux'], package: '@pkg/b' }
+                    ]
+                })),
+                result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+
+            expect(result.changed).toBe(true);
+            expect(result.code).toContain("import { bar, foo } from '@pkg/a';");
+            expect(result.code).toContain("import { qux } from '@pkg/b';");
+        });
+
+        it('merges add and remove for same package', () => {
+            let code = "import { bar, foo } from '@pkg/a';\nlet x = 1;",
+                file = parse(code),
+                program = makeProgram(file),
+                plugin = makePlugin(() => ({
+                    imports: [
+                        { add: ['baz'], package: '@pkg/a' },
+                        { package: '@pkg/a', remove: ['bar'] }
+                    ]
+                })),
+                result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+
+            expect(result.changed).toBe(true);
+            expect(result.code).toContain("import { baz, foo } from '@pkg/a';");
+            expect(result.code).not.toMatch(/import\s*\{[^}]*bar[^}]*\}\s*from\s*'@pkg\/a'/);
+        });
+
+        it('preserves namespace across merged intents', () => {
+            let code = 'let x = 1;',
+                file = parse(code),
+                program = makeProgram(file),
+                plugin = makePlugin(() => ({
+                    imports: [
+                        { namespace: 'utils', package: '@pkg/a' },
+                        { add: ['foo'], package: '@pkg/a' }
+                    ]
+                })),
+                result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+
+            expect(result.changed).toBe(true);
+            expect(result.code).toContain("import * as utils from '@pkg/a';");
+            expect(result.code).toContain("import { foo } from '@pkg/a';");
+        });
+    });
 });
