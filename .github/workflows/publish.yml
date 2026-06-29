@@ -35,7 +35,6 @@ jobs:
           cache: 'pnpm'
           node-version: 'latest'
           registry-url: 'https://registry.npmjs.org'
-      - run: pnpm config delete always-auth
       - run: pnpm i
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
