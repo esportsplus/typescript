@@ -8,14 +8,14 @@
     },
     "dependencies": {
         "@esportsplus/cli-passthrough": "^0.0.15",
-        "@esportsplus/utilities": "^0.27.3",
-        "@types/node": "^25.6.0",
-        "tsc-alias": "^1.8.16",
-        "typescript": "^6.0.2"
+        "@esportsplus/utilities": "^0.28.0",
+        "@types/node": "^26.0.1",
+        "tsc-alias": "^1.8.17",
+        "typescript": "^6.0.3"
     },
     "devDependencies": {
-        "vite": "^8.0.8",
-        "vitest": "^4.1.4"
+        "vite": "^8.1.0",
+        "vitest": "^4.1.9"
     },
     "exports": {
         "./package.json": "./package.json",
