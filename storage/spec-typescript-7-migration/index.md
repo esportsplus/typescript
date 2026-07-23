@@ -54,10 +54,10 @@
 - ast-unstable-guards
 - imports-node-handles
 - coordinator-api-reparse
-- cli-tsgo-emit — BLOCKED: FABLE_REPLAN budget exhausted (2/2) — hard band (severity high, multi-file, or root cause unknown) — critic evidence: FAIL (high) — counts from gate evidence: scoped:cli-tsgo-emit green (1667ms) — copied verbatim; no independent execution performed. Test suite passing does not cover the Design's mandated behaviors (see concerns) since the required test additions were never written. — high: Design decision 5 mandates DELETING emit()'s backup/write/restore in-place mechanism and its SIGINT/SIGTERM handlers because it 'cannot satisfy contract (b) under SIGKILL and its write phase is unprotectable', replacing it with an overlay-mirror emit that never touches real source files. The diff keeps the exact in-place mechanism verbatim: emit() still does fs.readFileSync/fs.writeFileSync directly on path.resolve(fileName) (the real user source), with restore() and SIGINT/SIGTERM handlers intact. A SIGKILL (or any un…
+- cli-tsgo-emit
 - vite-plugin-lifecycle
 - root-export-surface
-- build-green-gate — BLOCKED: dependency cli-tsgo-emit did not land — blocked
+- build-green-gate
 
 ## Feed
 run,scope,unit,ordinal,slug,event,state,detail,elapsed_ms,ts
@@ -86,3 +86,5 @@ ecdbdff2,item,u9,9.1,root-export-surface,complete,COMPLETE,,,2026-07-23T02:04:00
 ecdbdff2,item,u8,8.1,vite-plugin-lifecycle,complete,COMPLETE,,,2026-07-23T02:07:45-07:00
 ecdbdff2,item,u7,7.1,cli-tsgo-emit,blocked,BLOCKED,,,2026-07-23T03:02:13-07:00
 ecdbdff2,run,,,,run-end,RUN END,"applied: 8 completed, 2 rejected, 3 status-actions, 11 changelog-rows",,2026-07-23T03:02:13-07:00
+,item,mutator,,cli-tsgo-emit,requeued,REQUEUED,,,2026-07-23T03:07:43-07:00
+,item,mutator,,build-green-gate,requeued,REQUEUED,,,2026-07-23T03:07:43-07:00
