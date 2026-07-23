@@ -5,6 +5,8 @@ import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
 
 import coordinator from '~/compiler/coordinator';
+import fs from 'fs';
+import languageService from '~/compiler/language-service';
 import path from 'path';
 import ts from 'typescript';
 
@@ -167,21 +169,24 @@ async function loadPlugins(configs: PluginConfig[], root: string): Promise<Plugi
 }
 
 function main(): void {
-    let tsconfig = ts.findConfigFile(process.cwd(), ts.sys.fileExists, 'tsconfig.json');
+    let tsconfig = languageService.findConfig(process.cwd());
 
     if (!tsconfig) {
         return passthrough();
     }
 
-    let { config, error } = ts.readConfigFile(tsconfig, ts.sys.readFile);
+    let config: { compilerOptions?: { plugins?: unknown[] } };
 
-    if (error) {
+    try {
+        config = JSON.parse(stripJsonc(fs.readFileSync(tsconfig, 'utf8')));
+    }
+    catch {
         return passthrough();
     }
 
-    let pluginConfigs = config?.compilerOptions?.plugins?.filter(
-            (p: unknown) => typeof p === 'object' && p !== null && 'transform' in p
-        ) ?? [];
+    let pluginConfigs = (config?.compilerOptions?.plugins?.filter(
+            (p: unknown): p is PluginConfig => typeof p === 'object' && p !== null && 'transform' in p
+        ) ?? []) as PluginConfig[];
 
     if (pluginConfigs.length === 0) {
         return passthrough();
@@ -200,9 +205,10 @@ function normalizePath(fileName: string): string {
 }
 
 function passthrough(): void {
-    let args = process.argv.slice(2);
+    let args = process.argv.slice(2),
+        tsDir = path.dirname(require.resolve('typescript/package.json'));
 
-    spawn(process.execPath, [require.resolve('typescript/lib/tsc.js'), ...args], { stdio: 'inherit' })
+    spawn(process.execPath, [path.join(tsDir, 'lib', 'tsc.js'), ...args], { stdio: 'inherit' })
         .on('exit', async (code) => {
             if (code === 0) {
                 code = await runTscAlias(args);
@@ -224,6 +230,124 @@ function runTscAlias(args: string[]): Promise<number> {
 
         child.on('exit', (code) => resolve(code ?? 0));
     });
+}
+
+function stripJsonc(text: string): string {
+    let escaped = false,
+        inBlockComment = false,
+        inLineComment = false,
+        inString = false,
+        stripped = '';
+
+    for (let i = 0, n = text.length; i < n; i++) {
+        let char = text[i],
+            next = text[i + 1];
+
+        if (inLineComment) {
+            if (char === '\n') {
+                inLineComment = false;
+                stripped += char;
+            }
+
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (char === '*' && next === '/') {
+                inBlockComment = false;
+                i++;
+            }
+
+            continue;
+        }
+
+        if (inString) {
+            stripped += char;
+
+            if (escaped) {
+                escaped = false;
+            }
+            else if (char === '\\') {
+                escaped = true;
+            }
+            else if (char === '"') {
+                inString = false;
+            }
+
+            continue;
+        }
+
+        if (char === '"') {
+            inString = true;
+            stripped += char;
+
+            continue;
+        }
+
+        if (char === '/' && next === '/') {
+            inLineComment = true;
+            i++;
+
+            continue;
+        }
+
+        if (char === '/' && next === '*') {
+            inBlockComment = true;
+            i++;
+
+            continue;
+        }
+
+        stripped += char;
+    }
+
+    escaped = false;
+    inString = false;
+
+    let result = '';
+
+    for (let i = 0, n = stripped.length; i < n; i++) {
+        let char = stripped[i];
+
+        if (inString) {
+            result += char;
+
+            if (escaped) {
+                escaped = false;
+            }
+            else if (char === '\\') {
+                escaped = true;
+            }
+            else if (char === '"') {
+                inString = false;
+            }
+
+            continue;
+        }
+
+        if (char === '"') {
+            inString = true;
+            result += char;
+
+            continue;
+        }
+
+        if (char === ',') {
+            let j = i + 1;
+
+            while (j < n && (stripped[j] === ' ' || stripped[j] === '\n' || stripped[j] === '\r' || stripped[j] === '\t')) {
+                j++;
+            }
+
+            if (stripped[j] === ']' || stripped[j] === '}') {
+                continue;
+            }
+        }
+
+        result += char;
+    }
+
+    return result;
 }
 
 
