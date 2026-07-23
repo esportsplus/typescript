@@ -1,4 +1,5 @@
-import type ts from 'typescript';
+import type { Node, SourceFile } from 'typescript/unstable/ast';
+import type { Checker, Program } from 'typescript/unstable/sync';
 
 
 type ImportIntent = {
@@ -38,22 +39,22 @@ type ReplacementIntent = {
      * Generator function that produces the replacement text.
      * Called at apply-time with current sourceFile for accurate positions.
      */
-    generate: (sourceFile: ts.SourceFile) => string;
+    generate: (sourceFile: SourceFile) => string;
 
     /**
      * AST node to replace. Position resolved at apply-time.
      */
-    node: ts.Node;
+    node: Node;
 };
 
 type SharedContext = Map<string, unknown>;
 
 type TransformContext = {
-    checker: ts.TypeChecker;
+    checker: Checker;
     code: string;
-    program: ts.Program;
+    program: Program;
     shared: SharedContext;
-    sourceFile: ts.SourceFile;
+    sourceFile: SourceFile;
 };
 
 type TransformResult = {
