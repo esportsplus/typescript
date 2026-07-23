@@ -64,3 +64,15 @@ run,scope,unit,ordinal,slug,event,state,detail,elapsed_ms,ts
 ,item,mutator,,baseline-regression-gate,requeued,REQUEUED,,,2026-07-22T04:28:53-07:00
 ,item,mutator,,language-service-api-lifecycle,requeued,REQUEUED,,,2026-07-22T04:46:45-07:00
 ,item,mutator,,root-export-surface,requeued,REQUEUED,,,2026-07-23T00:30:51-07:00
+3c1d531f,item,u1,1.1,baseline-regression-gate,blocked,BLOCKED,,,2026-07-23T00:50:21-07:00
+3c1d531f,run,,,,run-end,RUN END,"applied: 0 completed, 10 rejected, 11 status-actions, 3 changelog-rows",,2026-07-23T00:50:22-07:00
+,item,mutator,,baseline-regression-gate,requeued,REQUEUED,,,2026-07-23T00:58:37-07:00
+,item,mutator,,types-plugin-contract,requeued,REQUEUED,,,2026-07-23T00:58:37-07:00
+,item,mutator,,language-service-api-lifecycle,requeued,REQUEUED,,,2026-07-23T00:58:37-07:00
+,item,mutator,,ast-unstable-guards,requeued,REQUEUED,,,2026-07-23T00:58:37-07:00
+,item,mutator,,imports-node-handles,requeued,REQUEUED,,,2026-07-23T00:58:37-07:00
+,item,mutator,,coordinator-api-reparse,requeued,REQUEUED,,,2026-07-23T00:58:37-07:00
+,item,mutator,,cli-tsgo-emit,requeued,REQUEUED,,,2026-07-23T00:58:37-07:00
+,item,mutator,,vite-plugin-lifecycle,requeued,REQUEUED,,,2026-07-23T00:58:37-07:00
+,item,mutator,,root-export-surface,requeued,REQUEUED,,,2026-07-23T00:58:38-07:00
+,item,mutator,,build-green-gate,requeued,REQUEUED,,,2026-07-23T00:58:38-07:00

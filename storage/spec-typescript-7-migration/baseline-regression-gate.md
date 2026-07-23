@@ -63,3 +63,4 @@ Do NOT touch vitest.config.ts, any file under tests/, or any file under src/.
 - The `tests` field deliberately lists only the 3 TS7-green files: mid-migration the full suite is red by design, so the scoped gate must not invoke it.
 - package.json already carries an odd `"-": "-"` scripts entry — leave it untouched (out of scope).
 - Critic (files-own honesty): package.json is this item's ONLY unconditional edit target and is now declared files-own, so the item keeps a writable surface under any plan shape; vitest.legacy.config.ts is created ONLY on the Q1 opt-in branch and is absent under the default answer. It stays in files-shared as well, which is correct only as a wave-0 hub hook - no other item declares it.
+FABLE_REPLAN ledger: [{'role':'critic','verdict':'FAIL'},{'role':'replanner','status':'completed'},{'role':'critic','verdict':'FAIL'}]
