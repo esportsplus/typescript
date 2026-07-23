@@ -78,7 +78,7 @@ The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them
 
 ### `@esportsplus/typescript`
 
-Re-exports the TypeScript compiler API (`ts`).
+No exports. Import the TypeScript compiler API directly from `typescript/unstable/*` (see [TypeScript 7 migration](#typescript-7-migration)).
 
 ### `@esportsplus/typescript/compiler`
 
@@ -136,6 +136,15 @@ Importable base tsconfig files:
 { "extends": "@esportsplus/typescript/tsconfig.node.json" }
 { "extends": "@esportsplus/typescript/tsconfig.package.json" }
 ```
+
+## TypeScript 7 migration
+
+This package targets `typescript@^7`, shipped as a regular `dependencies` entry. Breaking changes for consumers:
+
+- **Root export removed.** `@esportsplus/typescript` no longer re-exports `ts`. Import the compiler API directly from the `typescript/unstable/*` subpaths you need — `typescript/unstable/ast`, `typescript/unstable/ast/is`, `typescript/unstable/sync`, `typescript/unstable/fs`, etc.
+- **Plugin-facing types.** `TransformContext` and `ReplacementIntent` now carry `typescript/unstable/ast` + `typescript/unstable/sync` identities instead of the classic `ts` namespace types.
+- **`coordinator.transform` signature.** Takes the `{ checker, program }` project pair instead of a single `ts.Program`.
+- **`imports.includes` signature.** Takes the API `Checker` type, and symbol declarations are represented as NodeHandles rather than `ts.Node`.
 
 ## Scripts
 

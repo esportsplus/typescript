@@ -1,1 +1,1 @@
-export { default as ts } from 'typescript';
+export {};
