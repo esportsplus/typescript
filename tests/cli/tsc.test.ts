@@ -205,6 +205,44 @@ describe('build', () => {
         expect(exits).toContain(0);
     });
 
+    it('never writes the real source file at any point during a transformed emit', async () => {
+        let source = 'export const value = 1;\n',
+            sourcePath = path.join(tmpDir, 'index.ts'),
+            tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(sourcePath, source);
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), markerPlugin);
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { declaration: true, module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        let normalizedSource = path.resolve(sourcePath).replace(/\\/g, '/'),
+            original = fs.writeFileSync,
+            writes: string[] = [];
+
+        vi.spyOn(fs, 'writeFileSync').mockImplementation((...args: Parameters<typeof fs.writeFileSync>): void => {
+            let file = args[0];
+
+            if (typeof file === 'string') {
+                writes.push(path.resolve(file).replace(/\\/g, '/'));
+            }
+
+            (original as (...a: Parameters<typeof fs.writeFileSync>) => void)(...args);
+        });
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }])).rejects.toThrow(/process\.exit/);
+
+        expect(writes.length).toBeGreaterThan(0);
+        expect(writes).not.toContain(normalizedSource);
+        expect(fs.readFileSync(sourcePath, 'utf8')).toBe(source);
+
+        let emitted = path.join(tmpDir, 'out', 'index.js');
+
+        expect(fs.existsSync(emitted)).toBe(true);
+        expect(fs.readFileSync(emitted, 'utf8')).toContain('__TRANSFORMED__');
+    });
+
     it('consumes a JSONC tsconfig (comments + trailing commas) and applies its plugin', async () => {
         let sourcePath = path.join(tmpDir, 'index.ts'),
             tsconfigPath = path.join(tmpDir, 'tsconfig.json');

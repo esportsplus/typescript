@@ -95,7 +95,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[]): Promise<v
         process.exit(1);
     }
 
-    let code = await emit(tsconfig, transformedFiles);
+    let code = await emit(tsconfig, fileNames, transformedFiles, root, program.getCompilerOptions().outDir ?? root);
 
     teardown(snapshot, api, root);
 
@@ -106,36 +106,52 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[]): Promise<v
     return runTscAlias(process.argv.slice(2)).then((exitCode) => process.exit(exitCode));
 }
 
-async function emit(tsconfig: string, transformedFiles: Map<string, string>): Promise<number> {
+async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map<string, string>, root: string, outDir: string): Promise<number> {
     let tscJs = path.join(path.dirname(require.resolve('typescript/package.json')), 'lib', 'tsc.js');
 
     if (transformedFiles.size === 0) {
         return spawnTsc(tscJs, ['-p', tsconfig]);
     }
 
-    let backups = new Map<string, string>(),
-        handler = (): void => {
-            restore(backups);
-            process.exit(1);
-        };
-
-    for (let [fileName, code] of transformedFiles) {
-        let target = path.resolve(fileName);
-
-        backups.set(target, fs.readFileSync(target, 'utf8'));
-        fs.writeFileSync(target, code);
-    }
-
-    process.on('SIGINT', handler);
-    process.on('SIGTERM', handler);
+    let mirror = fs.mkdtempSync(path.join(root, '.esportsplus-tsc-'));
 
     try {
-        return await spawnTsc(tscJs, ['-p', tsconfig]);
+        let files: string[] = [],
+            mirrorOut = path.join(mirror, '__emit');
+
+        for (let i = 0, n = fileNames.length; i < n; i++) {
+            let source = path.resolve(fileNames[i]),
+                target = path.join(mirror, path.relative(root, source)),
+                transformed = transformedFiles.get(normalizePath(fileNames[i]));
+
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+
+            if (transformed === undefined) {
+                fs.copyFileSync(source, target);
+            }
+            else {
+                fs.writeFileSync(target, transformed);
+            }
+
+            files.push(normalizePath(target));
+        }
+
+        fs.writeFileSync(path.join(mirror, 'tsconfig.json'), JSON.stringify({
+            compilerOptions: { outDir: normalizePath(mirrorOut), rootDir: normalizePath(mirror) },
+            extends: normalizePath(tsconfig),
+            files
+        }));
+
+        let code = await spawnTsc(tscJs, ['-p', path.join(mirror, 'tsconfig.json')]);
+
+        if (code === 0 && fs.existsSync(mirrorOut)) {
+            fs.cpSync(mirrorOut, outDir, { force: true, recursive: true });
+        }
+
+        return code;
     }
     finally {
-        restore(backups);
-        process.removeListener('SIGINT', handler);
-        process.removeListener('SIGTERM', handler);
+        fs.rmSync(mirror, { force: true, recursive: true });
     }
 }
 
@@ -242,12 +258,6 @@ function passthrough(): void {
 
             process.exit(code ?? 0);
         });
-}
-
-function restore(backups: Map<string, string>): void {
-    for (let [fileName, content] of backups) {
-        fs.writeFileSync(fileName, content);
-    }
 }
 
 function runTscAlias(args: string[]): Promise<number> {
