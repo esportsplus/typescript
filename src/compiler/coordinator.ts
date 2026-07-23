@@ -1,6 +1,8 @@
+import type { SourceFile } from 'typescript/unstable/ast';
+import type { Checker, Program } from 'typescript/unstable/sync';
 import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
 import type { ModifyOptions } from './imports';
-import { ts } from '~/index';
+import { isImportDeclaration } from 'typescript/unstable/ast/is';
 
 import imports from './imports';
 import languageService from './language-service';
@@ -9,11 +11,11 @@ import languageService from './language-service';
 type CoordinatorResult = {
     changed: boolean;
     code: string;
-    sourceFile: ts.SourceFile;
+    sourceFile: SourceFile;
 };
 
 
-function applyImports(code: string, file: ts.SourceFile, intents: ImportIntent[]): string {
+function applyImports(code: string, file: SourceFile, intents: ImportIntent[]): string {
     let merged = new Map<string, { add?: string[]; namespace?: string; remove?: string[] }>();
 
     for (let i = 0, n = intents.length; i < n; i++) {
@@ -46,14 +48,14 @@ function applyImports(code: string, file: ts.SourceFile, intents: ImportIntent[]
         code = modify(code, file, keys[i], merged.get(keys[i])!);
 
         if (i < n - 1) {
-            file = ts.createSourceFile(file.fileName, code, file.languageVersion, true);
+            file = languageService.parse(file.fileName, code);
         }
     }
 
     return code;
 }
 
-function applyIntents(code: string, file: ts.SourceFile, intents: ReplacementIntent[]): string {
+function applyIntents(code: string, file: SourceFile, intents: ReplacementIntent[]): string {
     if (intents.length === 0) {
         return code;
     }
@@ -68,7 +70,7 @@ function applyIntents(code: string, file: ts.SourceFile, intents: ReplacementInt
     );
 }
 
-function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): string {
+function applyPrepend(code: string, file: SourceFile, prepend: string[]): string {
     if (prepend.length === 0) {
         return code;
     }
@@ -78,7 +80,7 @@ function applyPrepend(code: string, file: ts.SourceFile, prepend: string[]): str
     for (let i = 0, n = file.statements.length; i < n; i++) {
         let stmt = file.statements[i];
 
-        if (ts.isImportDeclaration(stmt)) {
+        if (isImportDeclaration(stmt)) {
             position = stmt.end;
         }
         else {
@@ -103,7 +105,7 @@ function hasPattern(code: string, patterns: string[]): boolean {
     return false;
 }
 
-function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyOptions): string {
+function modify(code: string, file: SourceFile, pkg: string, options: ModifyOptions): string {
     if (!options.add && !options.namespace && !options.remove) {
         return code;
     }
@@ -202,8 +204,8 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
 const transform = (
     plugins: Plugin[],
     code: string,
-    file: ts.SourceFile,
-    program: ts.Program,
+    file: SourceFile,
+    project: { checker: Checker; program: Program },
     root: string,
     shared: SharedContext
 ) => {
@@ -214,7 +216,7 @@ const transform = (
     let changed = false,
         currentCode = code,
         currentFile = file,
-        currentProgram = program,
+        currentProject = project,
         fileName = file.fileName,
         last = plugins.length - 1;
 
@@ -226,9 +228,9 @@ const transform = (
         }
 
         let { imports, prepend, replacements } = plugin.transform({
-                checker: currentProgram.getTypeChecker(),
+                checker: currentProject.checker,
                 code: currentCode,
-                program: currentProgram,
+                program: currentProject.program,
                 shared,
                 sourceFile: currentFile
             }),
@@ -241,7 +243,7 @@ const transform = (
 
         if (prepend?.length) {
             if (pluginChanged) {
-                currentFile = ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
+                currentFile = languageService.parse(fileName, currentCode);
             }
 
             currentCode = applyPrepend(currentCode, currentFile, prepend);
@@ -250,7 +252,7 @@ const transform = (
 
         if (imports?.length) {
             if (pluginChanged) {
-                currentFile = ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
+                currentFile = languageService.parse(fileName, currentCode);
             }
 
             currentCode = applyImports(currentCode, currentFile, imports);
@@ -261,12 +263,12 @@ const transform = (
             changed = true;
 
             if (i < last) {
-                currentProgram = languageService.update(root, fileName, currentCode);
-                currentFile = currentProgram.getSourceFile(fileName) ||
-                    ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
+                currentProject = languageService.update(root, fileName, currentCode);
+                currentFile = currentProject.program.getSourceFile(fileName) ??
+                    languageService.parse(fileName, currentCode);
             }
             else {
-                currentFile = ts.createSourceFile(fileName, currentCode, file.languageVersion, true);
+                currentFile = languageService.parse(fileName, currentCode);
             }
         }
     }
