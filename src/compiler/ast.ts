@@ -1,14 +1,15 @@
 import type { Range } from './types';
-import { ts } from '~/index';
+import type { Expression, Node } from 'typescript/unstable/ast';
+import { isIdentifier, isPropertyAccessExpression } from 'typescript/unstable/ast/is';
 
 
 const expression = {
-    name: (node: ts.Expression): string | null => {
-        if (ts.isIdentifier(node)) {
+    name: (node: Expression): string | null => {
+        if (isIdentifier(node)) {
             return node.text;
         }
 
-        if (ts.isPropertyAccessExpression(node)) {
+        if (isPropertyAccessExpression(node)) {
             return property.path(node);
         }
 
@@ -29,16 +30,16 @@ const inRange = (ranges: Range[], start: number, end: number): boolean => {
 };
 
 const property = {
-    path: (node: ts.Expression): string | null => {
-        let current: ts.Node = node,
+    path: (node: Expression): string | null => {
+        let current: Node = node,
             parts: string[] = [];
 
-        while (ts.isPropertyAccessExpression(current)) {
+        while (isPropertyAccessExpression(current)) {
             parts.push(current.name.text);
             current = current.expression;
         }
 
-        if (ts.isIdentifier(current)) {
+        if (isIdentifier(current)) {
             parts.push(current.text);
             return parts.reverse().join('.');
         }
@@ -47,12 +48,12 @@ const property = {
     }
 };
 
-const test = (node: ts.Node, fn: (n: ts.Node) => boolean): boolean => {
+const test = (node: Node, fn: (n: Node) => boolean): boolean => {
     if (fn(node)) {
         return true;
     }
 
-    return !!ts.forEachChild(node, child => test(child, fn) || undefined);
+    return !!node.forEachChild(child => test(child, fn) || undefined);
 };
 
 

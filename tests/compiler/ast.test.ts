@@ -1,17 +1,22 @@
-import { describe, expect, it } from 'vitest';
-import ts from 'typescript';
+import type { Expression, Node, SourceFile } from 'typescript/unstable/ast';
+import { isCallExpression, isClassDeclaration, isIdentifier, isObjectLiteralExpression, isPropertyAccessExpression, isVariableStatement } from 'typescript/unstable/ast/is';
+import { afterAll, describe, expect, it } from 'vitest';
 
 import ast from '~/compiler/ast';
+import languageService from '~/compiler/language-service';
 
 
-function parse(code: string): ts.SourceFile {
-    return ts.createSourceFile('test.ts', code, ts.ScriptTarget.Latest, true);
+const fileName = process.cwd().replace(/\\/g, '/') + '/test.ts';
+
+
+function parse(code: string): SourceFile {
+    return languageService.parse(fileName, code);
 }
 
-function findFirst(file: ts.SourceFile, predicate: (n: ts.Node) => boolean): ts.Node | undefined {
-    let result: ts.Node | undefined;
+function findFirst(file: SourceFile, predicate: (n: Node) => boolean): Node | undefined {
+    let result: Node | undefined;
 
-    function visit(node: ts.Node) {
+    function visit(node: Node) {
         if (result) {
             return;
         }
@@ -21,38 +26,41 @@ function findFirst(file: ts.SourceFile, predicate: (n: ts.Node) => boolean): ts.
             return;
         }
 
-        ts.forEachChild(node, visit);
+        node.forEachChild(visit);
     }
 
-    ts.forEachChild(file, visit);
+    file.forEachChild(visit);
 
     return result;
 }
 
 
+afterAll(() => languageService.dispose());
+
+
 describe('ast.expression.name', () => {
     it('returns text for identifiers', () => {
         let file = parse('let x = foo;'),
-            node = findFirst(file, ts.isIdentifier);
+            node = findFirst(file, isIdentifier);
 
         expect(node).toBeDefined();
-        expect(ast.expression.name(node as ts.Expression)).toBe('x');
+        expect(ast.expression.name(node as Expression)).toBe('x');
     });
 
     it('returns dotted path for property access', () => {
         let file = parse('a.b.c;'),
-            node = findFirst(file, ts.isPropertyAccessExpression);
+            node = findFirst(file, isPropertyAccessExpression);
 
         expect(node).toBeDefined();
-        expect(ast.expression.name(node as ts.Expression)).toBe('a.b.c');
+        expect(ast.expression.name(node as Expression)).toBe('a.b.c');
     });
 
     it('returns null for unsupported expressions', () => {
         let file = parse('foo();'),
-            node = findFirst(file, ts.isCallExpression);
+            node = findFirst(file, isCallExpression);
 
         expect(node).toBeDefined();
-        expect(ast.expression.name(node as ts.Expression)).toBeNull();
+        expect(ast.expression.name(node as Expression)).toBeNull();
     });
 });
 
@@ -91,18 +99,18 @@ describe('ast.inRange', () => {
 describe('ast.property.path', () => {
     it('returns dotted path for nested access', () => {
         let file = parse('a.b.c.d;'),
-            node = findFirst(file, (n) => ts.isPropertyAccessExpression(n) && !ts.isPropertyAccessExpression(n.parent));
+            node = findFirst(file, (n) => isPropertyAccessExpression(n) && !isPropertyAccessExpression(n.parent));
 
         expect(node).toBeDefined();
-        expect(ast.property.path(node as ts.Expression)).toBe('a.b.c.d');
+        expect(ast.property.path(node as Expression)).toBe('a.b.c.d');
     });
 
     it('returns null for non-identifier base', () => {
         let file = parse('foo().bar;'),
-            node = findFirst(file, ts.isPropertyAccessExpression);
+            node = findFirst(file, isPropertyAccessExpression);
 
         expect(node).toBeDefined();
-        expect(ast.property.path(node as ts.Expression)).toBeNull();
+        expect(ast.property.path(node as Expression)).toBeNull();
     });
 });
 
@@ -110,21 +118,21 @@ describe('ast.property.path', () => {
 describe('ast.test', () => {
     it('returns true when predicate matches root', () => {
         let file = parse('let x = 1;'),
-            found = ast.test(file, (n) => ts.isVariableStatement(n));
+            found = ast.test(file, (n) => isVariableStatement(n));
 
         expect(found).toBe(true);
     });
 
     it('returns true when predicate matches deep child', () => {
         let file = parse('function f() { return { a: 1 }; }'),
-            found = ast.test(file, (n) => ts.isObjectLiteralExpression(n));
+            found = ast.test(file, (n) => isObjectLiteralExpression(n));
 
         expect(found).toBe(true);
     });
 
     it('returns false when predicate never matches', () => {
         let file = parse('let x = 1;'),
-            found = ast.test(file, (n) => ts.isClassDeclaration(n));
+            found = ast.test(file, (n) => isClassDeclaration(n));
 
         expect(found).toBe(false);
     });
