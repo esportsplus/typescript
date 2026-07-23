@@ -24,14 +24,15 @@ let require = createRequire(import.meta.url),
     skipFlags = new Set(['--help', '--init', '--noEmit', '--showConfig', '--version', '-h', '-noEmit', '-v']);
 
 
-async function build(tsconfig: string, pluginConfigs: PluginConfig[]): Promise<void> {
+async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API): Promise<void> {
     let root = path.dirname(path.resolve(tsconfig)),
-        api = new API({ cwd: root }),
+        owned = instance === undefined,
+        api = instance ?? new API({ cwd: root }),
         snapshot = api.updateSnapshot({ openProjects: [tsconfig] }),
         project = snapshot.getProject(tsconfig);
 
     if (!project) {
-        api.close();
+        teardown(snapshot, api, root, owned);
 
         throw new Error(`${PACKAGE_NAME}: project not found for ${tsconfig}`);
     }
@@ -40,7 +41,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[]): Promise<v
 
     if (configDiagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
         console.error(format(configDiagnostics, root));
-        teardown(snapshot, api, root);
+        teardown(snapshot, api, root, owned);
         process.exit(1);
     }
 
@@ -91,13 +92,13 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[]): Promise<v
     }
 
     if (diagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
-        teardown(snapshot, api, root);
+        teardown(snapshot, api, root, owned);
         process.exit(1);
     }
 
     let code = await emit(tsconfig, fileNames, transformedFiles, root, program.getCompilerOptions().outDir ?? root);
 
-    teardown(snapshot, api, root);
+    teardown(snapshot, api, root, owned);
 
     if (code !== 0) {
         process.exit(code);
@@ -400,12 +401,15 @@ function stripJsonc(text: string): string {
     return result;
 }
 
-function teardown(snapshot: Snapshot, api: API, root: string): void {
+function teardown(snapshot: Snapshot, api: API, root: string, owned: boolean): void {
     if (!snapshot.isDisposed()) {
         snapshot.dispose();
     }
 
-    api.close();
+    if (owned) {
+        api.close();
+    }
+
     languageService.dispose(root);
 }
 
