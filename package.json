@@ -42,6 +42,8 @@
         "url": "https://github.com/esportsplus/typescript"
     },
     "scripts": {
+        "agent:build": "pnpm build",
+        "agent:test": "vitest run",
         "bench:run": "vitest bench --run",
         "build": "tsc && tsc-alias",
         "-": "-",
