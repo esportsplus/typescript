@@ -5,5 +5,4 @@ build
 node_modules
 tmpclaude*
 
-# Claude batch state (ephemeral, session-specific)
-.claude/storage/batch-state*
+.claude/worktrees
