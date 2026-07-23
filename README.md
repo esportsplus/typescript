@@ -72,7 +72,7 @@ export default defineConfig({
 tsc
 ```
 
-The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them, runs coordinated compilation, and automatically calls `tsc-alias` afterward.
+The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them, runs coordinated compilation, and automatically calls `tsc-alias` afterward. The package installs `tsc`/`tsc-alias` bins (also under the unambiguous `esportsplus-tsc`/`esportsplus-tsc-alias` names).
 
 ## API
 
@@ -90,7 +90,6 @@ No exports. Import the TypeScript compiler API directly from `typescript/unstabl
 | `imports` | Import detection and modification (WeakMap cached) |
 | `plugin` | Built-in plugins (`tsc`, `vite`) |
 | `uid` | Unique identifier generation |
-| `languageService` | Cached TypeScript language service |
 
 ### Types
 
