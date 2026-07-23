@@ -1,47 +1,44 @@
-import { bench, describe, vi } from 'vitest';
-import ts from 'typescript';
+import { afterAll, bench, describe } from 'vitest';
+import path from 'path';
+import type { SourceFile } from 'typescript/unstable/ast';
+import type { Checker, Program } from 'typescript/unstable/sync';
 
 import type { Plugin, TransformContext } from '~/compiler/types';
 
 import coordinator from '~/compiler/coordinator';
+import * as languageService from '~/compiler/language-service';
 
 
-vi.mock('~/compiler/language-service', () => ({
-    default: {
-        invalidate: vi.fn(),
-        update: vi.fn((_root: string, fileName: string, content: string) => {
-            let file = ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, true);
+const root = process.cwd().split(path.sep).join('/');
 
-            return {
-                getSourceFile: () => file,
-                getTypeChecker: () => ({} as ts.TypeChecker)
-            } as unknown as ts.Program;
-        })
-    }
-}));
+const fileName = root + '/src/coordinator-bench-fixture.ts';
 
-
-function parse(code: string, fileName = 'bench.ts'): ts.SourceFile {
-    return ts.createSourceFile(fileName, code, ts.ScriptTarget.Latest, true);
-}
-
-function makeProgram(file: ts.SourceFile): ts.Program {
-    return {
-        getSourceFile: () => file,
-        getTypeChecker: () => ({} as ts.TypeChecker)
-    } as unknown as ts.Program;
-}
 
 function makePlugin(transformFn: (ctx: TransformContext) => ReturnType<Plugin['transform']>): Plugin {
     return { transform: transformFn };
 }
 
+function makeProject(file: SourceFile): { checker: Checker; program: Program } {
+    return {
+        checker: {} as unknown as Checker,
+        program: { getSourceFile: () => file } as unknown as Program
+    };
+}
+
+function parse(code: string, name = fileName): SourceFile {
+    return languageService.parse(name, code);
+}
+
 
 let code = 'let x = 1;',
     file = parse(code),
-    program = makeProgram(file);
+    project = makeProject(file);
 
 describe('applyImports batching', () => {
+    afterAll(() => {
+        languageService.dispose();
+    });
+
     bench('10 intents, 1 package', () => {
         let plugin = makePlugin(() => ({
             imports: [
@@ -58,7 +55,7 @@ describe('applyImports batching', () => {
             ]
         }));
 
-        coordinator.transform([plugin], code, file, program, '/root', new Map());
+        coordinator.transform([plugin], code, file, project, '/root', new Map());
     });
 
     bench('10 intents, 3 packages', () => {
@@ -77,7 +74,7 @@ describe('applyImports batching', () => {
             ]
         }));
 
-        coordinator.transform([plugin], code, file, program, '/root', new Map());
+        coordinator.transform([plugin], code, file, project, '/root', new Map());
     });
 
     bench('10 intents, 10 packages', () => {
@@ -96,6 +93,6 @@ describe('applyImports batching', () => {
             ]
         }));
 
-        coordinator.transform([plugin], code, file, program, '/root', new Map());
+        coordinator.transform([plugin], code, file, project, '/root', new Map());
     });
 });
