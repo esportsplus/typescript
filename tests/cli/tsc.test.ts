@@ -3,7 +3,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { isPlugin, loadPlugins, normalizePath, runTscAlias } from '~/cli/tsc';
+import { type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
+import { flatten, format } from '~/cli/diagnostics';
+import { build, isPlugin, loadPlugins, normalizePath, runTscAlias } from '~/cli/tsc';
 
 
 describe('isPlugin', () => {
@@ -151,5 +153,180 @@ describe('runTscAlias', () => {
         let code = await runTscAlias(['-v']);
 
         expect(code).toBe(0);
+    });
+});
+
+
+describe('build', () => {
+    let exits: number[],
+        originalArgv: string[],
+        tmpDir: string;
+
+    let markerPlugin = 'export default { transform: () => ({ prepend: ["export const __TRANSFORMED__ = 42;"] }) };';
+
+    beforeEach(() => {
+        exits = [];
+        originalArgv = process.argv;
+        process.argv = [process.execPath, 'esportsplus-tsc', '--noEmit'];
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tsc-build-'));
+
+        vi.spyOn(process, 'exit').mockImplementation(((code?: number): never => {
+            exits.push(code ?? 0);
+
+            throw new Error(`build-test: process.exit(${code ?? 0})`);
+        }) as typeof process.exit);
+    });
+
+    afterEach(() => {
+        process.argv = originalArgv;
+        vi.restoreAllMocks();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('emits transformed sources to outDir and leaves originals untouched', async () => {
+        let source = 'export const value = 1;\n',
+            sourcePath = path.join(tmpDir, 'index.ts'),
+            tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(sourcePath, source);
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), markerPlugin);
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { declaration: true, module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }])).rejects.toThrow(/process\.exit/);
+
+        let emitted = path.join(tmpDir, 'out', 'index.js');
+
+        expect(fs.existsSync(emitted)).toBe(true);
+        expect(fs.readFileSync(emitted, 'utf8')).toContain('__TRANSFORMED__');
+        expect(fs.readFileSync(sourcePath, 'utf8')).toBe(source);
+        expect(exits).toContain(0);
+    });
+
+    it('consumes a JSONC tsconfig (comments + trailing commas) and applies its plugin', async () => {
+        let sourcePath = path.join(tmpDir, 'index.ts'),
+            tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(sourcePath, 'export const value = 1;\n');
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), markerPlugin);
+        fs.writeFileSync(tsconfigPath, [
+            '{',
+            '    // project options',
+            '    "compilerOptions": {',
+            '        "declaration": true,',
+            '        "module": "esnext",',
+            '        "moduleResolution": "bundler",',
+            '        "outDir": "./out",',
+            '        "skipLibCheck": true,',
+            '        "target": "esnext",',
+            '    },',
+            '    /* files to compile */',
+            '    "files": ["./index.ts"],',
+            '}',
+            ''
+        ].join('\n'));
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }])).rejects.toThrow(/process\.exit/);
+
+        let emitted = path.join(tmpDir, 'out', 'index.js');
+
+        expect(fs.existsSync(emitted)).toBe(true);
+        expect(fs.readFileSync(emitted, 'utf8')).toContain('__TRANSFORMED__');
+    });
+
+    it('gates a type error with a nonzero exit before emit', async () => {
+        let tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(path.join(tmpDir, 'index.ts'), 'export const broken: number = "not a number";\n');
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        await expect(build(tsconfigPath, [])).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toContain(1);
+        expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+});
+
+
+describe('diagnostics', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tsc-diag-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('flatten concatenates a nested messageChain with indentation', () => {
+        let diagnostic: Diagnostic = {
+            category: DiagnosticCategory.Error,
+            code: 2322,
+            end: 5,
+            messageChain: [
+                {
+                    category: DiagnosticCategory.Error,
+                    code: 2322,
+                    end: 5,
+                    messageChain: [
+                        { category: DiagnosticCategory.Error, code: 2322, end: 5, pos: 0, text: 'Leaf detail.' }
+                    ],
+                    pos: 0,
+                    text: 'Child reason.'
+                }
+            ],
+            pos: 0,
+            text: 'Top level error.'
+        };
+
+        let result = flatten(diagnostic);
+
+        expect(result).toContain('Top level error.');
+        expect(result).toContain('\n  Child reason.');
+        expect(result).toContain('\n    Leaf detail.');
+    });
+
+    it('format renders a fileless diagnostic without a location header', () => {
+        let diagnostic: Diagnostic = {
+            category: DiagnosticCategory.Error,
+            code: 1234,
+            end: 0,
+            pos: 0,
+            text: 'Global failure.'
+        };
+
+        let clean = format([diagnostic], tmpDir).replace(/\x1b\[[0-9;]*m/g, '');
+
+        expect(clean).toContain('error TS1234: Global failure.');
+        expect(clean).not.toContain(':1:1');
+    });
+
+    it('format places a caret underline under the offending source range', () => {
+        let source = 'const a = 1;\nconst bad = 2;\n',
+            sourcePath = path.join(tmpDir, 'source.ts'),
+            pos = source.indexOf('bad');
+
+        fs.writeFileSync(sourcePath, source);
+
+        let diagnostic: Diagnostic = {
+            category: DiagnosticCategory.Error,
+            code: 2451,
+            end: pos + 3,
+            fileName: sourcePath,
+            pos,
+            text: 'Cannot redeclare block-scoped variable.'
+        };
+
+        let clean = format([diagnostic], tmpDir).replace(/\x1b\[[0-9;]*m/g, '');
+
+        expect(clean).toContain('source.ts:2:7');
+        expect(clean).toContain('const bad = 2;');
+        expect(clean).toContain('~~~');
     });
 });
