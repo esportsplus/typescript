@@ -1,5 +1,7 @@
 import type { Plugin, SharedContext } from '~/compiler/types';
+import { API, DiagnosticCategory, type Snapshot } from 'typescript/unstable/sync';
 import { createRequire } from 'module';
+import { format } from './diagnostics';
 import { PACKAGE_NAME } from '~/constants';
 import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
@@ -8,7 +10,6 @@ import coordinator from '~/compiler/coordinator';
 import fs from 'fs';
 import languageService from '~/compiler/language-service';
 import path from 'path';
-import ts from 'typescript';
 
 
 type PluginConfig = {
@@ -23,29 +24,34 @@ let require = createRequire(import.meta.url),
     skipFlags = new Set(['--help', '--init', '--noEmit', '--showConfig', '--version', '-h', '-noEmit', '-v']);
 
 
-async function build(config: object, tsconfig: string, pluginConfigs: PluginConfig[]): Promise<void> {
+async function build(tsconfig: string, pluginConfigs: PluginConfig[]): Promise<void> {
     let root = path.dirname(path.resolve(tsconfig)),
-        parsed = ts.parseJsonConfigFileContent(config, ts.sys, root);
+        api = new API({ cwd: root }),
+        snapshot = api.updateSnapshot({ openProjects: [tsconfig] }),
+        project = snapshot.getProject(tsconfig);
 
-    if (parsed.errors.length > 0) {
-        for (let i = 0, n = parsed.errors.length; i < n; i++) {
-            console.error(
-                ts.flattenDiagnosticMessageText(parsed.errors[i].messageText, '\n')
-            );
-        }
+    if (!project) {
+        api.close();
 
+        throw new Error(`${PACKAGE_NAME}: project not found for ${tsconfig}`);
+    }
+
+    let configDiagnostics = project.program.getConfigFileParsingDiagnostics();
+
+    if (configDiagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
+        console.error(format(configDiagnostics, root));
+        teardown(snapshot, api, root);
         process.exit(1);
     }
 
-    let plugins = await loadPlugins(pluginConfigs, root);
-
-    let program = ts.createProgram(parsed.fileNames, parsed.options),
+    let { fileNames } = api.parseConfigFile(tsconfig),
+        plugins = await loadPlugins(pluginConfigs, root),
         shared: SharedContext = new Map(),
         transformedFiles = new Map<string, string>();
 
-    for (let i = 0, n = parsed.fileNames.length; i < n; i++) {
-        let fileName = parsed.fileNames[i],
-            sourceFile = program.getSourceFile(fileName);
+    for (let i = 0, n = fileNames.length; i < n; i++) {
+        let fileName = fileNames[i],
+            sourceFile = project.program.getSourceFile(fileName);
 
         if (!sourceFile) {
             continue;
@@ -55,7 +61,7 @@ async function build(config: object, tsconfig: string, pluginConfigs: PluginConf
             plugins,
             sourceFile.getFullText(),
             sourceFile,
-            program,
+            { checker: project.checker, program: project.program },
             root,
             shared
         );
@@ -65,52 +71,72 @@ async function build(config: object, tsconfig: string, pluginConfigs: PluginConf
         }
     }
 
-    if (transformedFiles.size > 0) {
-        let customHost = ts.createCompilerHost(parsed.options),
-            originalGetSourceFile = customHost.getSourceFile.bind(customHost),
-            originalReadFile = customHost.readFile.bind(customHost);
+    let program = project.program;
 
-        customHost.getSourceFile = (
-            fileName: string,
-            languageVersion: ts.ScriptTarget,
-            onError?: (message: string) => void,
-            shouldCreateNewSourceFile?: boolean
-        ): ts.SourceFile | undefined => {
-            let transformed = transformedFiles.get(normalizePath(fileName));
-
-            if (transformed) {
-                return ts.createSourceFile(fileName, transformed, languageVersion, true);
-            }
-
-            return originalGetSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile);
-        };
-
-        customHost.readFile = (fileName: string): string | undefined => {
-            return transformedFiles.get(normalizePath(fileName)) ?? originalReadFile(fileName);
-        };
-
-        program = ts.createProgram(parsed.fileNames, parsed.options, customHost);
+    for (let [fileName, code] of transformedFiles) {
+        program = languageService.update(root, fileName, code).program;
     }
 
-    let { diagnostics, emitSkipped } = program.emit();
-
-    diagnostics = ts.getPreEmitDiagnostics(program).concat(diagnostics);
+    let diagnostics = [
+        ...program.getConfigFileParsingDiagnostics(),
+        ...program.getSyntacticDiagnostics(),
+        ...program.getBindDiagnostics(),
+        ...program.getSemanticDiagnostics(),
+        ...program.getGlobalDiagnostics(),
+        ...program.getProgramDiagnostics()
+    ];
 
     if (diagnostics.length > 0) {
-        console.error(
-            ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-                getCanonicalFileName: (fileName) => fileName,
-                getCurrentDirectory: () => root,
-                getNewLine: () => '\n'
-            })
-        );
+        console.error(format(diagnostics, root));
     }
 
-    if (emitSkipped) {
+    if (diagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
+        teardown(snapshot, api, root);
         process.exit(1);
     }
 
-    return runTscAlias(process.argv.slice(2)).then((code) => process.exit(code));
+    let code = await emit(tsconfig, transformedFiles);
+
+    teardown(snapshot, api, root);
+
+    if (code !== 0) {
+        process.exit(code);
+    }
+
+    return runTscAlias(process.argv.slice(2)).then((exitCode) => process.exit(exitCode));
+}
+
+async function emit(tsconfig: string, transformedFiles: Map<string, string>): Promise<number> {
+    let tscJs = path.join(path.dirname(require.resolve('typescript/package.json')), 'lib', 'tsc.js');
+
+    if (transformedFiles.size === 0) {
+        return spawnTsc(tscJs, ['-p', tsconfig]);
+    }
+
+    let backups = new Map<string, string>(),
+        handler = (): void => {
+            restore(backups);
+            process.exit(1);
+        };
+
+    for (let [fileName, code] of transformedFiles) {
+        let target = path.resolve(fileName);
+
+        backups.set(target, fs.readFileSync(target, 'utf8'));
+        fs.writeFileSync(target, code);
+    }
+
+    process.on('SIGINT', handler);
+    process.on('SIGTERM', handler);
+
+    try {
+        return await spawnTsc(tscJs, ['-p', tsconfig]);
+    }
+    finally {
+        restore(backups);
+        process.removeListener('SIGINT', handler);
+        process.removeListener('SIGTERM', handler);
+    }
 }
 
 function isPlugin(value: unknown): value is Plugin {
@@ -194,7 +220,7 @@ function main(): void {
 
     console.log(`${PACKAGE_NAME}: found ${pluginConfigs.length} transformer plugin(s), using coordinated build...`);
 
-    build(config, tsconfig, pluginConfigs).catch((err) => {
+    build(tsconfig, pluginConfigs).catch((err) => {
         console.error(`${PACKAGE_NAME}: ${err}`);
         process.exit(1);
     });
@@ -218,6 +244,12 @@ function passthrough(): void {
         });
 }
 
+function restore(backups: Map<string, string>): void {
+    for (let [fileName, content] of backups) {
+        fs.writeFileSync(fileName, content);
+    }
+}
+
 function runTscAlias(args: string[]): Promise<number> {
     for (let i = 0, n = args.length; i < n; i++) {
         if (skipFlags.has(args[i])) {
@@ -227,6 +259,14 @@ function runTscAlias(args: string[]): Promise<number> {
 
     return new Promise((resolve) => {
         let child = spawn(process.execPath, [require.resolve('tsc-alias/dist/bin/index.js'), ...args], { stdio: 'inherit' });
+
+        child.on('exit', (code) => resolve(code ?? 0));
+    });
+}
+
+function spawnTsc(tscJs: string, args: string[]): Promise<number> {
+    return new Promise((resolve) => {
+        let child = spawn(process.execPath, [tscJs, ...args], { stdio: 'inherit' });
 
         child.on('exit', (code) => resolve(code ?? 0));
     });
@@ -348,6 +388,15 @@ function stripJsonc(text: string): string {
     }
 
     return result;
+}
+
+function teardown(snapshot: Snapshot, api: API, root: string): void {
+    if (!snapshot.isDisposed()) {
+        snapshot.dispose();
+    }
+
+    api.close();
+    languageService.dispose(root);
 }
 
 
