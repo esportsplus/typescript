@@ -1,48 +1,46 @@
-import { describe, expect, it, vi } from 'vitest';
-import ts from 'typescript';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import path from 'path';
+import type { Node, SourceFile } from 'typescript/unstable/ast';
+import type { Checker, Program } from 'typescript/unstable/sync';
+import { isIdentifier } from 'typescript/unstable/ast/is';
 
 import type { ImportIntent, Plugin, ReplacementIntent, SharedContext, TransformContext } from '~/compiler/types';
 
 import coordinator from '~/compiler/coordinator';
+import * as languageService from '~/compiler/language-service';
 
 
-vi.mock('~/compiler/language-service', () => ({
-    default: {
-        invalidate: vi.fn(),
-        update: vi.fn((_root: string, fileName: string, content: string) => {
-            let file = ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, true);
+const root = process.cwd().split(path.sep).join('/');
 
-            return {
-                getSourceFile: () => file,
-                getTypeChecker: () => ({} as ts.TypeChecker)
-            } as unknown as ts.Program;
-        })
-    }
-}));
+const fileName = root + '/src/coordinator-fixture.ts';
 
-
-function parse(code: string, fileName = 'test.ts'): ts.SourceFile {
-    return ts.createSourceFile(fileName, code, ts.ScriptTarget.Latest, true);
-}
-
-function makeProgram(file: ts.SourceFile): ts.Program {
-    return {
-        getSourceFile: () => file,
-        getTypeChecker: () => ({} as ts.TypeChecker)
-    } as unknown as ts.Program;
-}
 
 function makePlugin(transformFn: (ctx: TransformContext) => ReturnType<Plugin['transform']>): Plugin {
     return { transform: transformFn };
 }
 
+function makeProject(file: SourceFile): { checker: Checker; program: Program } {
+    return {
+        checker: {} as unknown as Checker,
+        program: { getSourceFile: () => file } as unknown as Program
+    };
+}
+
+function parse(code: string, name = fileName): SourceFile {
+    return languageService.parse(name, code);
+}
+
 
 describe('coordinator.transform', () => {
+    afterAll(() => {
+        languageService.dispose();
+    });
+
     it('returns unchanged when no plugins', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
-            result = coordinator.transform([], code, file, program, '/root', new Map());
+            project = makeProject(file),
+            result = coordinator.transform([], code, file, project, root, new Map());
 
         expect(result.changed).toBe(false);
         expect(result.code).toBe(code);
@@ -51,16 +49,16 @@ describe('coordinator.transform', () => {
     it('applies replacement intents', () => {
         let code = 'let x = OLD;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let node: ts.Node | undefined;
+                let node: Node | undefined;
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'OLD') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'OLD') {
                         node = n;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -74,7 +72,7 @@ describe('coordinator.transform', () => {
 
                 return { replacements: intents };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('NEW');
@@ -84,11 +82,11 @@ describe('coordinator.transform', () => {
     it('applies prepend after imports', () => {
         let code = "import { a } from 'pkg';\nlet x = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 prepend: ['const GENERATED = true;']
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const GENERATED = true;');
@@ -104,13 +102,13 @@ describe('coordinator.transform', () => {
     it('applies import intents', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             intents: ImportIntent[] = [{
                 add: ['foo'],
                 package: 'my-pkg'
             }],
             plugin = makePlugin(() => ({ imports: intents })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import { foo } from 'my-pkg';");
@@ -119,12 +117,12 @@ describe('coordinator.transform', () => {
     it('skips plugin when patterns do not match', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin: Plugin = {
                 patterns: ['MAGIC_TOKEN'],
                 transform: () => ({ prepend: ['SHOULD_NOT_APPEAR'] })
             },
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(false);
         expect(result.code).not.toContain('SHOULD_NOT_APPEAR');
@@ -133,12 +131,12 @@ describe('coordinator.transform', () => {
     it('runs plugin when patterns match', () => {
         let code = 'let MAGIC_TOKEN = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin: Plugin = {
                 patterns: ['MAGIC_TOKEN'],
                 transform: () => ({ prepend: ['const FOUND = true;'] })
             },
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const FOUND = true;');
@@ -147,16 +145,16 @@ describe('coordinator.transform', () => {
     it('re-parses AST between replacements and prepend (F-001 fix)', () => {
         let code = "import { a } from 'pkg';\nlet OLD = 1;\nlet y = 2;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let node: ts.Node | undefined;
+                let node: Node | undefined;
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'OLD') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'OLD') {
                         node = n;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -171,7 +169,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('REPLACED_LONGER_NAME');
@@ -187,10 +185,10 @@ describe('coordinator.transform', () => {
     it('chains multiple plugins', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
             plugin2 = makePlugin(() => ({ prepend: ['const B = 2;'] })),
-            result = coordinator.transform([plugin1, plugin2], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const A = 1;');
@@ -200,7 +198,7 @@ describe('coordinator.transform', () => {
     it('shares context between plugins', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             shared: SharedContext = new Map(),
             plugin1 = makePlugin((ctx) => {
                 ctx.shared.set('key', 'value');
@@ -211,7 +209,7 @@ describe('coordinator.transform', () => {
 
                 return { prepend: [`const B = '${val}';`] };
             }),
-            result = coordinator.transform([plugin1, plugin2], code, file, program, '/root', shared);
+            result = coordinator.transform([plugin1, plugin2], code, file, project, root, shared);
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("const B = 'value';");
@@ -220,16 +218,16 @@ describe('coordinator.transform', () => {
     it('applies replacements + imports together with AST re-parse', () => {
         let code = "let OLD = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let node: ts.Node | undefined;
+                let node: Node | undefined;
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'OLD') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'OLD') {
                         node = n;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -244,7 +242,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('REPLACED');
@@ -256,16 +254,16 @@ describe('coordinator.transform', () => {
     it('plugin producing replacements + prepend + imports simultaneously', () => {
         let code = "import { reactive } from 'my-pkg';\nlet x = reactive(1);",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let node: ts.Node | undefined;
+                let node: Node | undefined;
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'reactive') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'reactive') {
                         node = n;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -281,7 +279,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('NS.reactive');
@@ -300,18 +298,18 @@ describe('coordinator.transform', () => {
     it('plugin with generate() closures capturing scope variables', () => {
         let code = 'let myVar = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let node: ts.Node | undefined,
+                let node: Node | undefined,
                     varname = '';
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'myVar') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'myVar') {
                         node = n;
                         varname = n.text;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -325,7 +323,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('NS.write(myVar, myVar.value)');
@@ -334,11 +332,11 @@ describe('coordinator.transform', () => {
     it('file with existing imports, plugin adds namespace + removes specifier', () => {
         let code = "import { other, reactive } from 'my-pkg';\nlet x = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ namespace: 'NS', package: 'my-pkg', remove: ['reactive'] }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import * as NS from 'my-pkg';");
@@ -351,11 +349,11 @@ describe('coordinator.transform', () => {
     it('adds specifiers to existing import', () => {
         let code = "import { a } from 'pkg';\nlet x = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ add: ['b', 'c'], package: 'pkg' }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('a');
@@ -367,11 +365,11 @@ describe('coordinator.transform', () => {
     it('removes specifier from import keeping others', () => {
         let code = "import { a, b, reactive } from 'my-pkg';\nlet x = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ package: 'my-pkg', remove: ['reactive'] }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('a');
@@ -382,11 +380,11 @@ describe('coordinator.transform', () => {
     it('adds namespace import to file without package imports', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ namespace: 'NS', package: 'my-pkg' }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import * as NS from 'my-pkg';");
@@ -395,11 +393,11 @@ describe('coordinator.transform', () => {
     it('merges duplicate import statements', () => {
         let code = "import { a } from 'pkg';\nimport { b } from 'pkg';\nlet x = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ add: ['c'], package: 'pkg' }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
 
@@ -414,11 +412,11 @@ describe('coordinator.transform', () => {
     it('namespace + remove specifier combined', () => {
         let code = "import { reactive } from 'my-pkg';\nlet x = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ namespace: 'NS', package: 'my-pkg', remove: ['reactive'] }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import * as NS from 'my-pkg';");
@@ -428,11 +426,11 @@ describe('coordinator.transform', () => {
     it('adds import to file with different package imports', () => {
         let code = "import { x } from 'other';\nlet a = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ add: ['y'], package: 'new-pkg' }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import { x } from 'other';");
@@ -444,16 +442,16 @@ describe('coordinator.transform', () => {
     it('multiple non-overlapping replacements', () => {
         let code = 'let OLD1 = 1; let OLD2 = 2;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let nodes: ts.Node[] = [];
+                let nodes: Node[] = [];
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && (n.text === 'OLD1' || n.text === 'OLD2')) {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && (n.text === 'OLD1' || n.text === 'OLD2')) {
                         nodes.push(n);
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 return {
@@ -463,7 +461,7 @@ describe('coordinator.transform', () => {
                     }))
                 };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('NEW1');
@@ -475,16 +473,16 @@ describe('coordinator.transform', () => {
     it('replacement with empty string deletes a node', () => {
         let code = 'let DELETEME = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let node: ts.Node | undefined;
+                let node: Node | undefined;
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'DELETEME') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'DELETEME') {
                         node = n;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -498,7 +496,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).not.toContain('DELETEME');
@@ -507,16 +505,16 @@ describe('coordinator.transform', () => {
     it('replacement at file start', () => {
         let code = 'FIRST_TOKEN;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let node: ts.Node | undefined;
+                let node: Node | undefined;
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'FIRST_TOKEN') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'FIRST_TOKEN') {
                         node = n;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -530,7 +528,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('REPLACED_FIRST');
@@ -542,16 +540,16 @@ describe('coordinator.transform', () => {
     it('first plugin modifies code, second receives updated code', () => {
         let code = 'let OLD = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin1 = makePlugin((ctx) => {
-                let node: ts.Node | undefined;
+                let node: Node | undefined;
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'OLD') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'OLD') {
                         node = n;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -572,7 +570,7 @@ describe('coordinator.transform', () => {
 
                 return {};
             }),
-            result = coordinator.transform([plugin1, plugin2], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('TRANSFORMED');
@@ -582,14 +580,14 @@ describe('coordinator.transform', () => {
     it('three plugins — first skipped, second and third run', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin1: Plugin = {
                 patterns: ['MISSING'],
                 transform: () => ({ prepend: ['const SHOULD_NOT_APPEAR = true;'] })
             },
             plugin2 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
             plugin3 = makePlugin(() => ({ prepend: ['const B = 2;'] })),
-            result = coordinator.transform([plugin1, plugin2, plugin3], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin1, plugin2, plugin3], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).not.toContain('SHOULD_NOT_APPEAR');
@@ -602,16 +600,16 @@ describe('coordinator.transform', () => {
     it('generate() receives correct sourceFile after prior replacement', () => {
         let code = "let TARGET = 'hello';",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin((ctx) => {
-                let node: ts.Node | undefined;
+                let node: Node | undefined;
 
-                ts.forEachChild(ctx.sourceFile, function visit(n) {
-                    if (ts.isIdentifier(n) && n.text === 'TARGET') {
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === 'TARGET') {
                         node = n;
                     }
 
-                    ts.forEachChild(n, visit);
+                    n.forEachChild(visit);
                 });
 
                 if (!node) {
@@ -625,10 +623,10 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
-        expect(result.code).toContain('REPLACED_IN_test.ts');
+        expect(result.code).toContain(`REPLACED_IN_${fileName}`);
     });
 
     // F-TEST-005: Pattern filtering edge cases
@@ -636,12 +634,12 @@ describe('coordinator.transform', () => {
     it('pattern in string literal still matches', () => {
         let code = 'let x = "reactive(";',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin: Plugin = {
                 patterns: ['reactive('],
                 transform: () => ({ prepend: ['const MATCHED = true;'] })
             },
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const MATCHED = true;');
@@ -650,12 +648,12 @@ describe('coordinator.transform', () => {
     it('multiple patterns, only one matches', () => {
         let code = 'let PRESENT = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin: Plugin = {
                 patterns: ['MISSING', 'PRESENT'],
                 transform: () => ({ prepend: ['const FOUND = true;'] })
             },
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const FOUND = true;');
@@ -664,9 +662,9 @@ describe('coordinator.transform', () => {
     it('no patterns property — plugin always runs', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({ prepend: ['const ALWAYS = true;'] })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const ALWAYS = true;');
@@ -677,9 +675,9 @@ describe('coordinator.transform', () => {
     it('no imports — prepend goes to start', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({ prepend: ['const A = 1;'] })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
 
@@ -692,9 +690,9 @@ describe('coordinator.transform', () => {
     it('multiple prepend strings appear in order', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({ prepend: ['const A = 1;', 'const B = 2;'] })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const A = 1;');
@@ -711,14 +709,14 @@ describe('coordinator.transform', () => {
     it('two ImportIntents for different packages', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [
                     { add: ['a'], package: 'pkg-1' },
                     { add: ['b'], package: 'pkg-2' }
                 ]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import { a } from 'pkg-1';");
@@ -728,11 +726,11 @@ describe('coordinator.transform', () => {
     it('ImportIntent with only remove', () => {
         let code = "import { a, b } from 'pkg';\nlet x = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ package: 'pkg', remove: ['a'] }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('b');
@@ -743,23 +741,21 @@ describe('coordinator.transform', () => {
     it('propagates plugin.transform() exception', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => { throw new Error('plugin crashed'); });
 
-        expect(() => coordinator.transform([plugin], code, file, program, '/root', new Map())).toThrow('plugin crashed');
+        expect(() => coordinator.transform([plugin], code, file, project, root, new Map())).toThrow('plugin crashed');
     });
 
-    it('falls back to createSourceFile when getSourceFile returns undefined', async () => {
+    it('falls back to parse when getSourceFile returns undefined', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            program = makeProgram(file);
+            project = makeProject(file);
 
-        let languageService = await import('~/compiler/language-service');
-
-        vi.mocked(languageService.default.update).mockReturnValueOnce({
-            getSourceFile: () => undefined,
-            getTypeChecker: () => ({} as ts.TypeChecker)
-        } as unknown as ts.Program);
+        vi.spyOn(languageService.default, 'update').mockReturnValueOnce({
+            checker: {} as unknown as Checker,
+            program: { getSourceFile: () => undefined } as unknown as Program
+        });
 
         let plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
             plugin2 = makePlugin((ctx) => {
@@ -769,7 +765,7 @@ describe('coordinator.transform', () => {
 
                 return {};
             }),
-            result = coordinator.transform([plugin1, plugin2], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const A = 1;');
@@ -782,7 +778,7 @@ describe('coordinator.transform', () => {
         it('batches multiple intents for the same package into one modify call', () => {
             let code = 'let x = 1;',
                 file = parse(code),
-                program = makeProgram(file),
+                project = makeProject(file),
                 plugin = makePlugin(() => ({
                     imports: [
                         { add: ['foo'], package: '@pkg/a' },
@@ -790,7 +786,7 @@ describe('coordinator.transform', () => {
                         { add: ['baz'], package: '@pkg/a' }
                     ]
                 })),
-                result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import { bar, baz, foo } from '@pkg/a';");
@@ -803,7 +799,7 @@ describe('coordinator.transform', () => {
         it('re-parses only between distinct packages', () => {
             let code = 'let x = 1;',
                 file = parse(code),
-                program = makeProgram(file),
+                project = makeProject(file),
                 plugin = makePlugin(() => ({
                     imports: [
                         { add: ['foo'], package: '@pkg/a' },
@@ -811,7 +807,7 @@ describe('coordinator.transform', () => {
                         { add: ['qux'], package: '@pkg/b' }
                     ]
                 })),
-                result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import { bar, foo } from '@pkg/a';");
@@ -821,14 +817,14 @@ describe('coordinator.transform', () => {
         it('merges add and remove for same package', () => {
             let code = "import { bar, foo } from '@pkg/a';\nlet x = 1;",
                 file = parse(code),
-                program = makeProgram(file),
+                project = makeProject(file),
                 plugin = makePlugin(() => ({
                     imports: [
                         { add: ['baz'], package: '@pkg/a' },
                         { package: '@pkg/a', remove: ['bar'] }
                     ]
                 })),
-                result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import { baz, foo } from '@pkg/a';");
@@ -838,14 +834,14 @@ describe('coordinator.transform', () => {
         it('preserves namespace across merged intents', () => {
             let code = 'let x = 1;',
                 file = parse(code),
-                program = makeProgram(file),
+                project = makeProject(file),
                 plugin = makePlugin(() => ({
                     imports: [
                         { namespace: 'utils', package: '@pkg/a' },
                         { add: ['foo'], package: '@pkg/a' }
                     ]
                 })),
-                result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import * as utils from '@pkg/a';");
