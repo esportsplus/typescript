@@ -47,7 +47,7 @@
         "bench:run": "vitest bench --run",
         "build": "tsc && tsc-alias",
         "-": "-",
-        "prepare": "pnpm build",
+        "prepare": "exit 0",
         "prepublishOnly": "pnpm build",
         "test": "vitest run"
     },
