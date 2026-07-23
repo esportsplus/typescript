@@ -27,6 +27,7 @@
 - **Threshold**: n/a (no perf items)
 - **Total features**: 10
 - **Model mix**: opus 4 · sonnet 6
+- **Spec UUID**: b92bb771-ecf7-40ea-b47b-c533d0f0b867
 
 ## Baseline
 - **Commit**: 8db4e65abe603e2ce32bcab60152619091f9e7ef (branch main; only package.json + pnpm-lock.yaml modified — the typescript@7.0.2 bump)
