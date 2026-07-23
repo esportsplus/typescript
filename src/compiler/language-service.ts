@@ -1,6 +1,5 @@
 import type { SourceFile } from 'typescript/unstable/ast';
 import type { FileSystem } from 'typescript/unstable/fs';
-import type { FileChangeSummary } from 'typescript/unstable/proto';
 import { API, DiagnosticCategory, type Checker, type Program, type Project, type Snapshot } from 'typescript/unstable/sync';
 import { PACKAGE_NAME } from '~/constants';
 
@@ -15,6 +14,7 @@ type Entry = {
     pending: Set<string>;
     project: Project;
     root: string;
+    seen: Set<string>;
     snapshot: Snapshot;
 };
 
@@ -40,8 +40,8 @@ let cache = new Map<string, Entry>(),
     scratchEntry: ScratchEntry | null = null;
 
 
-function advance(entry: Entry, changes: FileChangeSummary): void {
-    let snapshot = entry.api.updateSnapshot({ fileChanges: changes });
+function advance(entry: Entry, changed: string[]): void {
+    let snapshot = entry.api.updateSnapshot({ fileChanges: { changed } });
 
     if (!entry.snapshot.isDisposed()) {
         entry.snapshot.dispose();
@@ -73,7 +73,7 @@ function createEntry(root: string): Entry {
         }
     }
 
-    return { api, configFileName, contents, pending: new Set(), project, root, snapshot };
+    return { api, configFileName, contents, pending: new Set(), project, root, seen: seed(project.program), snapshot };
 }
 
 function createScratch(file: string): ScratchEntry {
@@ -169,7 +169,7 @@ function overlayFileSystem(contents: Map<string, string>): FileSystem {
     };
 }
 
-function reopen(entry: Entry): void {
+function recreate(entry: Entry): void {
     if (!entry.snapshot.isDisposed()) {
         entry.snapshot.dispose();
     }
@@ -178,6 +178,7 @@ function reopen(entry: Entry): void {
     entry.api = new API({ cwd: entry.root, fs: overlayFileSystem(entry.contents) });
     entry.snapshot = entry.api.updateSnapshot({ openProjects: [entry.configFileName] });
     entry.project = resolveProject(entry.snapshot, entry.configFileName);
+    entry.seen = seed(entry.project.program);
 }
 
 function reseedScratch(entry: ScratchEntry, file: string): void {
@@ -216,6 +217,16 @@ function scratchConfig(file: string): string {
         },
         files: [file]
     });
+}
+
+function seed(program: Program): Set<string> {
+    let seen = new Set<string>();
+
+    for (let name of program.getSourceFileNames()) {
+        seen.add(normalize(name));
+    }
+
+    return seen;
 }
 
 
@@ -314,19 +325,25 @@ const update = (root: string, fileName: string, content: string): UpdateResult =
         id = normalize(fileName);
 
     entry.contents.set(id, content);
-    entry.pending.add(id);
 
-    let changed = [...entry.pending];
+    if (entry.seen.has(id)) {
+        entry.pending.add(id);
 
-    entry.pending.clear();
-    advance(entry, { changed });
+        let changed = [...entry.pending];
+
+        entry.pending.clear();
+        advance(entry, changed);
+    }
+    else {
+        // tsgo fixes each project's file-set when its API process opens; incremental
+        // created/changed events and project close+reopen do NOT admit a file unseen
+        // at that point, so a first-sight file enters the program only by recreating the API.
+        recreate(entry);
+        entry.pending.clear();
+        entry.seen.add(id);
+    }
 
     let source = entry.project.program.getSourceFile(id);
-
-    if (!source || source.text !== content) {
-        reopen(entry);
-        source = entry.project.program.getSourceFile(id);
-    }
 
     if (!source || source.text !== content) {
         throw new Error(`${PACKAGE_NAME}: failed to load ${fileName} into the program`);
