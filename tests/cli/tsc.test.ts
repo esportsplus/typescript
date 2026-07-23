@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
+import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
 import { flatten, format } from '~/cli/diagnostics';
 import { build, isPlugin, loadPlugins, normalizePath, runTscAlias } from '~/cli/tsc';
 
@@ -158,11 +158,20 @@ describe('runTscAlias', () => {
 
 
 describe('build', () => {
-    let exits: number[],
+    let api: API,
+        exits: number[],
         originalArgv: string[],
         tmpDir: string;
 
     let markerPlugin = 'export default { transform: () => ({ prepend: ["export const __TRANSFORMED__ = 42;"] }) };';
+
+    beforeAll(() => {
+        api = new API({ cwd: os.tmpdir() });
+    });
+
+    afterAll(() => {
+        api.close();
+    });
 
     beforeEach(() => {
         exits = [];
@@ -195,7 +204,7 @@ describe('build', () => {
             files: ['./index.ts']
         }));
 
-        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }])).rejects.toThrow(/process\.exit/);
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
 
         let emitted = path.join(tmpDir, 'out', 'index.js');
 
@@ -203,6 +212,44 @@ describe('build', () => {
         expect(fs.readFileSync(emitted, 'utf8')).toContain('__TRANSFORMED__');
         expect(fs.readFileSync(sourcePath, 'utf8')).toBe(source);
         expect(exits).toContain(0);
+    });
+
+    it('never writes the real source file at any point during a transformed emit', async () => {
+        let source = 'export const value = 1;\n',
+            sourcePath = path.join(tmpDir, 'index.ts'),
+            tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(sourcePath, source);
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), markerPlugin);
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { declaration: true, module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        let normalizedSource = path.resolve(sourcePath).replace(/\\/g, '/'),
+            original = fs.writeFileSync,
+            writes: string[] = [];
+
+        vi.spyOn(fs, 'writeFileSync').mockImplementation((...args: Parameters<typeof fs.writeFileSync>): void => {
+            let file = args[0];
+
+            if (typeof file === 'string') {
+                writes.push(path.resolve(file).replace(/\\/g, '/'));
+            }
+
+            (original as (...a: Parameters<typeof fs.writeFileSync>) => void)(...args);
+        });
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
+
+        expect(writes.length).toBeGreaterThan(0);
+        expect(writes).not.toContain(normalizedSource);
+        expect(fs.readFileSync(sourcePath, 'utf8')).toBe(source);
+
+        let emitted = path.join(tmpDir, 'out', 'index.js');
+
+        expect(fs.existsSync(emitted)).toBe(true);
+        expect(fs.readFileSync(emitted, 'utf8')).toContain('__TRANSFORMED__');
     });
 
     it('consumes a JSONC tsconfig (comments + trailing commas) and applies its plugin', async () => {
@@ -228,7 +275,7 @@ describe('build', () => {
             ''
         ].join('\n'));
 
-        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }])).rejects.toThrow(/process\.exit/);
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
 
         let emitted = path.join(tmpDir, 'out', 'index.js');
 
@@ -245,7 +292,7 @@ describe('build', () => {
             files: ['./index.ts']
         }));
 
-        await expect(build(tsconfigPath, [])).rejects.toThrow(/process\.exit/);
+        await expect(build(tsconfigPath, [], api)).rejects.toThrow(/process\.exit/);
 
         expect(exits).toContain(1);
         expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
