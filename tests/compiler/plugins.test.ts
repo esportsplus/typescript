@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ts from 'typescript';
+import type { SourceFile } from 'typescript/unstable/ast';
+import type { Checker, Program } from 'typescript/unstable/sync';
 
 import type { Plugin } from '~/compiler/types';
 
@@ -8,24 +9,22 @@ import vite from '~/compiler/plugins/vite';
 
 vi.mock('~/compiler/language-service', () => ({
     default: {
+        dispose: vi.fn(),
         invalidate: vi.fn(),
-        update: vi.fn((_root: string, fileName: string, content: string) => {
-            let file = ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, true);
-
-            return {
-                getSourceFile: () => file,
-                getTypeChecker: () => ({} as ts.TypeChecker)
-            } as unknown as ts.Program;
-        })
+        parse: vi.fn((fileName: string, content: string) => ({ fileName, text: content }) as unknown as SourceFile),
+        update: vi.fn((_root: string, _fileName: string, _content: string) => ({
+            checker: {} as unknown as Checker,
+            program: { getSourceFile: () => undefined } as unknown as Program
+        }))
     }
 }));
 
 vi.mock('~/compiler/coordinator', () => ({
     default: {
-        transform: vi.fn((_plugins: Plugin[], code: string, _file: ts.SourceFile, _prog: ts.Program, _root: string, _ctx: Map<string, unknown>) => ({
+        transform: vi.fn((_plugins: Plugin[], code: string, _file: SourceFile, _project: { checker: Checker; program: Program }, _root: string, _ctx: Map<string, unknown>) => ({
             changed: false,
             code,
-            sourceFile: {} as ts.SourceFile
+            sourceFile: {} as SourceFile
         }))
     }
 }));
@@ -61,6 +60,8 @@ describe('plugin.vite', () => {
         let factory = vite({ name: 'test-pkg', plugins: [] }),
             plugin = factory();
 
+        expect(plugin).toHaveProperty('closeBundle');
+        expect(plugin).toHaveProperty('closeWatcher');
         expect(plugin).toHaveProperty('configResolved');
         expect(plugin).toHaveProperty('enforce');
         expect(plugin).toHaveProperty('name');
@@ -99,7 +100,7 @@ describe('plugin.vite', () => {
         vi.mocked(coordinator.transform).mockReturnValueOnce({
             changed: true,
             code: 'TRANSFORMED',
-            sourceFile: {} as ts.SourceFile
+            sourceFile: {} as SourceFile
         });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
@@ -156,17 +157,36 @@ describe('plugin.vite', () => {
         consoleSpy.mockRestore();
     });
 
-    it('falls back to createSourceFile when getSourceFile returns undefined', () => {
+    it('falls back to languageService.parse when getSourceFile returns undefined', () => {
         vi.mocked(languageService.update).mockReturnValueOnce({
-            getSourceFile: () => undefined,
-            getTypeChecker: () => ({} as ts.TypeChecker)
-        } as unknown as ts.Program);
+            checker: {} as unknown as Checker,
+            program: { getSourceFile: () => undefined } as unknown as Program
+        });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
         let result = plugin.transform('let x = 1;', 'src/app.ts');
 
         expect(result).toBeNull();
+        expect(languageService.parse).toHaveBeenCalled();
         expect(coordinator.transform).toHaveBeenCalled();
+    });
+
+    it('closeBundle disposes the language service for the root', () => {
+        let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+        plugin.configResolved({ root: '/my/root' });
+        plugin.closeBundle();
+
+        expect(languageService.dispose).toHaveBeenCalledWith('/my/root');
+    });
+
+    it('closeWatcher disposes the language service for the root', () => {
+        let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+        plugin.configResolved({ root: '/my/root' });
+        plugin.closeWatcher();
+
+        expect(languageService.dispose).toHaveBeenCalledWith('/my/root');
     });
 });

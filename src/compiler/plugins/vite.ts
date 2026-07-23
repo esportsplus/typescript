@@ -1,12 +1,13 @@
 import type { Plugin, SharedContext } from '../types';
 import type { ResolvedConfig } from 'vite';
-import { ts } from '~/index';
 
 import coordinator from '../coordinator';
 import languageService from '../language-service';
 
 
 type VitePlugin = {
+    closeBundle: () => void;
+    closeWatcher: () => void;
     configResolved: (config: unknown) => void;
     enforce: 'pre';
     name: string;
@@ -32,6 +33,14 @@ let contexts = new Map<string, SharedContext>();
 export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
     return ({ root }: { root?: string } = {}): VitePlugin => {
         return {
+            closeBundle() {
+                languageService.dispose(root || '');
+                contexts.delete(root || '');
+            },
+            closeWatcher() {
+                languageService.dispose(root || '');
+                contexts.delete(root || '');
+            },
             configResolved(config: unknown) {
                 root ??= (config as ResolvedConfig).root;
             },
@@ -44,12 +53,8 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
 
                 try {
                     let normalizedId = id.replace(DIRECTORY_SEPARATOR_REGEX, '/'),
-                        prog = languageService.update(root || '', normalizedId, code),
-                        sourceFile = prog.getSourceFile(normalizedId);
-
-                    if (!sourceFile) {
-                        sourceFile = ts.createSourceFile(normalizedId, code, ts.ScriptTarget.Latest, true);
-                    }
+                        { checker, program } = languageService.update(root || '', normalizedId, code),
+                        sourceFile = program.getSourceFile(normalizedId) ?? languageService.parse(normalizedId, code);
 
                     let key = root || '',
                         ctx = contexts.get(key);
@@ -63,7 +68,7 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                             plugins,
                             code,
                             sourceFile,
-                            prog,
+                            { checker, program },
                             key,
                             ctx
                         );
