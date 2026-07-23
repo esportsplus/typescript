@@ -1,4 +1,7 @@
-import { ts } from '~/index';
+import type { Node, SourceFile } from 'typescript/unstable/ast';
+import { SyntaxKind } from 'typescript/unstable/ast';
+import { isIdentifier, isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/unstable/ast/is';
+import type { Checker } from 'typescript/unstable/sync';
 
 
 type ImportInfo = {
@@ -14,10 +17,11 @@ type ModifyOptions = {
 };
 
 
-let cache = new WeakMap<ts.SourceFile, Map<string, Set<string>>>();
+let cache = new WeakMap<SourceFile, Map<string, Set<string>>>();
 
 
 function fileNameMatchesPackage(fileName: string, pkg: string): boolean {
+    // NodeHandle.path is a canonicalized (possibly lower-cased) Path; npm names are lowercase by registry rule, so the substring match is safe without case-folding.
     let normalized = fileName.replace(/\\/g, '/'),
         marker = `/node_modules/${pkg}/`;
 
@@ -26,26 +30,26 @@ function fileNameMatchesPackage(fileName: string, pkg: string): boolean {
 
 
 // Find all named imports from a specific package
-const all = (file: ts.SourceFile, pkg: string): ImportInfo[] => {
+const all = (file: SourceFile, pkg: string): ImportInfo[] => {
     let imports: ImportInfo[] = [];
 
     for (let i = 0, n = file.statements.length; i < n; i++) {
         let stmt = file.statements[i];
 
-        if (!ts.isImportDeclaration(stmt)) {
+        if (!isImportDeclaration(stmt)) {
             continue;
         }
 
         let moduleSpecifier = stmt.moduleSpecifier;
 
-        if (!ts.isStringLiteral(moduleSpecifier) || moduleSpecifier.text !== pkg) {
+        if (!isStringLiteral(moduleSpecifier) || moduleSpecifier.text !== pkg) {
             continue;
         }
 
         let bindings = stmt.importClause?.namedBindings,
             specifiers = new Map<string, string>();
 
-        if (bindings && ts.isNamedImports(bindings)) {
+        if (bindings && isNamedImports(bindings)) {
             for (let j = 0, m = bindings.elements.length; j < m; j++) {
                 let element = bindings.elements[j],
                     name = element.name.text,
@@ -62,8 +66,8 @@ const all = (file: ts.SourceFile, pkg: string): ImportInfo[] => {
 };
 
 // Check if node's symbol originates from a specific package (with optional symbol name validation)
-const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolName?: string): boolean => {
-    if (!ts.isIdentifier(node)) {
+const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string): boolean => {
+    if (!isIdentifier(node)) {
         return false;
     }
 
@@ -100,23 +104,27 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
         let symbol = checker.getSymbolAtLocation(node);
 
         if (symbol) {
-            let declarations = symbol.getDeclarations();
+            let declarations = symbol.declarations;
 
             if (declarations && declarations.length > 0) {
                 for (let i = 0, n = declarations.length; i < n; i++) {
-                    let decl = declarations[i];
+                    let handle = declarations[i];
 
-                    if (ts.isImportSpecifier(decl)) {
-                        let importDecl = decl.parent?.parent?.parent;
+                    if (handle.kind === SyntaxKind.ImportSpecifier) {
+                        let decl = handle.resolve();
 
-                        if (importDecl && ts.isImportDeclaration(importDecl) && ts.isStringLiteral(importDecl.moduleSpecifier)) {
-                            if (importDecl.moduleSpecifier.text === pkg) {
-                                return true;
+                        if (decl) {
+                            let importDecl = decl.parent?.parent?.parent;
+
+                            if (importDecl && isImportDeclaration(importDecl) && isStringLiteral(importDecl.moduleSpecifier)) {
+                                if (importDecl.moduleSpecifier.text === pkg) {
+                                    return true;
+                                }
                             }
                         }
                     }
 
-                    if (fileNameMatchesPackage(decl.getSourceFile().fileName, pkg)) {
+                    if (fileNameMatchesPackage(handle.path, pkg)) {
                         return true;
                     }
                 }
@@ -135,13 +143,13 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
     }
 
     // Check declarations
-    let declarations = symbol.getDeclarations();
+    let declarations = symbol.declarations;
 
     if (declarations && declarations.length > 0) {
         for (let i = 0, n = declarations.length; i < n; i++) {
-            let decl = declarations[i];
+            let handle = declarations[i];
 
-            if (fileNameMatchesPackage(decl.getSourceFile().fileName, pkg)) {
+            if (fileNameMatchesPackage(handle.path, pkg)) {
                 return true;
             }
         }
@@ -152,11 +160,11 @@ const includes = (checker: ts.TypeChecker, node: ts.Node, pkg: string, symbolNam
         let aliased = checker.getAliasedSymbol(symbol);
 
         if (aliased && aliased !== symbol) {
-            let aliasedDecls = aliased.getDeclarations();
+            let aliasedDecls = aliased.declarations;
 
             if (aliasedDecls) {
                 for (let i = 0, n = aliasedDecls.length; i < n; i++) {
-                    if (fileNameMatchesPackage(aliasedDecls[i].getSourceFile().fileName, pkg)) {
+                    if (fileNameMatchesPackage(aliasedDecls[i].path, pkg)) {
                         return true;
                     }
                 }

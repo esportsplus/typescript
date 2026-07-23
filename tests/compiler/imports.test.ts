@@ -1,12 +1,21 @@
-import { describe, expect, it } from 'vitest';
-import ts from 'typescript';
+import { afterAll, describe, expect, it } from 'vitest';
+import type { Identifier, Node, SourceFile } from 'typescript/unstable/ast';
+import { isIdentifier, isImportClause, isImportSpecifier, isNamespaceImport } from 'typescript/unstable/ast/is';
+import type { Checker } from 'typescript/unstable/sync';
 
 import imports from '~/compiler/imports';
+import languageService from '~/compiler/language-service';
 
 
-function parse(code: string, fileName = 'test.ts'): ts.SourceFile {
-    return ts.createSourceFile(fileName, code, ts.ScriptTarget.Latest, true);
+const root = process.cwd().replace(/\\/g, '/');
+
+
+function parse(code: string, fileName = root + '/src/test-imports.ts'): SourceFile {
+    return languageService.parse(fileName, code);
 }
+
+
+afterAll(() => languageService.dispose());
 
 
 describe('imports.all', () => {
@@ -75,22 +84,24 @@ describe('imports.all', () => {
 
 
 describe('imports.includes', () => {
-    let mockChecker = { getSymbolAtLocation: () => null } as unknown as ts.TypeChecker;
+    let mockChecker = { getSymbolAtLocation: () => null } as unknown as Checker;
 
-    function findIdentifier(file: ts.SourceFile, name: string): ts.Identifier | undefined {
-        let found: ts.Identifier | undefined;
+    function findIdentifier(file: SourceFile, name: string): Identifier | undefined {
+        let found: Identifier | undefined;
 
-        ts.forEachChild(file, function visit(n) {
-            if (ts.isIdentifier(n) && n.text === name && !found) {
+        function visit(n: Node): void {
+            if (isIdentifier(n) && n.text === name && !found) {
                 let parent = n.parent;
 
-                if (!ts.isImportSpecifier(parent) && !ts.isImportClause(parent) && !ts.isNamespaceImport(parent)) {
+                if (!isImportSpecifier(parent) && !isImportClause(parent) && !isNamespaceImport(parent)) {
                     found = n;
                 }
             }
 
-            ts.forEachChild(n, visit);
-        });
+            n.forEachChild(visit);
+        }
+
+        file.forEachChild(visit);
 
         return found;
     }
@@ -157,10 +168,10 @@ describe('imports.includes', () => {
 
         let checker = {
             getSymbolAtLocation: () => ({
-                getDeclarations: () => []
+                declarations: []
             }),
             getAliasedSymbol: () => { throw new Error('not an alias'); }
-        } as unknown as ts.TypeChecker;
+        } as unknown as Checker;
 
         expect(imports.includes(checker, node!, 'my-pkg')).toBe(false);
     });
