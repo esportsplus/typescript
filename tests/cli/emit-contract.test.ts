@@ -8,7 +8,63 @@ import { build } from '~/cli/tsc';
 import { createFixture, MARKER_PLUGIN, snapshotTree } from './fixtures';
 
 
+const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
 const IMPORT_INJECT_PLUGIN = 'export default { patterns: ["~/util"], transform: () => ({ imports: [{ package: "~/runtime", add: ["helper"] }], prepend: ["export const injected = helper;"] }) };';
+
+
+function decodeSegments(mappings: string): { originalColumn: number; originalLine: number }[] {
+    let inverse: Record<string, number> = {},
+        origColumn = 0,
+        origLine = 0,
+        out: { originalColumn: number; originalLine: number }[] = [],
+        source = 0;
+
+    for (let i = 0; i < BASE64.length; i++) {
+        inverse[BASE64[i]] = i;
+    }
+
+    let lines = mappings.split(';');
+
+    for (let l = 0, n = lines.length; l < n; l++) {
+        if (lines[l] === '') {
+            continue;
+        }
+
+        let tokens = lines[l].split(',');
+
+        for (let t = 0, m = tokens.length; t < m; t++) {
+            let token = tokens[t],
+                values: number[] = [],
+                i = 0;
+
+            while (i < token.length) {
+                let digit = 0,
+                    result = 0,
+                    shift = 0;
+
+                do {
+                    digit = inverse[token[i]];
+                    i++;
+                    result += (digit & 31) << shift;
+                    shift += 5;
+                }
+                while (digit & 32);
+
+                values.push((result & 1) ? -(result >>> 1) : (result >>> 1));
+            }
+
+            if (values.length >= 4) {
+                source += values[1];
+                origLine += values[2];
+                origColumn += values[3];
+                out.push({ originalColumn: origColumn, originalLine: origLine });
+            }
+        }
+    }
+
+    return out;
+}
 
 
 describe('emit contract', () => {
@@ -41,6 +97,61 @@ describe('emit contract', () => {
         process.argv = originalArgv;
         vi.restoreAllMocks();
         fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('composed .js.map resolves post-injection lines and untouched columns to real source', async () => {
+        let outDir = path.join(tmpDir, 'out'),
+            source = 'export const untouched = 123;\nexport const value = untouched + 1;\n',
+            tsconfigPath = createFixture(tmpDir, {
+                sources: {
+                    'index.ts': source
+                },
+                tsconfig: {
+                    compilerOptions: {
+                        declaration: false,
+                        module: 'esnext',
+                        moduleResolution: 'bundler',
+                        outDir: './out',
+                        rootDir: './src',
+                        skipLibCheck: true,
+                        sourceMap: true,
+                        target: 'esnext'
+                    },
+                    files: ['./src/index.ts']
+                }
+            });
+
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), MARKER_PLUGIN);
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toContain(0);
+
+        let map = JSON.parse(fs.readFileSync(path.join(outDir, 'index.js.map'), 'utf8')),
+            segments = decodeSegments(map.mappings),
+            lines = source.split('\n');
+
+        expect(map.sources).toEqual(['../src/index.ts']);
+        expect(map.sourcesContent).toBeUndefined();
+
+        // No segment may resolve past the last real source line (bug produced phantom lines from the mirror's injected offset).
+        expect(segments.every((s) => s.originalLine <= 1)).toBe(true);
+
+        // Both real source lines are reachable — post-injection lines are not collapsed onto line 0.
+        expect(segments.some((s) => s.originalLine === 0)).toBe(true);
+        expect(segments.some((s) => s.originalLine === 1)).toBe(true);
+
+        // Untouched column on an untouched line resolves exactly: the `untouched` reference on real line 1.
+        let referenceColumn = lines[1].indexOf('untouched');
+
+        expect(referenceColumn).toBeGreaterThan(0);
+        expect(segments.some((s) => s.originalLine === 1 && s.originalColumn === referenceColumn)).toBe(true);
+
+        // And its declaration on real line 0 at its own exact column.
+        let declarationColumn = lines[0].indexOf('untouched');
+
+        expect(segments.some((s) => s.originalLine === 0 && s.originalColumn === declarationColumn)).toBe(true);
     });
 
     it('passthrough-parity oracle: shipped config shape with zero plugins emits exact tree with rewritten alias', async () => {

@@ -1,4 +1,5 @@
 import type { Plugin, SharedContext } from '~/compiler/types';
+import type { PositionMapping } from '~/compiler/sourcemap';
 import { API, DiagnosticCategory, type Snapshot } from 'typescript/unstable/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
@@ -10,10 +11,16 @@ import coordinator from '~/compiler/coordinator';
 import fs from 'fs';
 import languageService from '~/compiler/language-service';
 import path from 'path';
+import sourcemap from '~/compiler/sourcemap';
 
 
 type PluginConfig = {
     transform: string;
+};
+
+type TransformedFile = {
+    code: string;
+    mapping: PositionMapping;
 };
 
 type ResolvedOptions = ReturnType<API['parseConfigFile']>['options'];
@@ -56,7 +63,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     let { fileNames, options } = api.parseConfigFile(tsconfig),
         plugins = await loadPlugins(pluginConfigs, root),
         shared: SharedContext = new Map(),
-        transformedFiles = new Map<string, string>();
+        transformedFiles = new Map<string, TransformedFile>();
 
     for (let i = 0, n = fileNames.length; i < n; i++) {
         let fileName = fileNames[i],
@@ -76,14 +83,14 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         );
 
         if (result.changed) {
-            transformedFiles.set(normalizePath(fileName), result.code);
+            transformedFiles.set(normalizePath(fileName), { code: result.code, mapping: result.map });
         }
     }
 
     let program = project.program;
 
-    for (let [fileName, code] of transformedFiles) {
-        program = languageService.update(root, fileName, code).program;
+    for (let [fileName, entry] of transformedFiles) {
+        program = languageService.update(root, fileName, entry.code).program;
     }
 
     let diagnostics = [
@@ -142,7 +149,68 @@ function classifyFlags(args: string[]): { informational: boolean, noEmit: boolea
     return { informational, noEmit, watch };
 }
 
-async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map<string, string>, root: string, options: ResolvedOptions): Promise<number> {
+function collectMaps(dir: string, results: string[]): void {
+    for (let entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        let full = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+            collectMaps(full, results);
+        }
+        else if (entry.name.endsWith('.js.map')) {
+            results.push(full);
+        }
+    }
+}
+
+function composeSourceMaps(mirrorOut: string, mirror: string, root: string, transformedFiles: Map<string, TransformedFile>): void {
+    let maps: string[] = [];
+
+    collectMaps(mirrorOut, maps);
+
+    for (let i = 0, n = maps.length; i < n; i++) {
+        let mapPath = maps[i],
+            raw: { file?: string; mappings: string; names?: string[]; sourceRoot?: string; sources?: (string | null)[] };
+
+        try {
+            raw = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+        }
+        catch {
+            continue;
+        }
+
+        if (!raw.sources || raw.sources.length === 0 || typeof raw.sources[0] !== 'string' || typeof raw.mappings !== 'string') {
+            continue;
+        }
+
+        let mirrorSource = path.resolve(path.dirname(mapPath), raw.sources[0]),
+            relative = path.relative(mirror, mirrorSource),
+            realSource = normalizePath(path.join(root, relative)),
+            entry = transformedFiles.get(realSource);
+
+        if (!entry) {
+            continue;
+        }
+
+        let composed = sourcemap.composeEmittedMap(
+            { mappings: raw.mappings, names: raw.names ?? [], sources: raw.sources, version: 3 },
+            entry.mapping,
+            entry.code,
+            fs.readFileSync(path.join(root, relative), 'utf8')
+        );
+
+        if (raw.file !== undefined) {
+            composed.file = raw.file;
+        }
+
+        if (raw.sourceRoot !== undefined) {
+            composed.sourceRoot = raw.sourceRoot;
+        }
+
+        fs.writeFileSync(mapPath, JSON.stringify(composed));
+    }
+}
+
+async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map<string, TransformedFile>, root: string, options: ResolvedOptions): Promise<number> {
     let tscJs = path.join(path.dirname(require.resolve('typescript/package.json')), 'lib', 'tsc.js');
 
     if (transformedFiles.size === 0) {
@@ -180,7 +248,7 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
                 fs.copyFileSync(source, target);
             }
             else {
-                fs.writeFileSync(target, transformed);
+                fs.writeFileSync(target, transformed.code);
             }
 
             files.push(normalizePath(target));
@@ -210,6 +278,7 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
 
         if (code === 0) {
             if (fs.existsSync(mirrorOut)) {
+                composeSourceMaps(mirrorOut, mirror, root, transformedFiles);
                 fs.cpSync(mirrorOut, realOutDir, { force: true, recursive: true });
             }
 

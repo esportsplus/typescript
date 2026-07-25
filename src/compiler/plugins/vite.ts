@@ -1,8 +1,10 @@
 import type { Plugin, SharedContext } from '../types';
+import type { SourceMapV3 } from '../sourcemap';
 import type { ResolvedConfig } from 'vite';
 
 import coordinator from '../coordinator';
 import languageService from '../language-service';
+import sourcemap from '../sourcemap';
 
 
 type VitePlugin = {
@@ -11,7 +13,7 @@ type VitePlugin = {
     configResolved: (config: unknown) => void;
     enforce: 'pre';
     name: string;
-    transform: (code: string, id: string) => { code: string; map: null } | null;
+    transform: (code: string, id: string) => { code: string; map: SourceMapV3 } | null;
     watchChange: (id: string) => void;
 };
 
@@ -77,7 +79,7 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                         return null;
                     }
 
-                    return { code: result.code, map: null };
+                    return { code: result.code, map: sourcemap.toSourceMapV3(result.map, result.code, code, normalizedId) };
                 }
                 catch (error) {
                     console.error(`${name}: error transforming ${id}:`, error);

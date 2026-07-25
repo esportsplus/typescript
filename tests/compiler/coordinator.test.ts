@@ -2,12 +2,13 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import path from 'path';
 import type { Node, SourceFile } from 'typescript/unstable/ast';
 import type { Checker, Program } from 'typescript/unstable/sync';
-import { isIdentifier } from 'typescript/unstable/ast/is';
+import { isCallExpression, isIdentifier } from 'typescript/unstable/ast/is';
 
 import type { ImportIntent, Plugin, ReplacementIntent, SharedContext, TransformContext } from '~/compiler/types';
 
 import coordinator from '~/compiler/coordinator';
 import * as languageService from '~/compiler/language-service';
+import sourcemap from '~/compiler/sourcemap';
 
 
 const root = process.cwd().split(path.sep).join('/');
@@ -846,6 +847,118 @@ describe('coordinator.transform', () => {
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import * as utils from '@pkg/a';");
             expect(result.code).toContain("import { foo } from '@pkg/a';");
+        });
+    });
+
+    // Sourcemap composition: the coordinator surfaces an original->transformed mapping.
+
+    describe('surfaced mapping', () => {
+        it('surfaces an identity mapping when no plugins run', () => {
+            let code = 'let x = 1;\nlet y = 2;',
+                file = parse(code),
+                project = makeProject(file),
+                result = coordinator.transform([], code, file, project, root, new Map());
+
+            expect(result.map.generations).toEqual([]);
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 1, 4)).toEqual({ column: 4, line: 1 });
+        });
+
+        it('prepend-only: shifts post-injection lines back to their real source lines', () => {
+            let code = 'let a = 1;\nlet b = 2;',
+                file = parse(code),
+                project = makeProject(file),
+                plugin = makePlugin(() => ({ prepend: ['const INJECTED = 0;'] })),
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+            expect(result.changed).toBe(true);
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 1, 4)).toEqual({ column: 4, line: 0 });
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 2, 4)).toEqual({ column: 4, line: 1 });
+        });
+
+        it('import-injection: the untouched body maps back past the injected import', () => {
+            let code = 'let x = 1;',
+                file = parse(code),
+                project = makeProject(file),
+                plugin = makePlugin(() => ({ imports: [{ add: ['foo'], package: 'my-pkg' }] })),
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+            expect(result.changed).toBe(true);
+            expect(result.code).toContain("import { foo } from 'my-pkg';");
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 1, 4)).toEqual({ column: 4, line: 0 });
+        });
+
+        it('replacement with line growth: text after the grown span maps to the real line', () => {
+            let code = 'let x = OLD;',
+                file = parse(code),
+                project = makeProject(file),
+                plugin = makePlugin((ctx) => {
+                    let node: Node | undefined;
+
+                    ctx.sourceFile.forEachChild(function visit(n) {
+                        if (isIdentifier(n) && n.text === 'OLD') {
+                            node = n;
+                        }
+
+                        n.forEachChild(visit);
+                    });
+
+                    if (!node) {
+                        return {};
+                    }
+
+                    return { replacements: [{ generate: () => 'NEW\nEXTRA', node }] };
+                }),
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+            expect(result.changed).toBe(true);
+            expect(result.code).toBe('let x = NEW\nEXTRA;');
+            // Untouched prefix maps identically.
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 0, 0)).toEqual({ column: 0, line: 0 });
+            // The trailing ';' (now on a new line) still maps to its real column on the single original line.
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 1, 5)).toEqual({ column: 11, line: 0 });
+        });
+
+        it('replacement with line shrink: a multi-line node collapses and later text keeps its real line', () => {
+            let code = 'let x = foo(\n    1\n);',
+                file = parse(code),
+                project = makeProject(file),
+                plugin = makePlugin((ctx) => {
+                    let node: Node | undefined;
+
+                    ctx.sourceFile.forEachChild(function visit(n) {
+                        if (isCallExpression(n)) {
+                            node = n;
+                        }
+
+                        n.forEachChild(visit);
+                    });
+
+                    if (!node) {
+                        return {};
+                    }
+
+                    return { replacements: [{ generate: () => 'BAR', node }] };
+                }),
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+            expect(result.changed).toBe(true);
+            expect(result.code).toBe('let x = BAR;');
+            // The ';' following the collapsed call maps back to original line 2.
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 0, 11)).toEqual({ column: 1, line: 2 });
+        });
+
+        it('multi-plugin chaining: two prepend generations compose into one mapping', () => {
+            let code = 'let a = 1;\nlet b = 2;',
+                file = parse(code),
+                project = makeProject(file),
+                plugin1 = makePlugin(() => ({ prepend: ['const P1 = 1;'] })),
+                plugin2 = makePlugin(() => ({ prepend: ['const P2 = 2;'] })),
+                result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
+
+            expect(result.changed).toBe(true);
+            expect(result.map.generations.length).toBe(2);
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 2, 4)).toEqual({ column: 4, line: 0 });
+            expect(sourcemap.originalPositionFor(result.map, result.code, code, 3, 4)).toEqual({ column: 4, line: 1 });
         });
     });
 });

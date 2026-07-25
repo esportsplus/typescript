@@ -24,6 +24,7 @@ vi.mock('~/compiler/coordinator', () => ({
         transform: vi.fn((_plugins: Plugin[], code: string, _file: SourceFile, _project: { checker: Checker; program: Program }, _root: string, _ctx: Map<string, unknown>) => ({
             changed: false,
             code,
+            map: { generations: [] },
             sourceFile: {} as SourceFile
         }))
     }
@@ -96,10 +97,11 @@ describe('plugin.vite', () => {
         expect(coordinator.transform).toHaveBeenCalled();
     });
 
-    it('returns transformed code when changed', () => {
+    it('returns transformed code with a non-null composed map when changed', () => {
         vi.mocked(coordinator.transform).mockReturnValueOnce({
             changed: true,
             code: 'TRANSFORMED',
+            map: { generations: [] },
             sourceFile: {} as SourceFile
         });
 
@@ -107,7 +109,18 @@ describe('plugin.vite', () => {
 
         let result = plugin.transform('let x = 1;', 'src/app.ts');
 
-        expect(result).toEqual({ code: 'TRANSFORMED', map: null });
+        expect(result).not.toBeNull();
+        expect(result?.code).toBe('TRANSFORMED');
+        expect(result?.map).not.toBeNull();
+        expect(result?.map.version).toBe(3);
+        expect(result?.map.sources).toContain('src/app.ts');
+        expect(typeof result?.map.mappings).toBe('string');
+    });
+
+    it('returns null (no map) when unchanged', () => {
+        let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+        expect(plugin.transform('let x = 1;', 'src/app.ts')).toBeNull();
     });
 
     it('watchChange calls onWatchChange and invalidate', () => {
