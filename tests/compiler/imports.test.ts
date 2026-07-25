@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { Identifier, Node, SourceFile } from 'typescript/unstable/ast';
 import { isIdentifier, isImportClause, isImportSpecifier, isNamespaceImport } from 'typescript/unstable/ast/is';
 import type { Checker } from 'typescript/unstable/sync';
+import { SymbolFlags } from 'typescript/unstable/sync';
 
 import imports from '~/compiler/imports';
 import languageService from '~/compiler/language-service';
@@ -86,15 +87,22 @@ describe('imports.all', () => {
 describe('imports.includes', () => {
     let mockChecker = { getSymbolAtLocation: () => null } as unknown as Checker;
 
-    function findIdentifier(file: SourceFile, name: string): Identifier | undefined {
-        let found: Identifier | undefined;
+    // A checker that resolves a name to a declaration living inside node_modules/<pkg> — the genuine-import answer.
+    let resolvingChecker = {
+        getSymbolAtLocation: () => ({
+            declarations: [{ path: root + '/node_modules/my-pkg/index.d.ts' }]
+        })
+    } as unknown as Checker;
+
+    function findAll(file: SourceFile, name: string): Identifier[] {
+        let found: Identifier[] = [];
 
         function visit(n: Node): void {
-            if (isIdentifier(n) && n.text === name && !found) {
+            if (isIdentifier(n) && n.text === name) {
                 let parent = n.parent;
 
                 if (!isImportSpecifier(parent) && !isImportClause(parent) && !isNamespaceImport(parent)) {
-                    found = n;
+                    found.push(n);
                 }
             }
 
@@ -106,12 +114,16 @@ describe('imports.includes', () => {
         return found;
     }
 
+    function findIdentifier(file: SourceFile, name: string): Identifier | undefined {
+        return findAll(file, name)[0];
+    }
+
     it('direct named import matches', () => {
         let file = parse("import { reactive } from 'my-pkg';\nreactive(x);"),
             node = findIdentifier(file, 'reactive');
 
         expect(node).toBeDefined();
-        expect(imports.includes(mockChecker, node!, 'my-pkg', 'reactive')).toBe(true);
+        expect(imports.includes(resolvingChecker, node!, 'my-pkg', 'reactive')).toBe(true);
     });
 
     it('aliased import matches', () => {
@@ -119,7 +131,36 @@ describe('imports.includes', () => {
             node = findIdentifier(file, 'f');
 
         expect(node).toBeDefined();
-        expect(imports.includes(mockChecker, node!, 'my-pkg')).toBe(true);
+        expect(imports.includes(resolvingChecker, node!, 'my-pkg')).toBe(true);
+    });
+
+    it('shadowed local binding is false at the inner reference and true at the outer', () => {
+        let file = parse("import { html } from 'my-pkg';\nhtml(1);\nhtml(2);\n"),
+            refs = findAll(file, 'html');
+
+        expect(refs).toHaveLength(2);
+
+        let inner = refs[1],
+            outer = refs[0];
+
+        // The checker resolves the inner reference to a local (shadowing) VariableDeclaration outside node_modules,
+        // and the outer reference to the genuine import inside node_modules/my-pkg.
+        let checker = {
+            getSymbolAtLocation: (n: Node) => n === inner
+                ? { declarations: [{ path: root + '/src/test-imports.ts' }] }
+                : { declarations: [{ path: root + '/node_modules/my-pkg/index.d.ts' }] }
+        } as unknown as Checker;
+
+        expect(imports.includes(checker, inner, 'my-pkg')).toBe(false);
+        expect(imports.includes(checker, outer, 'my-pkg')).toBe(true);
+    });
+
+    it('an unresolvable name-matching symbol is false, never trusted by name', () => {
+        let file = parse("import { reactive } from 'my-pkg';\nreactive(1);"),
+            node = findIdentifier(file, 'reactive');
+
+        expect(node).toBeDefined();
+        expect(imports.includes(mockChecker, node!, 'my-pkg', 'reactive')).toBe(false);
     });
 
     it('non-matching package returns false', () => {
@@ -144,8 +185,8 @@ describe('imports.includes', () => {
 
         expect(node).toBeDefined();
 
-        let first = imports.includes(mockChecker, node!, 'my-pkg', 'reactive'),
-            second = imports.includes(mockChecker, node!, 'my-pkg', 'reactive');
+        let first = imports.includes(resolvingChecker, node!, 'my-pkg', 'reactive'),
+            second = imports.includes(resolvingChecker, node!, 'my-pkg', 'reactive');
 
         expect(first).toBe(true);
         expect(second).toBe(true);
@@ -160,7 +201,7 @@ describe('imports.includes', () => {
         expect(imports.includes(mockChecker, node!, 'my-pkg')).toBe(false);
     });
 
-    it('returns false when getAliasedSymbol throws', () => {
+    it('a non-alias symbol reference returns false without relying on a thrown-and-swallowed error', () => {
         let file = parse("import { foo } from 'my-pkg';\nbar();"),
             node = findIdentifier(file, 'bar');
 
@@ -168,11 +209,30 @@ describe('imports.includes', () => {
 
         let checker = {
             getSymbolAtLocation: () => ({
-                declarations: []
+                declarations: [],
+                flags: SymbolFlags.None
             }),
             getAliasedSymbol: () => { throw new Error('not an alias'); }
         } as unknown as Checker;
 
         expect(imports.includes(checker, node!, 'my-pkg')).toBe(false);
+    });
+
+    it('resolves a re-export through an aliased symbol whose flags carry the alias bit', () => {
+        let file = parse("import { foo } from 'my-pkg';\nbar();"),
+            node = findIdentifier(file, 'bar');
+
+        expect(node).toBeDefined();
+
+        let aliased = { declarations: [{ path: root + '/node_modules/my-pkg/index.d.ts' }] },
+            checker = {
+                getSymbolAtLocation: () => ({
+                    declarations: [],
+                    flags: SymbolFlags.Alias
+                }),
+                getAliasedSymbol: () => aliased
+            } as unknown as Checker;
+
+        expect(imports.includes(checker, node!, 'my-pkg')).toBe(true);
     });
 });

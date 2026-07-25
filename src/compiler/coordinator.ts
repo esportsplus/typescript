@@ -4,18 +4,27 @@ import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContex
 import type { ModifyOptions } from './imports';
 import { isImportDeclaration } from 'typescript/unstable/ast/is';
 
+import type { OffsetAnchor, PositionMapping } from './sourcemap';
+
 import imports from './imports';
 import languageService from './language-service';
+import sourcemap from './sourcemap';
 
 
 type CoordinatorResult = {
     changed: boolean;
     code: string;
+    map: PositionMapping;
     sourceFile: SourceFile;
 };
 
+type EditBatch = {
+    before: string;
+    edits: Replacement[];
+};
 
-function applyImports(code: string, file: SourceFile, intents: ImportIntent[]): string {
+
+function applyImports(code: string, file: SourceFile, intents: ImportIntent[]): { batches: EditBatch[]; code: string } {
     let merged = new Map<string, { add?: string[]; namespace?: string; remove?: string[] }>();
 
     for (let i = 0, n = intents.length; i < n; i++) {
@@ -42,37 +51,44 @@ function applyImports(code: string, file: SourceFile, intents: ImportIntent[]): 
         }
     }
 
-    let keys = [...merged.keys()];
+    let batches: EditBatch[] = [],
+        keys = [...merged.keys()];
 
     for (let i = 0, n = keys.length; i < n; i++) {
-        code = modify(code, file, keys[i], merged.get(keys[i])!);
+        let before = code,
+            result = modify(code, file, keys[i], merged.get(keys[i])!);
+
+        code = result.code;
+
+        if (result.edits.length > 0) {
+            batches.push({ before, edits: result.edits });
+        }
 
         if (i < n - 1) {
             file = languageService.parse(file.fileName, code);
         }
     }
 
-    return code;
+    return { batches, code };
 }
 
-function applyIntents(code: string, file: SourceFile, intents: ReplacementIntent[]): string {
+function applyIntents(code: string, file: SourceFile, intents: ReplacementIntent[]): { code: string; edits: Replacement[] } {
     if (intents.length === 0) {
-        return code;
+        return { code, edits: [] };
     }
 
-    return replaceReverse(
-        code,
-        intents.map(intent => ({
-            end: intent.node.end,
-            newText: intent.generate(file),
-            start: intent.node.getStart(file)
-        }))
-    );
+    let edits = intents.map(intent => ({
+        end: intent.node.end,
+        newText: intent.generate(file),
+        start: intent.node.getStart(file)
+    }));
+
+    return { code: replaceReverse(code, edits), edits };
 }
 
-function applyPrepend(code: string, file: SourceFile, prepend: string[]): string {
+function applyPrepend(code: string, file: SourceFile, prepend: string[]): { code: string; edits: Replacement[] } {
     if (prepend.length === 0) {
-        return code;
+        return { code, edits: [] };
     }
 
     let position = 0;
@@ -89,10 +105,14 @@ function applyPrepend(code: string, file: SourceFile, prepend: string[]): string
     }
 
     if (position === 0) {
-        return prepend.join('\n') + '\n' + code;
+        let newText = prepend.join('\n') + '\n';
+
+        return { code: newText + code, edits: [{ end: 0, newText, start: 0 }] };
     }
 
-    return code.slice(0, position) + '\n' + prepend.join('\n') + '\n' + code.slice(position);
+    let newText = '\n' + prepend.join('\n') + '\n';
+
+    return { code: code.slice(0, position) + newText + code.slice(position), edits: [{ end: position, newText, start: position }] };
 }
 
 function hasPattern(code: string, patterns: string[]): boolean {
@@ -105,9 +125,9 @@ function hasPattern(code: string, patterns: string[]): boolean {
     return false;
 }
 
-function modify(code: string, file: SourceFile, pkg: string, options: ModifyOptions): string {
+function modify(code: string, file: SourceFile, pkg: string, options: ModifyOptions): { code: string; edits: Replacement[] } {
     if (!options.add && !options.namespace && !options.remove) {
-        return code;
+        return { code, edits: [] };
     }
 
     let { namespace } = options,
@@ -126,10 +146,12 @@ function modify(code: string, file: SourceFile, pkg: string, options: ModifyOpti
         }
 
         if (statements.length === 0) {
-            return code;
+            return { code, edits: [] };
         }
 
-        return statements.join('\n') + '\n' + code;
+        let newText = statements.join('\n') + '\n';
+
+        return { code: newText + code, edits: [{ end: 0, newText, start: 0 }] };
     }
 
     let remove = options.remove ? new Set(options.remove) : null,
@@ -169,7 +191,7 @@ function modify(code: string, file: SourceFile, pkg: string, options: ModifyOpti
         });
     }
 
-    return replaceReverse(code, replacements);
+    return { code: replaceReverse(code, replacements), edits: replacements };
 }
 
 function replaceReverse(code: string, replacements: Replacement[]): string {
@@ -210,7 +232,7 @@ const transform = (
     shared: SharedContext
 ) => {
     if (plugins.length === 0) {
-        return { changed: false, code, sourceFile: file };
+        return { changed: false, code, map: { generations: [] }, sourceFile: file };
     }
 
     let changed = false,
@@ -218,6 +240,7 @@ const transform = (
         currentFile = file,
         currentProject = project,
         fileName = file.fileName,
+        generations: OffsetAnchor[][] = [],
         last = plugins.length - 1;
 
     for (let i = 0, n = plugins.length; i < n; i++) {
@@ -237,7 +260,14 @@ const transform = (
             pluginChanged = false;
 
         if (replacements?.length) {
-            currentCode = applyIntents(currentCode, currentFile, replacements);
+            let before = currentCode,
+                result = applyIntents(currentCode, currentFile, replacements);
+
+            if (result.edits.length > 0) {
+                generations.push(sourcemap.buildGeneration(before, result.edits));
+            }
+
+            currentCode = result.code;
             pluginChanged = true;
         }
 
@@ -246,7 +276,14 @@ const transform = (
                 currentFile = languageService.parse(fileName, currentCode);
             }
 
-            currentCode = applyPrepend(currentCode, currentFile, prepend);
+            let before = currentCode,
+                result = applyPrepend(currentCode, currentFile, prepend);
+
+            if (result.edits.length > 0) {
+                generations.push(sourcemap.buildGeneration(before, result.edits));
+            }
+
+            currentCode = result.code;
             pluginChanged = true;
         }
 
@@ -255,7 +292,13 @@ const transform = (
                 currentFile = languageService.parse(fileName, currentCode);
             }
 
-            currentCode = applyImports(currentCode, currentFile, imports);
+            let result = applyImports(currentCode, currentFile, imports);
+
+            for (let j = 0, m = result.batches.length; j < m; j++) {
+                generations.push(sourcemap.buildGeneration(result.batches[j].before, result.batches[j].edits));
+            }
+
+            currentCode = result.code;
             pluginChanged = true;
         }
 
@@ -273,7 +316,7 @@ const transform = (
         }
     }
 
-    return { changed, code: currentCode, sourceFile: currentFile };
+    return { changed, code: currentCode, map: { generations }, sourceFile: currentFile };
 };
 
 
