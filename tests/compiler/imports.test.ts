@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { Identifier, Node, SourceFile } from 'typescript/unstable/ast';
 import { isIdentifier, isImportClause, isImportSpecifier, isNamespaceImport } from 'typescript/unstable/ast/is';
 import type { Checker } from 'typescript/unstable/sync';
+import { SymbolFlags } from 'typescript/unstable/sync';
 
 import imports from '~/compiler/imports';
 import languageService from '~/compiler/language-service';
@@ -200,7 +201,7 @@ describe('imports.includes', () => {
         expect(imports.includes(mockChecker, node!, 'my-pkg')).toBe(false);
     });
 
-    it('returns false when getAliasedSymbol throws', () => {
+    it('a non-alias symbol reference returns false without relying on a thrown-and-swallowed error', () => {
         let file = parse("import { foo } from 'my-pkg';\nbar();"),
             node = findIdentifier(file, 'bar');
 
@@ -208,11 +209,30 @@ describe('imports.includes', () => {
 
         let checker = {
             getSymbolAtLocation: () => ({
-                declarations: []
+                declarations: [],
+                flags: SymbolFlags.None
             }),
             getAliasedSymbol: () => { throw new Error('not an alias'); }
         } as unknown as Checker;
 
         expect(imports.includes(checker, node!, 'my-pkg')).toBe(false);
+    });
+
+    it('resolves a re-export through an aliased symbol whose flags carry the alias bit', () => {
+        let file = parse("import { foo } from 'my-pkg';\nbar();"),
+            node = findIdentifier(file, 'bar');
+
+        expect(node).toBeDefined();
+
+        let aliased = { declarations: [{ path: root + '/node_modules/my-pkg/index.d.ts' }] },
+            checker = {
+                getSymbolAtLocation: () => ({
+                    declarations: [],
+                    flags: SymbolFlags.Alias
+                }),
+                getAliasedSymbol: () => aliased
+            } as unknown as Checker;
+
+        expect(imports.includes(checker, node!, 'my-pkg')).toBe(true);
     });
 });

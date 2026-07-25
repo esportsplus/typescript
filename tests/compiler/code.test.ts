@@ -70,4 +70,40 @@ describe('code.escape', () => {
     it('handles empty string', () => {
         expect(code.escape('')).toBe('');
     });
+
+    it('escapes a trailing single backslash', () => {
+        expect(code.escape('a\\')).toBe('a\\\\');
+    });
+
+    it('escapes an embedded backslash-quote pair', () => {
+        expect(code.escape("a\\'b")).toBe("a\\\\\\'b");
+    });
+
+    it('escapes a doubled backslash', () => {
+        expect(code.escape('a\\\\b')).toBe('a\\\\\\\\b');
+    });
+
+    it('escapes a newline', () => {
+        expect(code.escape('a\nb')).toBe('a\\nb');
+    });
+
+    it('escapes a CRLF pair', () => {
+        expect(code.escape('a\r\nb')).toBe('a\\r\\nb');
+    });
+
+    it('escapes U+2028 line separator', () => {
+        expect(code.escape('a\u2028b')).toBe('a\\u2028b');
+    });
+
+    it('escapes U+2029 paragraph separator', () => {
+        expect(code.escape('a\u2029b')).toBe('a\\u2029b');
+    });
+
+    it('round-trips through single-quote literal semantics', () => {
+        let original = "it's a \\test\\ with\nnewlines\r\nand   separators   too",
+            escaped = code.escape(original),
+            reparsed = new Function(`'use strict'; return '${escaped}';`)() as string;
+
+        expect(reparsed).toBe(original);
+    });
 });

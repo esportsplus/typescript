@@ -2,6 +2,7 @@ import type { Node, SourceFile } from 'typescript/unstable/ast';
 import { SyntaxKind } from 'typescript/unstable/ast';
 import { isIdentifier, isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/unstable/ast/is';
 import type { Checker } from 'typescript/unstable/sync';
+import { SymbolFlags } from 'typescript/unstable/sync';
 
 
 type ImportInfo = {
@@ -155,7 +156,7 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
     }
 
     // Check aliased symbol for re-exports
-    try {
+    if ((symbol.flags & SymbolFlags.Alias) !== 0) {
         let aliased = checker.getAliasedSymbol(symbol);
 
         if (aliased && aliased !== symbol) {
@@ -169,9 +170,6 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
                 }
             }
         }
-    }
-    catch {
-        // getAliasedSymbol can throw for non-alias symbols
     }
 
     return false;
