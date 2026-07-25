@@ -16,6 +16,8 @@ type PluginConfig = {
     transform: string;
 };
 
+type ResolvedOptions = ReturnType<API['parseConfigFile']>['options'];
+
 
 const BACKSLASH_REGEX = /\\/g;
 
@@ -45,7 +47,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         process.exit(1);
     }
 
-    let { fileNames } = api.parseConfigFile(tsconfig),
+    let { fileNames, options } = api.parseConfigFile(tsconfig),
         plugins = await loadPlugins(pluginConfigs, root),
         shared: SharedContext = new Map(),
         transformedFiles = new Map<string, string>();
@@ -96,7 +98,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         process.exit(1);
     }
 
-    let code = await emit(tsconfig, fileNames, transformedFiles, root, program.getCompilerOptions().outDir ?? root);
+    let code = await emit(tsconfig, fileNames, transformedFiles, root, options);
 
     teardown(snapshot, api, root, owned);
 
@@ -107,7 +109,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     return runTscAlias(process.argv.slice(2)).then((exitCode) => process.exit(exitCode));
 }
 
-async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map<string, string>, root: string, outDir: string): Promise<number> {
+async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map<string, string>, root: string, options: ResolvedOptions): Promise<number> {
     let tscJs = path.join(path.dirname(require.resolve('typescript/package.json')), 'lib', 'tsc.js');
 
     if (transformedFiles.size === 0) {
@@ -117,12 +119,26 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
     let mirror = fs.mkdtempSync(path.join(root, '.esportsplus-tsc-'));
 
     try {
-        let files: string[] = [],
-            mirrorOut = path.join(mirror, '__emit');
+        let declaration = options.declaration === true,
+            files: string[] = [],
+            mirrorDecl = path.join(mirror, '__decl'),
+            mirrorOut = path.join(mirror, '__emit'),
+            realOutDir = typeof options.outDir === 'string' ? path.resolve(options.outDir) : root,
+            realRootDir = typeof options.rootDir === 'string' ? path.resolve(options.rootDir) : undefined,
+            realDeclDir = declaration
+                ? (typeof options.declarationDir === 'string' ? path.resolve(options.declarationDir) : realOutDir)
+                : undefined,
+            separateDecl = realDeclDir !== undefined && normalizePath(realDeclDir) !== normalizePath(realOutDir);
 
         for (let i = 0, n = fileNames.length; i < n; i++) {
             let source = path.resolve(fileNames[i]),
-                target = path.join(mirror, path.relative(root, source)),
+                relative = path.relative(root, source);
+
+            if (relative.startsWith('..')) {
+                throw new Error(`${PACKAGE_NAME}: source ${normalizePath(source)} resolves outside the project root ${normalizePath(root)}; monorepo-external sources are not supported by the transform emit path`);
+            }
+
+            let target = path.join(mirror, relative),
                 transformed = transformedFiles.get(normalizePath(fileNames[i]));
 
             fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -137,16 +153,36 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
             files.push(normalizePath(target));
         }
 
+        let compilerOptions: Record<string, string> = {
+            outDir: normalizePath(mirrorOut)
+        };
+
+        if (declaration) {
+            compilerOptions.declarationDir = normalizePath(separateDecl ? mirrorDecl : mirrorOut);
+        }
+
+        if (realRootDir !== undefined) {
+            compilerOptions.rootDir = normalizePath(path.join(mirror, path.relative(root, realRootDir)));
+        }
+
         fs.writeFileSync(path.join(mirror, 'tsconfig.json'), JSON.stringify({
-            compilerOptions: { outDir: normalizePath(mirrorOut), rootDir: normalizePath(mirror) },
+            compilerOptions,
+            exclude: [],
             extends: normalizePath(tsconfig),
-            files
+            files,
+            include: []
         }));
 
         let code = await spawnTsc(tscJs, ['-p', path.join(mirror, 'tsconfig.json')]);
 
-        if (code === 0 && fs.existsSync(mirrorOut)) {
-            fs.cpSync(mirrorOut, outDir, { force: true, recursive: true });
+        if (code === 0) {
+            if (fs.existsSync(mirrorOut)) {
+                fs.cpSync(mirrorOut, realOutDir, { force: true, recursive: true });
+            }
+
+            if (separateDecl && realDeclDir !== undefined && fs.existsSync(mirrorDecl)) {
+                fs.cpSync(mirrorDecl, realDeclDir, { force: true, recursive: true });
+            }
         }
 
         return code;
