@@ -32,6 +32,15 @@
             "default": "./build/index.js"
         }
     },
+    "files": [
+        "bin",
+        "build",
+        "tsconfig.base.json",
+        "tsconfig.browser.json",
+        "tsconfig.dev.json",
+        "tsconfig.node.json",
+        "tsconfig.package.json"
+    ],
     "main": "build/index.js",
     "name": "@esportsplus/typescript",
     "overrides": {
