@@ -353,4 +353,41 @@ describe('emit contract', () => {
         expect(fs.existsSync(path.join(outDir, 'index.js.map'))).toBe(true);
         expect(fs.readFileSync(path.join(outDir, 'index.js'), 'utf8')).toContain('__TRANSFORMED__');
     });
+
+    it('a source outside the project root fails loudly before writing any emit outside the mirror', async () => {
+        let projectDir = path.join(tmpDir, 'project');
+
+        fs.mkdirSync(path.join(projectDir, 'src'), { recursive: true });
+        fs.writeFileSync(path.join(tmpDir, 'outside.ts'), 'export const outside = 1;\n');
+        fs.writeFileSync(path.join(projectDir, 'src', 'index.ts'), 'export const inside = 1;\n');
+
+        let tsconfigPath = path.join(projectDir, 'tsconfig.json');
+
+        // rootDir points at the shared parent so the program typechecks cleanly (no TS6059); the mirror
+        // root is the narrower tsconfig dir, so `../outside.ts` still escapes it and must trip the guard.
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: {
+                declaration: false,
+                module: 'esnext',
+                moduleResolution: 'bundler',
+                outDir: './out',
+                rootDir: '..',
+                skipLibCheck: true,
+                target: 'esnext'
+            },
+            files: ['./src/index.ts', '../outside.ts']
+        }));
+
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), MARKER_PLUGIN);
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
+
+        await expect(build(tsconfigPath, [{ transform: '../plugin.mjs' }], api)).rejects.toThrow(
+            /@esportsplus\/typescript: source .* resolves outside the project root/
+        );
+
+        // The guard fired before any emit ran: no output tree, and the sibling source's directory gained nothing.
+        expect(fs.existsSync(path.join(projectDir, 'out'))).toBe(false);
+        expect(fs.readdirSync(tmpDir).some((entry) => entry.endsWith('.js') && entry !== 'plugin.mjs')).toBe(false);
+        expect(fs.readdirSync(tmpDir).some((entry) => entry.startsWith('.esportsplus-tsc-'))).toBe(false);
+    });
 });
