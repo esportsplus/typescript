@@ -20,6 +20,7 @@
     "exports": {
         "./package.json": "./package.json",
         "./tsconfig.browser.json": "./tsconfig.browser.json",
+        "./tsconfig.dev.json": "./tsconfig.dev.json",
         "./tsconfig.node.json": "./tsconfig.node.json",
         "./tsconfig.package.json": "./tsconfig.package.json",
         "./compiler": {
@@ -42,14 +43,16 @@
         "url": "https://github.com/esportsplus/typescript"
     },
     "scripts": {
+        "agent:bench": "pnpm bench:run",
         "agent:build": "pnpm build",
-        "agent:test": "vitest run",
+        "agent:test": "pnpm typecheck && pnpm test",
         "bench:run": "vitest bench --run",
-        "build": "tsc && tsc-alias",
+        "build": "tsc -p tsconfig.package.json && tsc-alias -p tsconfig.package.json",
         "-": "-",
         "prepare": "pnpm build",
         "prepublishOnly": "pnpm build",
-        "test": "vitest run"
+        "test": "vitest run",
+        "typecheck": "tsc"
     },
     "type": "module",
     "types": "build/index.d.ts",

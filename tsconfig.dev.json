@@ -1,0 +1,13 @@
+{
+    "compilerOptions": {
+        "noEmit": true,
+        "rootDir": "${configDir}"
+    },
+    "extends": "./tsconfig.package.json",
+    "include": [
+        "${configDir}/*.config.ts",
+        "${configDir}/bench/**/*",
+        "${configDir}/src/**/*",
+        "${configDir}/test/**/*"
+    ]
+}

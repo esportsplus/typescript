@@ -6,6 +6,9 @@
             "dom",
             "dom.iterable",
             "es2024"
+        ],
+        "types": [
+            "node"
         ]
     },
     "extends": "./tsconfig.base.json"
