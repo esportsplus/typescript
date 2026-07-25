@@ -1,9 +1,8 @@
-import { SyntaxKind } from 'typescript/unstable/ast';
 import { afterAll, describe, expect, it } from 'vitest';
-
-import languageService from '~/compiler/language-service';
+import { SyntaxKind } from 'typescript/unstable/ast';
 
 import fs from 'fs';
+import languageService from '~/compiler/language-service';
 
 
 const root = process.cwd().replace(/\\/g, '/');
@@ -12,6 +11,7 @@ const root = process.cwd().replace(/\\/g, '/');
 afterAll(() => {
     languageService.dispose();
 });
+
 
 describe('language-service', () => {
     describe('update', () => {

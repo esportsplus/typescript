@@ -1,64 +1,31 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { API } from 'typescript/unstable/sync';
+import { build } from '~/cli/tsc';
+import { createFixture, createFixtureDir, MARKER_PLUGIN, snapshotTree } from './fixtures';
+
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-
-import { API } from 'typescript/unstable/sync';
-import { build } from '~/cli/tsc';
-import { createFixture, MARKER_PLUGIN, snapshotTree } from './fixtures';
+import sourcemap from '~/compiler/sourcemap';
 import viteConfig from '../../vitest.config';
 
 
 const BACKSLASH_REGEX = /\\/g;
 
-const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
 const IMPORT_INJECT_PLUGIN = 'export default { patterns: ["~/util"], transform: () => ({ imports: [{ package: "~/runtime", add: ["helper"] }], prepend: ["export const injected = helper;"] }) };';
 
 
 function decodeSegments(mappings: string): { originalColumn: number; originalLine: number }[] {
-    let inverse: Record<string, number> = {},
+    let decoded = sourcemap.decode(mappings),
         origColumn = 0,
         origLine = 0,
-        out: { originalColumn: number; originalLine: number }[] = [],
-        source = 0;
+        out: { originalColumn: number; originalLine: number }[] = [];
 
-    for (let i = 0; i < BASE64.length; i++) {
-        inverse[BASE64[i]] = i;
-    }
-
-    let lines = mappings.split(';');
-
-    for (let l = 0, n = lines.length; l < n; l++) {
-        if (lines[l] === '') {
-            continue;
-        }
-
-        let tokens = lines[l].split(',');
-
-        for (let t = 0, m = tokens.length; t < m; t++) {
-            let token = tokens[t],
-                values: number[] = [],
-                i = 0;
-
-            while (i < token.length) {
-                let digit = 0,
-                    result = 0,
-                    shift = 0;
-
-                do {
-                    digit = inverse[token[i]];
-                    i++;
-                    result += (digit & 31) << shift;
-                    shift += 5;
-                }
-                while (digit & 32);
-
-                values.push((result & 1) ? -(result >>> 1) : (result >>> 1));
-            }
+    for (let i = 0, n = decoded.length; i < n; i++) {
+        for (let j = 0, m = decoded[i].length; j < m; j++) {
+            let values = decoded[i][j];
 
             if (values.length >= 4) {
-                source += values[1];
                 origLine += values[2];
                 origColumn += values[3];
                 out.push({ originalColumn: origColumn, originalLine: origLine });
@@ -87,7 +54,7 @@ describe('emit contract', () => {
     beforeEach(() => {
         exits = [];
         originalArgv = process.argv;
-        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'emit-contract-'));
+        tmpDir = createFixtureDir('.fixture-emit-contract-');
 
         vi.spyOn(process, 'exit').mockImplementation(((code?: number): never => {
             exits.push(code ?? 0);
@@ -190,8 +157,7 @@ describe('emit contract', () => {
 
         expect(fs.existsSync(helper)).toBe(true);
         expect(include.length).toBeGreaterThan(0);
-        // Guard the REAL invariant against the live config: the discovery globs must reject the helper
-        // and accept a sibling suite. A glob widening that would capture fixtures.ts fails this test.
+        // Checked against the LIVE config, so a glob widening that captured fixtures.ts would fail here.
         expect(include.some((pattern) => path.matchesGlob(relativeHelper, pattern))).toBe(false);
         expect(include.some((pattern) => path.matchesGlob(relativeSuite, pattern))).toBe(true);
         expect(typeof createFixture).toBe('function');

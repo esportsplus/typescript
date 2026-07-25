@@ -1,17 +1,21 @@
 import { afterAll, bench, describe } from 'vitest';
-import path from 'path';
-import type { SourceFile } from 'typescript/unstable/ast';
 import type { Checker, Program } from 'typescript/unstable/sync';
-
 import type { Plugin, TransformContext } from '~/compiler/types';
+import type { SourceFile } from 'typescript/unstable/ast';
 
 import coordinator from '~/compiler/coordinator';
-import * as languageService from '~/compiler/language-service';
+import languageService from '~/compiler/language-service';
+import path from 'path';
 
 
 const root = process.cwd().split(path.sep).join('/');
 
 const fileName = root + '/src/coordinator-bench-fixture.ts';
+
+
+let code = 'let x = 1;',
+    file = parse(code),
+    project = makeProject(file);
 
 
 function makePlugin(transformFn: (ctx: TransformContext) => ReturnType<Plugin['transform']>): Plugin {
@@ -29,10 +33,6 @@ function parse(code: string, name = fileName): SourceFile {
     return languageService.parse(name, code);
 }
 
-
-let code = 'let x = 1;',
-    file = parse(code),
-    project = makeProject(file);
 
 describe('applyImports batching', () => {
     afterAll(() => {

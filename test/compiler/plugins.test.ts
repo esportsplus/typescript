@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SourceFile } from 'typescript/unstable/ast';
 import type { Checker, Program } from 'typescript/unstable/sync';
-
 import type { Plugin } from '~/compiler/types';
+import type { SourceFile } from 'typescript/unstable/ast';
 
+import coordinator from '~/compiler/coordinator';
+import languageService from '~/compiler/language-service';
 import tsc from '~/compiler/plugins/tsc';
 import vite from '~/compiler/plugins/vite';
+
 
 vi.mock('~/compiler/language-service', () => ({
     default: {
@@ -29,9 +31,6 @@ vi.mock('~/compiler/coordinator', () => ({
         }))
     }
 }));
-
-import coordinator from '~/compiler/coordinator';
-import languageService from '~/compiler/language-service';
 
 
 describe('plugin.tsc', () => {
@@ -89,9 +88,8 @@ describe('plugin.vite', () => {
     });
 
     it('processes .ts files — returns null when unchanged', () => {
-        let plugin = vite({ name: 'test-pkg', plugins: [] })();
-
-        let result = plugin.transform('let x = 1;', 'src/app.ts');
+        let plugin = vite({ name: 'test-pkg', plugins: [] })(),
+            result = plugin.transform('let x = 1;', 'src/app.ts');
 
         expect(result).toBeNull();
         expect(coordinator.transform).toHaveBeenCalled();
@@ -105,9 +103,8 @@ describe('plugin.vite', () => {
             sourceFile: {} as SourceFile
         });
 
-        let plugin = vite({ name: 'test-pkg', plugins: [] })();
-
-        let result = plugin.transform('let x = 1;', 'src/app.ts');
+        let plugin = vite({ name: 'test-pkg', plugins: [] })(),
+            result = plugin.transform('let x = 1;', 'src/app.ts');
 
         expect(result).not.toBeNull();
         expect(result?.code).toBe('TRANSFORMED');
@@ -157,9 +154,8 @@ describe('plugin.vite', () => {
         });
 
         let consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {}),
-            plugin = vite({ name: 'test-pkg', plugins: [] })();
-
-        let result = plugin.transform('let x = 1;', 'src/app.ts');
+            plugin = vite({ name: 'test-pkg', plugins: [] })(),
+            result = plugin.transform('let x = 1;', 'src/app.ts');
 
         expect(result).toBeNull();
         expect(consoleSpy).toHaveBeenCalledWith(
@@ -176,9 +172,8 @@ describe('plugin.vite', () => {
             program: { getSourceFile: () => undefined } as unknown as Program
         });
 
-        let plugin = vite({ name: 'test-pkg', plugins: [] })();
-
-        let result = plugin.transform('let x = 1;', 'src/app.ts');
+        let plugin = vite({ name: 'test-pkg', plugins: [] })(),
+            result = plugin.transform('let x = 1;', 'src/app.ts');
 
         expect(result).toBeNull();
         expect(languageService.parse).toHaveBeenCalled();

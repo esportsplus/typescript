@@ -1,8 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
+import { SymbolFlags, type Checker } from 'typescript/unstable/sync';
 import type { Identifier, Node, SourceFile } from 'typescript/unstable/ast';
 import { isIdentifier, isImportClause, isImportSpecifier, isNamespaceImport } from 'typescript/unstable/ast/is';
-import type { Checker } from 'typescript/unstable/sync';
-import { SymbolFlags } from 'typescript/unstable/sync';
 
 import imports from '~/compiler/imports';
 import languageService from '~/compiler/language-service';
@@ -11,8 +10,36 @@ import languageService from '~/compiler/language-service';
 const root = process.cwd().replace(/\\/g, '/');
 
 
+function findAll(file: SourceFile, name: string): Identifier[] {
+    let found: Identifier[] = [];
+
+    file.forEachChild((node) => {
+        visitIdentifiers(node, name, found);
+    });
+
+    return found;
+}
+
+function findIdentifier(file: SourceFile, name: string): Identifier | undefined {
+    return findAll(file, name)[0];
+}
+
 function parse(code: string, fileName = root + '/src/test-imports.ts'): SourceFile {
     return languageService.parse(fileName, code);
+}
+
+function visitIdentifiers(node: Node, name: string, found: Identifier[]): void {
+    if (isIdentifier(node) && node.text === name) {
+        let parent = node.parent;
+
+        if (!isImportSpecifier(parent) && !isImportClause(parent) && !isNamespaceImport(parent)) {
+            found.push(node);
+        }
+    }
+
+    node.forEachChild((child) => {
+        visitIdentifiers(child, name, found);
+    });
 }
 
 
@@ -87,36 +114,12 @@ describe('imports.all', () => {
 describe('imports.includes', () => {
     let mockChecker = { getSymbolAtLocation: () => null } as unknown as Checker;
 
-    // A checker that resolves a name to a declaration living inside node_modules/<pkg> — the genuine-import answer.
+    // A declaration inside node_modules/<pkg> is what the checker returns for a genuine import.
     let resolvingChecker = {
         getSymbolAtLocation: () => ({
             declarations: [{ path: root + '/node_modules/my-pkg/index.d.ts' }]
         })
     } as unknown as Checker;
-
-    function findAll(file: SourceFile, name: string): Identifier[] {
-        let found: Identifier[] = [];
-
-        function visit(n: Node): void {
-            if (isIdentifier(n) && n.text === name) {
-                let parent = n.parent;
-
-                if (!isImportSpecifier(parent) && !isImportClause(parent) && !isNamespaceImport(parent)) {
-                    found.push(n);
-                }
-            }
-
-            n.forEachChild(visit);
-        }
-
-        file.forEachChild(visit);
-
-        return found;
-    }
-
-    function findIdentifier(file: SourceFile, name: string): Identifier | undefined {
-        return findAll(file, name)[0];
-    }
 
     it('direct named import matches', () => {
         let file = parse("import { reactive } from 'my-pkg';\nreactive(x);"),
@@ -143,8 +146,7 @@ describe('imports.includes', () => {
         let inner = refs[1],
             outer = refs[0];
 
-        // The checker resolves the inner reference to a local (shadowing) VariableDeclaration outside node_modules,
-        // and the outer reference to the genuine import inside node_modules/my-pkg.
+        // Inner resolves to the shadowing local outside node_modules; outer to the genuine import inside it.
         let checker = {
             getSymbolAtLocation: (n: Node) => n === inner
                 ? { declarations: [{ path: root + '/src/test-imports.ts' }] }

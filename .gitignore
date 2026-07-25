@@ -3,6 +3,7 @@
 .idea
 build
 node_modules
+storage/.fixture-*
 tmpclaude*
 
 .claude/worktrees

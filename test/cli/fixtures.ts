@@ -34,7 +34,8 @@ function collect(dir: string, base: string, results: string[]): void {
     }
 }
 
-function createFixture(dir: string, options: FixtureOptions = {}): string {
+
+const createFixture = (dir: string, options: FixtureOptions = {}): string => {
     fs.mkdirSync(dir, { recursive: true });
     fs.copyFileSync(path.join(REPO_ROOT, 'tsconfig.base.json'), path.join(dir, 'tsconfig.base.json'));
     fs.copyFileSync(path.join(REPO_ROOT, 'tsconfig.package.json'), path.join(dir, 'tsconfig.package.json'));
@@ -56,16 +57,26 @@ function createFixture(dir: string, options: FixtureOptions = {}): string {
     }
 
     return tsconfigPath;
-}
+};
 
-function snapshotTree(dir: string): string[] {
+// Fixtures live INSIDE the repo so `types: ["node"]` from the shipped config resolves by walking up to
+// the repo's node_modules — the same reason the CLI mirrors into the project root rather than os.tmpdir().
+const createFixtureDir = (prefix: string): string => {
+    let storage = path.join(REPO_ROOT, 'storage');
+
+    fs.mkdirSync(storage, { recursive: true });
+
+    return fs.mkdtempSync(path.join(storage, prefix));
+};
+
+const snapshotTree = (dir: string): string[] => {
     let results: string[] = [];
 
     collect(dir, dir, results);
 
     return results.sort();
-}
+};
 
 
-export { createFixture, IMPORT_PLUGIN, MARKER_PLUGIN, snapshotTree };
+export { createFixture, createFixtureDir, IMPORT_PLUGIN, MARKER_PLUGIN, snapshotTree };
 export type { FixtureOptions };

@@ -1,6 +1,6 @@
+import { afterAll, describe, expect, it } from 'vitest';
 import type { Expression, Node, SourceFile } from 'typescript/unstable/ast';
 import { isCallExpression, isClassDeclaration, isIdentifier, isObjectLiteralExpression, isPropertyAccessExpression, isVariableStatement } from 'typescript/unstable/ast/is';
-import { afterAll, describe, expect, it } from 'vitest';
 
 import ast from '~/compiler/ast';
 import languageService from '~/compiler/language-service';
@@ -9,29 +9,20 @@ import languageService from '~/compiler/language-service';
 const fileName = process.cwd().replace(/\\/g, '/') + '/test.ts';
 
 
+function findFirst(file: SourceFile, predicate: (n: Node) => boolean): Node | undefined {
+    return file.forEachChild((node) => visit(node, predicate));
+}
+
 function parse(code: string): SourceFile {
     return languageService.parse(fileName, code);
 }
 
-function findFirst(file: SourceFile, predicate: (n: Node) => boolean): Node | undefined {
-    let result: Node | undefined;
-
-    function visit(node: Node) {
-        if (result) {
-            return;
-        }
-
-        if (predicate(node)) {
-            result = node;
-            return;
-        }
-
-        node.forEachChild(visit);
+function visit(node: Node, predicate: (n: Node) => boolean): Node | undefined {
+    if (predicate(node)) {
+        return node;
     }
 
-    file.forEachChild(visit);
-
-    return result;
+    return node.forEachChild((child) => visit(child, predicate));
 }
 
 

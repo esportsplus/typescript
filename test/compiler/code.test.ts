@@ -7,7 +7,7 @@ describe('code', () => {
     it('interpolates values into template', () => {
         let result = code`let x = ${'hello'};`;
 
-        expect(result).toBe("let x = hello;");
+        expect(result).toBe('let x = hello;');
     });
 
     it('handles multiple interpolations', () => {

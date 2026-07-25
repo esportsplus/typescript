@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-
 import type { Edit, PositionMapping, SourceMapV3 } from '~/compiler/sourcemap';
 
 import sourcemap from '~/compiler/sourcemap';

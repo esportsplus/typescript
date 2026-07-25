@@ -1,11 +1,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
+import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, resolvePluginConfigs, runTscAlias } from '~/cli/tsc';
+import { flatten, format } from '~/cli/diagnostics';
+
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
-import { flatten, format } from '~/cli/diagnostics';
-import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, resolvePluginConfigs, runTscAlias } from '~/cli/tsc';
+
+const BACKSLASH_REGEX = /\\/g;
 
 
 describe('isPlugin', () => {
@@ -240,7 +243,7 @@ describe('build', () => {
             files: ['./index.ts']
         }));
 
-        let normalizedSource = path.resolve(sourcePath).replace(/\\/g, '/'),
+        let normalizedSource = path.resolve(sourcePath).replace(BACKSLASH_REGEX, '/'),
             original = fs.writeFileSync,
             writes: string[] = [];
 
@@ -248,7 +251,7 @@ describe('build', () => {
             let file = args[0];
 
             if (typeof file === 'string') {
-                writes.push(path.resolve(file).replace(/\\/g, '/'));
+                writes.push(path.resolve(file).replace(BACKSLASH_REGEX, '/'));
             }
 
             (original as (...a: Parameters<typeof fs.writeFileSync>) => void)(...args);

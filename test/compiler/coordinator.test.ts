@@ -1,13 +1,12 @@
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import path from 'path';
-import type { Node, SourceFile } from 'typescript/unstable/ast';
 import type { Checker, Program } from 'typescript/unstable/sync';
-import { isCallExpression, isIdentifier } from 'typescript/unstable/ast/is';
-
 import type { ImportIntent, Plugin, ReplacementIntent, SharedContext, TransformContext } from '~/compiler/types';
+import { isCallExpression, isIdentifier } from 'typescript/unstable/ast/is';
+import type { Node, SourceFile } from 'typescript/unstable/ast';
 
 import coordinator from '~/compiler/coordinator';
-import * as languageService from '~/compiler/language-service';
+import languageService from '~/compiler/language-service';
+import path from 'path';
 import sourcemap from '~/compiler/sourcemap';
 
 
@@ -217,7 +216,7 @@ describe('coordinator.transform', () => {
     });
 
     it('applies replacements + imports together with AST re-parse', () => {
-        let code = "let OLD = 1;",
+        let code = 'let OLD = 1;',
             file = parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
@@ -753,7 +752,7 @@ describe('coordinator.transform', () => {
             file = parse(code),
             project = makeProject(file);
 
-        vi.spyOn(languageService.default, 'update').mockReturnValueOnce({
+        vi.spyOn(languageService, 'update').mockReturnValueOnce({
             checker: {} as unknown as Checker,
             program: { getSourceFile: () => undefined } as unknown as Program
         });

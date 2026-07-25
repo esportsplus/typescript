@@ -19,12 +19,10 @@ describe('uid', () => {
 
     it('contains only alphanumeric characters after prefix', () => {
         let result = uid('x'),
-            suffix = result.slice(2); // after 'x_'
+            suffix = result.slice(2);
 
         expect(suffix).toMatch(/^[A-Za-z0-9]+$/);
     });
-
-    // F-TEST-008: uid sequential guarantees
 
     it('sequential calls produce different suffixes (5 calls)', () => {
         let results = new Set<string>();
@@ -40,11 +38,10 @@ describe('uid', () => {
         let a1 = uid('a'),
             a2 = uid('a'),
             b1 = uid('b'),
-            suffixA1 = a1.slice(2), // after 'a_'
+            suffixA1 = a1.slice(2),
             suffixA2 = a2.slice(2),
-            suffixB1 = b1.slice(2); // after 'b_'
+            suffixB1 = b1.slice(2);
 
-        // Find common prefix between two 'a' calls — that's the namespace
         let common = '';
 
         for (let i = 0, n = Math.min(suffixA1.length, suffixA2.length); i < n; i++) {
@@ -61,13 +58,14 @@ describe('uid', () => {
 
     it('suffix contains valid base-36 characters', () => {
         let result = uid('z'),
-            parts = result.slice(2), // after 'z_'
+            parts = result.slice(2),
             base36Suffix = parts.match(/[0-9a-z]+$/);
 
         expect(base36Suffix).not.toBeNull();
         expect(base36Suffix![0]).toMatch(/^[0-9a-z]+$/);
     });
 });
+
 
 describe('uid.scope', () => {
     it('derives the same namespace for the same file and source', () => {
