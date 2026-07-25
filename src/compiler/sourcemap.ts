@@ -36,6 +36,12 @@ type SourceMapV3 = {
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
+const CLASS_OTHER = 2;
+
+const CLASS_SPACE = 1;
+
+const CLASS_WORD = 0;
+
 
 let inverse = buildInverse();
 
@@ -48,6 +54,18 @@ function buildInverse(): Int8Array {
     }
 
     return table;
+}
+
+function charClass(code: number): number {
+    if ((code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 36 || code === 95) {
+        return CLASS_WORD;
+    }
+
+    if (code === 9 || code === 10 || code === 13 || code === 32) {
+        return CLASS_SPACE;
+    }
+
+    return CLASS_OTHER;
 }
 
 function decodeVlqArray(segment: string): number[] {
@@ -193,6 +211,12 @@ function resolveOffset(mapping: PositionMapping, offset: number): number {
     }
 
     return result;
+}
+
+function segmentAt(starts: number[], offset: number, genColumn: number): Segment {
+    let position = offsetToLineCol(starts, offset);
+
+    return { genColumn, originalColumn: position.column, originalLine: position.line, source: 0 };
 }
 
 function segmentsToRaw(segments: Segment[][]): number[][][] {
@@ -350,22 +374,41 @@ const originalPositionFor = (mapping: PositionMapping, transformedText: string, 
     return offsetToLineCol(lineStarts(originalText), resolveOffset(mapping, base + column));
 };
 
+// A chained consumer (Rollup) resolves a query to the nearest PRECEDING segment without interpolating,
+// so a segment lands at every character-class transition — the granularity those queries arrive at.
 const toSourceMapV3 = (mapping: PositionMapping, transformedText: string, originalText: string, source: string): SourceMapV3 => {
-    let lastColumn = 0,
-        lastLine = 0,
-        oStarts = lineStarts(originalText),
-        raw: number[][][] = [],
+    let oStarts = lineStarts(originalText),
+        segments: Segment[][] = [],
         tStarts = lineStarts(transformedText);
 
     for (let line = 0, n = tStarts.length; line < n; line++) {
-        let position = offsetToLineCol(oStarts, resolveOffset(mapping, tStarts[line]));
+        let end = line + 1 < n ? tStarts[line + 1] - 1 : transformedText.length,
+            previous = resolveOffset(mapping, tStarts[line]),
+            start = tStarts[line];
 
-        raw.push([[0, 0, position.line - lastLine, position.column - lastColumn]]);
-        lastColumn = position.column;
-        lastLine = position.line;
+        let row: Segment[] = [segmentAt(oStarts, previous, 0)];
+
+        for (let offset = start + 1; offset < end; offset++) {
+            let current = charClass(transformedText.charCodeAt(offset));
+
+            if (current !== CLASS_OTHER && current === charClass(transformedText.charCodeAt(offset - 1))) {
+                continue;
+            }
+
+            let resolved = resolveOffset(mapping, offset);
+
+            if (resolved === previous) {
+                continue;
+            }
+
+            previous = resolved;
+            row.push(segmentAt(oStarts, resolved, offset - start));
+        }
+
+        segments.push(row);
     }
 
-    return { mappings: encode(raw), names: [], sources: [source], version: 3 };
+    return { mappings: encode(segmentsToRaw(segments)), names: [], sources: [source], version: 3 };
 };
 
 

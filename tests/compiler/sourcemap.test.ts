@@ -28,6 +28,37 @@ function absolute(mappings: string): { column: number; line: number }[] {
     return out;
 }
 
+// Mirrors how a chained consumer resolves: the nearest PRECEDING segment on the line, never interpolated.
+function columnAt(source: SourceMapV3, line: number, column: number): { column: number; line: number } | null {
+    let decoded = sourcemap.decode(source.mappings),
+        found: { column: number; line: number } | null = null,
+        origColumn = 0,
+        origLine = 0,
+        sourceIndex = 0;
+
+    for (let i = 0, n = decoded.length; i < n; i++) {
+        let genColumn = 0;
+
+        for (let j = 0, m = decoded[i].length; j < m; j++) {
+            let values = decoded[i][j];
+
+            genColumn += values[0];
+
+            if (values.length >= 4) {
+                sourceIndex += values[1];
+                origLine += values[2];
+                origColumn += values[3];
+
+                if (i === line && genColumn <= column) {
+                    found = { column: origColumn, line: origLine };
+                }
+            }
+        }
+    }
+
+    return found;
+}
+
 function map(before: string, edits: Edit[]): PositionMapping {
     return { generations: [sourcemap.buildGeneration(before, edits)] };
 }
@@ -210,7 +241,7 @@ describe('sourcemap.composeEmittedMap', () => {
 
 
 describe('sourcemap.toSourceMapV3', () => {
-    it('produces a valid v3 map naming the source and one segment per transformed line', () => {
+    it('anchors every transformed line to its original line', () => {
         let before = 'a\nb\n',
             edits: Edit[] = [{ end: 0, newText: 'X\n', start: 0 }],
             after = transformText(before, edits),
@@ -223,5 +254,45 @@ describe('sourcemap.toSourceMapV3', () => {
         expect(result.sourcesContent).toBeUndefined();
         // Transformed line starts 0,1,2,3 (trailing empty line) resolve to original lines 0,0,1,2.
         expect(lines.map((l) => l.line)).toEqual([0, 0, 1, 2]);
+    });
+
+    it('resolves columns after a replacement to their exact original columns', () => {
+        let before = 'let a = FOO + bar;\n',
+            edits: Edit[] = [{ end: 11, newText: 'X', start: 8 }],
+            after = transformText(before, edits),
+            result = sourcemap.toSourceMapV3(map(before, edits), after, before, 'src/index.ts');
+
+        expect(after).toBe('let a = X + bar;\n');
+
+        // '+' sits at transformed column 10 and original column 12; 'bar' at 12 and 14.
+        expect(columnAt(result, 0, 10)).toEqual({ column: 12, line: 0 });
+        expect(columnAt(result, 0, 12)).toEqual({ column: 14, line: 0 });
+        expect(columnAt(result, 0, 15)).toEqual({ column: 17, line: 0 });
+    });
+
+    it('collapses every column inside generated text to the edit start', () => {
+        let before = 'let a = FOO;\n',
+            edits: Edit[] = [{ end: 11, newText: 'LONGER', start: 8 }],
+            after = transformText(before, edits),
+            result = sourcemap.toSourceMapV3(map(before, edits), after, before, 'src/index.ts');
+
+        expect(after).toBe('let a = LONGER;\n');
+
+        // Columns 8..13 are generated; all resolve to the replaced span's start at original column 8.
+        expect(columnAt(result, 0, 8)).toEqual({ column: 8, line: 0 });
+        expect(columnAt(result, 0, 12)).toEqual({ column: 8, line: 0 });
+        // The ';' past the generated text returns to identity: transformed 14 → original 11.
+        expect(columnAt(result, 0, 14)).toEqual({ column: 11, line: 0 });
+    });
+
+    it('keeps columns exact on lines shifted by a whole-line insertion', () => {
+        let before = 'let a = 1;\nlet b = 2;\n',
+            edits: Edit[] = [{ end: 0, newText: 'import x from "y";\n', start: 0 }],
+            after = transformText(before, edits),
+            result = sourcemap.toSourceMapV3(map(before, edits), after, before, 'src/index.ts');
+
+        // Transformed line 2 is original line 1, and its columns are unshifted.
+        expect(columnAt(result, 2, 4)).toEqual({ column: 4, line: 1 });
+        expect(columnAt(result, 2, 8)).toEqual({ column: 8, line: 1 });
     });
 });
