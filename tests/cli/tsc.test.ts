@@ -5,7 +5,7 @@ import path from 'path';
 
 import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
 import { flatten, format } from '~/cli/diagnostics';
-import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, runTscAlias } from '~/cli/tsc';
+import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, resolvePluginConfigs, runTscAlias } from '~/cli/tsc';
 
 
 describe('isPlugin', () => {
@@ -92,30 +92,20 @@ describe('loadPlugins', () => {
         expect(plugins).toHaveLength(2);
     });
 
-    it('skips invalid plugin format with error', async () => {
+    it('rejects an invalid plugin format instead of silently skipping', async () => {
         let pluginFile = 'invalid.mjs';
 
         fs.writeFileSync(path.join(tmpDir, pluginFile), 'export default { notTransform: true };');
 
-        let spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        let plugins = await loadPlugins([{ transform: './' + pluginFile }], tmpDir);
-
-        expect(plugins).toHaveLength(0);
-        expect(spy).toHaveBeenCalled();
-        spy.mockRestore();
+        await expect(loadPlugins([{ transform: './' + pluginFile }], tmpDir)).rejects.toThrow(/invalid plugin format/);
     });
 
-    it('skips invalid array element with error', async () => {
+    it('rejects an invalid array element instead of silently dropping it', async () => {
         let pluginFile = 'mixed.mjs';
 
         fs.writeFileSync(path.join(tmpDir, pluginFile), 'export default [{ transform: () => ({}) }, { bad: true }];');
 
-        let spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        let plugins = await loadPlugins([{ transform: './' + pluginFile }], tmpDir);
-
-        expect(plugins).toHaveLength(1);
-        expect(spy).toHaveBeenCalled();
-        spy.mockRestore();
+        await expect(loadPlugins([{ transform: './' + pluginFile }], tmpDir)).rejects.toThrow(/\[1\]/);
     });
 
     it('resolves relative paths from root', async () => {
@@ -354,6 +344,130 @@ describe('build', () => {
         expect(exits).toContain(1);
         expect(exits).not.toContain(0);
         expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+
+    it('a plugin that fails isPlugin is a hard failure: exit 1, prefixed error, no output', async () => {
+        let tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(path.join(tmpDir, 'index.ts'), 'export const value = 1;\n');
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), 'export default {};');
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        let errors: string[] = [];
+
+        vi.spyOn(console, 'error').mockImplementation((msg?: unknown) => { errors.push(String(msg)); });
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toContain(1);
+        expect(errors.some((line) => line.includes('@esportsplus/typescript') && line.includes('invalid plugin format'))).toBe(true);
+        expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+
+    it('an invalid array element aborts the whole build: exit 1, indexed error, no output', async () => {
+        let tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(path.join(tmpDir, 'index.ts'), 'export const value = 1;\n');
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), 'export default [{ transform: () => ({}) }, { bad: true }];');
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        let errors: string[] = [];
+
+        vi.spyOn(console, 'error').mockImplementation((msg?: unknown) => { errors.push(String(msg)); });
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toContain(1);
+        expect(errors.some((line) => line.includes('@esportsplus/typescript') && line.includes('[1]'))).toBe(true);
+        expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+
+    it('resolves a plugin declared in an extended base config and runs the transform', async () => {
+        let sourcePath = path.join(tmpDir, 'index.ts'),
+            tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(sourcePath, 'export const value = 1;\n');
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), markerPlugin);
+        fs.writeFileSync(path.join(tmpDir, 'base.json'), JSON.stringify({
+            compilerOptions: { declaration: true, module: 'esnext', moduleResolution: 'bundler', outDir: './out', plugins: [{ transform: './plugin.mjs' }], skipLibCheck: true, target: 'esnext' }
+        }));
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            extends: './base.json',
+            files: ['./index.ts']
+        }));
+
+        let configs = resolvePluginConfigs(tsconfigPath);
+
+        expect(configs).toEqual([{ transform: './plugin.mjs' }]);
+
+        await expect(build(tsconfigPath, configs, api)).rejects.toThrow(/process\.exit/);
+
+        let emitted = path.join(tmpDir, 'out', 'index.js');
+
+        expect(exits).toContain(0);
+        expect(fs.existsSync(emitted)).toBe(true);
+        expect(fs.readFileSync(emitted, 'utf8')).toContain('__TRANSFORMED__');
+    });
+});
+
+
+describe('resolvePluginConfigs extends resolution', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tsc-extends-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('resolves a plugin from a package-specifier extends via require.resolve', () => {
+        let pkgDir = path.join(tmpDir, 'node_modules', 'shared-config'),
+            tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.mkdirSync(pkgDir, { recursive: true });
+        fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: 'shared-config', version: '1.0.0' }));
+        fs.writeFileSync(path.join(pkgDir, 'tsconfig.json'), JSON.stringify({
+            compilerOptions: { plugins: [{ transform: './plugin.mjs' }] }
+        }));
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            extends: 'shared-config/tsconfig.json',
+            files: ['./index.ts']
+        }));
+
+        expect(resolvePluginConfigs(tsconfigPath)).toEqual([{ transform: './plugin.mjs' }]);
+    });
+
+    it('merges plugins across an array of extends, the later base winning', () => {
+        let tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(path.join(tmpDir, 'a.json'), JSON.stringify({ compilerOptions: { strict: true } }));
+        fs.writeFileSync(path.join(tmpDir, 'b.json'), JSON.stringify({ compilerOptions: { plugins: [{ transform: './plugin.mjs' }] } }));
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            extends: ['./a.json', './b.json'],
+            files: ['./index.ts']
+        }));
+
+        expect(resolvePluginConfigs(tsconfigPath)).toEqual([{ transform: './plugin.mjs' }]);
+    });
+
+    it('returns no configs when no config in the chain declares plugins', () => {
+        let tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(path.join(tmpDir, 'base.json'), JSON.stringify({ compilerOptions: { strict: true } }));
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            extends: './base.json',
+            files: ['./index.ts']
+        }));
+
+        expect(resolvePluginConfigs(tsconfigPath)).toEqual([]);
     });
 });
 

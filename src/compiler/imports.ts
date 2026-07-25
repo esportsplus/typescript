@@ -131,8 +131,7 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
             }
         }
 
-        // If checker failed but name matches direct import, trust it
-        return true;
+        return false;
     }
 
     // Slow path: check for re-exports via aliased symbol

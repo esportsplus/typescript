@@ -61,9 +61,18 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     }
 
     let { fileNames, options } = api.parseConfigFile(tsconfig),
-        plugins = await loadPlugins(pluginConfigs, root),
+        plugins: Plugin[],
         shared: SharedContext = new Map(),
         transformedFiles = new Map<string, TransformedFile>();
+
+    try {
+        plugins = await loadPlugins(pluginConfigs, root);
+    }
+    catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        teardown(snapshot, api, root, owned);
+        process.exit(1);
+    }
 
     for (let i = 0, n = fileNames.length; i < n; i++) {
         let fileName = fileNames[i],
@@ -294,6 +303,44 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
     }
 }
 
+function extendsTarget(specifier: unknown, fromDir: string): string | null {
+    if (typeof specifier !== 'string') {
+        return null;
+    }
+
+    if (specifier.startsWith('.')) {
+        let resolved = path.resolve(fromDir, specifier);
+
+        if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+            return resolved;
+        }
+
+        if (fs.existsSync(resolved + '.json')) {
+            return resolved + '.json';
+        }
+
+        let nested = path.join(resolved, 'tsconfig.json');
+
+        if (fs.existsSync(nested)) {
+            return nested;
+        }
+
+        return null;
+    }
+
+    try {
+        return require.resolve(specifier, { paths: [fromDir] });
+    }
+    catch {
+        try {
+            return require.resolve(specifier + '/tsconfig.json', { paths: [fromDir] });
+        }
+        catch {
+            return null;
+        }
+    }
+}
+
 function isPlugin(value: unknown): value is Plugin {
     return typeof value === 'object' && value !== null && 'transform' in value && typeof (value as Plugin).transform === 'function';
 }
@@ -323,20 +370,18 @@ async function loadPlugins(configs: PluginConfig[], root: string): Promise<Plugi
 
                 if (Array.isArray(plugin)) {
                     for (let j = 0, m = plugin.length; j < m; j++) {
-                        if (isPlugin(plugin[j])) {
-                            plugins.push(plugin[j]);
+                        if (!isPlugin(plugin[j])) {
+                            throw new Error(`${PACKAGE_NAME}: plugin ${config.transform}[${j}] uses an invalid plugin format, expected { transform: Function }`);
                         }
-                        else {
-                            console.error(`${PACKAGE_NAME}: plugin ${config.transform}[${j}] uses an invalid plugin format`);
-                        }
+
+                        plugins.push(plugin[j]);
                     }
 
                     return;
                 }
 
                 if (!isPlugin(plugin)) {
-                    console.error(`${PACKAGE_NAME}: plugin ${config.transform} uses an invalid plugin format, expected { transform: Function } or Plugin[]`);
-                    return;
+                    throw new Error(`${PACKAGE_NAME}: plugin ${config.transform} uses an invalid plugin format, expected { transform: Function } or Plugin[]`);
                 }
 
                 plugins.push(plugin);
@@ -356,18 +401,7 @@ function main(): void {
         return passthrough();
     }
 
-    let config: { compilerOptions?: { plugins?: unknown[] } };
-
-    try {
-        config = JSON.parse(stripJsonc(fs.readFileSync(tsconfig, 'utf8')));
-    }
-    catch {
-        return passthrough();
-    }
-
-    let pluginConfigs = (config?.compilerOptions?.plugins?.filter(
-            (p: unknown): p is PluginConfig => typeof p === 'object' && p !== null && 'transform' in p
-        ) ?? []) as PluginConfig[];
+    let pluginConfigs = resolvePluginConfigs(tsconfig);
 
     if (pluginConfigs.length === 0) {
         return passthrough();
@@ -410,6 +444,61 @@ function passthrough(): void {
 
             process.exit(code ?? 0);
         });
+}
+
+function readPlugins(tsconfig: string, seen: Set<string>): unknown[] | undefined {
+    let id = path.resolve(tsconfig);
+
+    if (seen.has(id)) {
+        return undefined;
+    }
+
+    seen.add(id);
+
+    let config: { compilerOptions?: { plugins?: unknown[] }; extends?: unknown };
+
+    try {
+        config = JSON.parse(stripJsonc(fs.readFileSync(id, 'utf8')));
+    }
+    catch {
+        return undefined;
+    }
+
+    let plugins: unknown[] | undefined;
+
+    if (config?.extends !== undefined) {
+        let bases = Array.isArray(config.extends) ? config.extends : [config.extends];
+
+        for (let i = 0, n = bases.length; i < n; i++) {
+            let target = extendsTarget(bases[i], path.dirname(id));
+
+            if (target) {
+                let inherited = readPlugins(target, seen);
+
+                if (inherited !== undefined) {
+                    plugins = inherited;
+                }
+            }
+        }
+    }
+
+    if (Array.isArray(config?.compilerOptions?.plugins)) {
+        plugins = config.compilerOptions.plugins;
+    }
+
+    return plugins;
+}
+
+function resolvePluginConfigs(tsconfig: string): PluginConfig[] {
+    let plugins = readPlugins(tsconfig, new Set());
+
+    if (!Array.isArray(plugins)) {
+        return [];
+    }
+
+    return plugins.filter(
+        (p: unknown): p is PluginConfig => typeof p === 'object' && p !== null && 'transform' in p
+    );
 }
 
 function runTscAlias(args: string[]): Promise<number> {
@@ -570,4 +659,4 @@ if (process.env.VITEST === undefined) {
 }
 
 
-export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, runTscAlias };
+export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, resolvePluginConfigs, runTscAlias };
