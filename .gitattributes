@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shebang scripts must stay LF in the working tree — a CRLF shebang makes the loader look for `node\r`
+bin/* text eol=lf
