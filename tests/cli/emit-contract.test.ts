@@ -6,7 +6,10 @@ import path from 'path';
 import { API } from 'typescript/unstable/sync';
 import { build } from '~/cli/tsc';
 import { createFixture, MARKER_PLUGIN, snapshotTree } from './fixtures';
+import viteConfig from '../../vitest.config';
 
+
+const BACKSLASH_REGEX = /\\/g;
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -178,11 +181,19 @@ describe('emit contract', () => {
         expect(emitted).not.toContain('~/');
     });
 
-    it('fixtures helper is a non-suite module vitest discovery never runs', () => {
-        let helper = path.resolve(import.meta.dirname, 'fixtures.ts');
+    it('fixtures helper is excluded by vitest discovery globs, unlike a real suite', () => {
+        let helper = path.resolve(import.meta.dirname, 'fixtures.ts'),
+            include = Array.isArray(viteConfig.test?.include) ? viteConfig.test.include : [],
+            repoRoot = path.resolve(import.meta.dirname, '../..'),
+            relativeHelper = path.relative(repoRoot, helper).replace(BACKSLASH_REGEX, '/'),
+            relativeSuite = path.relative(repoRoot, path.resolve(import.meta.dirname, 'emit-contract.test.ts')).replace(BACKSLASH_REGEX, '/');
 
         expect(fs.existsSync(helper)).toBe(true);
-        expect(path.basename(helper).endsWith('.test.ts')).toBe(false);
+        expect(include.length).toBeGreaterThan(0);
+        // Guard the REAL invariant against the live config: the discovery globs must reject the helper
+        // and accept a sibling suite. A glob widening that would capture fixtures.ts fails this test.
+        expect(include.some((pattern) => path.matchesGlob(relativeHelper, pattern))).toBe(false);
+        expect(include.some((pattern) => path.matchesGlob(relativeSuite, pattern))).toBe(true);
         expect(typeof createFixture).toBe('function');
         expect(typeof snapshotTree).toBe('function');
     });
