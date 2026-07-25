@@ -68,3 +68,59 @@ describe('uid', () => {
         expect(base36Suffix![0]).toMatch(/^[0-9a-z]+$/);
     });
 });
+
+describe('uid.scope', () => {
+    it('derives the same namespace for the same file and source', () => {
+        uid.scope('/project', '/project/src/a.ts', 'let value = 1;');
+
+        let first = uid('x');
+
+        uid.scope('/project', '/project/src/a.ts', 'let value = 1;');
+
+        expect(uid('x')).toBe(first);
+    });
+
+    it('derives the namespace from the project-relative path', () => {
+        uid.scope('/one', '/one/src/a.ts', '');
+
+        let first = uid('x');
+
+        uid.scope('/two', '/two/src/a.ts', '');
+
+        expect(uid('x')).toBe(first);
+    });
+
+    it('derives different namespaces for different files', () => {
+        uid.scope('/project', '/project/src/a.ts', '');
+
+        let first = uid('x');
+
+        uid.scope('/project', '/project/src/b.ts', '');
+
+        expect(uid('x')).not.toBe(first);
+    });
+
+    it('resets the counter on every scope', () => {
+        uid.scope('/project', '/project/src/a.ts', '');
+        uid('x');
+        uid('x');
+        uid.scope('/project', '/project/src/a.ts', '');
+
+        expect(uid('x').endsWith('0')).toBe(true);
+    });
+
+    it('salts the namespace until it is absent from the source', () => {
+        uid.scope('/project', '/project/src/a.ts', '');
+
+        let natural = uid('x').slice(2, -1),
+            code = `let ${natural} = 1;`;
+
+        uid.scope('/project', '/project/src/a.ts', code);
+
+        let generated = uid('x');
+
+        expect(generated.slice(2, -1)).not.toBe(natural);
+        expect(code.includes(generated)).toBe(false);
+        expect(code.includes(uid('other'))).toBe(false);
+    });
+});

@@ -9,6 +9,7 @@ import type { OffsetAnchor, PositionMapping } from './sourcemap';
 import imports from './imports';
 import languageService from './language-service';
 import sourcemap from './sourcemap';
+import uid from './uid';
 
 
 type CoordinatorResult = {
@@ -234,6 +235,8 @@ const transform = (
     if (plugins.length === 0) {
         return { changed: false, code, map: { generations: [] }, sourceFile: file };
     }
+
+    uid.scope(root, file.fileName, code);
 
     let changed = false,
         currentCode = code,
