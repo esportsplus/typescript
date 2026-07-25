@@ -234,10 +234,10 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
             mirrorDecl = path.join(mirror, '__decl'),
             mirrorOut = path.join(mirror, '__emit'),
             realOutDir = typeof options.outDir === 'string' ? path.resolve(options.outDir) : root,
-            realRootDir = typeof options.rootDir === 'string' ? path.resolve(options.rootDir) : undefined,
             realDeclDir = declaration
                 ? (typeof options.declarationDir === 'string' ? path.resolve(options.declarationDir) : realOutDir)
                 : undefined,
+            realRootDir = typeof options.rootDir === 'string' ? path.resolve(options.rootDir) : undefined,
             separateDecl = realDeclDir !== undefined && normalizePath(realDeclDir) !== normalizePath(realOutDir);
 
         for (let i = 0, n = fileNames.length; i < n; i++) {
