@@ -5,7 +5,7 @@ import path from 'path';
 
 import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
 import { flatten, format } from '~/cli/diagnostics';
-import { build, isPlugin, loadPlugins, normalizePath, runTscAlias } from '~/cli/tsc';
+import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, runTscAlias } from '~/cli/tsc';
 
 
 describe('isPlugin', () => {
@@ -157,6 +157,30 @@ describe('runTscAlias', () => {
 });
 
 
+describe('classifyFlags', () => {
+    it('flags every informational spelling as informational', () => {
+        for (let arg of ['--help', '-h', '--version', '-v', '--init', '--showConfig']) {
+            expect(classifyFlags([arg])).toEqual({ informational: true, noEmit: false, watch: false });
+        }
+    });
+
+    it('flags both --noEmit spellings as noEmit', () => {
+        expect(classifyFlags(['--noEmit'])).toEqual({ informational: false, noEmit: true, watch: false });
+        expect(classifyFlags(['-noEmit'])).toEqual({ informational: false, noEmit: true, watch: false });
+    });
+
+    it('flags both watch spellings as watch', () => {
+        expect(classifyFlags(['--watch'])).toEqual({ informational: false, noEmit: false, watch: true });
+        expect(classifyFlags(['-w'])).toEqual({ informational: false, noEmit: false, watch: true });
+    });
+
+    it('leaves an ordinary build argv unflagged', () => {
+        expect(classifyFlags(['-p', 'tsconfig.json'])).toEqual({ informational: false, noEmit: false, watch: false });
+        expect(classifyFlags([])).toEqual({ informational: false, noEmit: false, watch: false });
+    });
+});
+
+
 describe('build', () => {
     let api: API,
         exits: number[],
@@ -295,6 +319,86 @@ describe('build', () => {
         await expect(build(tsconfigPath, [], api)).rejects.toThrow(/process\.exit/);
 
         expect(exits).toContain(1);
+        expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+
+    it('--noEmit runs the transform + typecheck gate but writes no artifacts', async () => {
+        let sourcePath = path.join(tmpDir, 'index.ts'),
+            tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(sourcePath, 'export const value = 1;\n');
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), markerPlugin);
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { declaration: true, module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api, true)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toContain(0);
+        expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+
+    it('--noEmit still gates a type error with exit 1 and writes no artifacts', async () => {
+        let tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+
+        fs.writeFileSync(path.join(tmpDir, 'index.ts'), 'export const broken: number = "not a number";\n');
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), markerPlugin);
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api, true)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toContain(1);
+        expect(exits).not.toContain(0);
+        expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+});
+
+
+describe('main flag gating', () => {
+    let exits: number[],
+        originalArgv: string[],
+        tmpDir: string;
+
+    beforeEach(() => {
+        exits = [];
+        originalArgv = process.argv;
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tsc-main-'));
+
+        vi.spyOn(process, 'exit').mockImplementation(((code?: number): never => {
+            exits.push(code ?? 0);
+
+            throw new Error(`main-test: process.exit(${code ?? 0})`);
+        }) as typeof process.exit);
+    });
+
+    afterEach(() => {
+        process.argv = originalArgv;
+        vi.restoreAllMocks();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('--watch on a plugin project exits 1 with a prefixed error and never builds', () => {
+        fs.writeFileSync(path.join(tmpDir, 'index.ts'), 'export const value = 1;\n');
+        fs.writeFileSync(path.join(tmpDir, 'tsconfig.json'), JSON.stringify({
+            compilerOptions: { module: 'esnext', moduleResolution: 'bundler', outDir: './out', plugins: [{ transform: './plugin.mjs' }], skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        let errors: string[] = [];
+
+        vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+        vi.spyOn(console, 'error').mockImplementation((msg?: unknown) => { errors.push(String(msg)); });
+        vi.spyOn(console, 'log').mockImplementation(() => {});
+
+        process.argv = [process.execPath, 'esportsplus-tsc', '--watch'];
+
+        expect(() => main()).toThrow(/process\.exit/);
+        expect(exits).toContain(1);
+        expect(errors.some((line) => line.includes('@esportsplus/typescript') && line.includes('--watch'))).toBe(true);
         expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
     });
 });

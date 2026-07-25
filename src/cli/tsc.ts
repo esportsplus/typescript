@@ -21,12 +21,18 @@ type ResolvedOptions = ReturnType<API['parseConfigFile']>['options'];
 
 const BACKSLASH_REGEX = /\\/g;
 
+const INFORMATIONAL_FLAGS = new Set(['--help', '--init', '--showConfig', '--version', '-h', '-v']);
+
+const NO_EMIT_FLAGS = new Set(['--noEmit', '-noEmit']);
+
+const WATCH_FLAGS = new Set(['--watch', '-w']);
+
 
 let require = createRequire(import.meta.url),
     skipFlags = new Set(['--help', '--init', '--noEmit', '--showConfig', '--version', '-h', '-noEmit', '-v']);
 
 
-async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API): Promise<void> {
+async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API, noEmit = false): Promise<void> {
     let root = path.dirname(path.resolve(tsconfig)),
         owned = instance === undefined,
         api = instance ?? new API({ cwd: root }),
@@ -98,6 +104,11 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         process.exit(1);
     }
 
+    if (noEmit) {
+        teardown(snapshot, api, root, owned);
+        process.exit(0);
+    }
+
     let code = await emit(tsconfig, fileNames, transformedFiles, root, options);
 
     teardown(snapshot, api, root, owned);
@@ -107,6 +118,28 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     }
 
     return runTscAlias(process.argv.slice(2)).then((exitCode) => process.exit(exitCode));
+}
+
+function classifyFlags(args: string[]): { informational: boolean, noEmit: boolean, watch: boolean } {
+    let informational = false,
+        noEmit = false,
+        watch = false;
+
+    for (let i = 0, n = args.length; i < n; i++) {
+        let arg = args[i];
+
+        if (INFORMATIONAL_FLAGS.has(arg)) {
+            informational = true;
+        }
+        else if (NO_EMIT_FLAGS.has(arg)) {
+            noEmit = true;
+        }
+        else if (WATCH_FLAGS.has(arg)) {
+            watch = true;
+        }
+    }
+
+    return { informational, noEmit, watch };
 }
 
 async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map<string, string>, root: string, options: ResolvedOptions): Promise<number> {
@@ -271,9 +304,22 @@ function main(): void {
         return passthrough();
     }
 
+    let flags = classifyFlags(process.argv.slice(2));
+
+    if (flags.informational) {
+        return passthrough();
+    }
+
+    if (flags.watch) {
+        console.error(`${PACKAGE_NAME}: --watch is not supported on the transformer plugin path; run a one-shot build or use real tsc directly`);
+        process.exit(1);
+
+        return;
+    }
+
     console.log(`${PACKAGE_NAME}: found ${pluginConfigs.length} transformer plugin(s), using coordinated build...`);
 
-    build(tsconfig, pluginConfigs).catch((err) => {
+    build(tsconfig, pluginConfigs, undefined, flags.noEmit).catch((err) => {
         console.error(`${PACKAGE_NAME}: ${err}`);
         process.exit(1);
     });
@@ -455,4 +501,4 @@ if (process.env.VITEST === undefined) {
 }
 
 
-export { build, isPlugin, loadPlugins, normalizePath, runTscAlias };
+export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, runTscAlias };
