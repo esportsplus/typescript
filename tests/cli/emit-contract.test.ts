@@ -178,6 +178,15 @@ describe('emit contract', () => {
         expect(emitted).not.toContain('~/');
     });
 
+    it('fixtures helper is a non-suite module vitest discovery never runs', () => {
+        let helper = path.resolve(import.meta.dirname, 'fixtures.ts');
+
+        expect(fs.existsSync(helper)).toBe(true);
+        expect(path.basename(helper).endsWith('.test.ts')).toBe(false);
+        expect(typeof createFixture).toBe('function');
+        expect(typeof snapshotTree).toBe('function');
+    });
+
     it('shipped shape (declaration) keeps .d.ts parity and applies the plugin transform', async () => {
         let buildDir = path.join(tmpDir, 'build'),
             tsconfigPath = createFixture(tmpDir, {
