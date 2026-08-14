@@ -136,7 +136,12 @@ function modify(code: string, file: ts.SourceFile, pkg: string, options: ModifyO
     for (let i = 0, n = found.length; i < n; i++) {
         for (let [name, alias] of found[i].specifiers) {
             if (!remove || (!remove.has(name) && !remove.has(alias))) {
-                specifiers.add(name === alias ? name : `${name} as ${alias}`);
+                let base = name === alias ? name : `${name} as ${alias}`;
+
+                // Preserve type-only specifiers with an inline `type` modifier so the merged import
+                // stays erasable — otherwise `import type { X }` re-emits as a runtime `import { X }`
+                // and fails at load time when X has no runtime export.
+                specifiers.add(found[i].typeOnly.has(name) ? `type ${base}` : base);
             }
         }
     }

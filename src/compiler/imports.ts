@@ -4,6 +4,10 @@ import { ts } from '~/index';
 type ImportInfo = {
     end: number;
     specifiers: Map<string, string>;
+    // propertyName keys that were imported type-only, whether via a type-only clause
+    // (`import type { A }`) or an inline specifier (`import { type A }`). Preserved so a rewrite
+    // re-emits them as type imports instead of runtime imports.
+    typeOnly: Set<string>;
     start: number;
 };
 
@@ -43,7 +47,9 @@ const all = (file: ts.SourceFile, pkg: string): ImportInfo[] => {
         }
 
         let bindings = stmt.importClause?.namedBindings,
-            specifiers = new Map<string, string>();
+            declTypeOnly = stmt.importClause?.isTypeOnly ?? false,
+            specifiers = new Map<string, string>(),
+            typeOnly = new Set<string>();
 
         if (bindings && ts.isNamedImports(bindings)) {
             for (let j = 0, m = bindings.elements.length; j < m; j++) {
@@ -52,10 +58,14 @@ const all = (file: ts.SourceFile, pkg: string): ImportInfo[] => {
                     propertyName = element.propertyName?.text || name;
 
                 specifiers.set(propertyName, name);
+
+                if (declTypeOnly || element.isTypeOnly) {
+                    typeOnly.add(propertyName);
+                }
             }
         }
 
-        imports.push({ end: stmt.end, specifiers, start: stmt.getStart(file) });
+        imports.push({ end: stmt.end, specifiers, start: stmt.getStart(file), typeOnly });
     }
 
     return imports;
