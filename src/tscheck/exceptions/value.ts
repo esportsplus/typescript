@@ -10,11 +10,11 @@ export interface ThrowOrigin {
   readonly text: string; // the throw statement source, one line, truncated
 }
 
-// The throws lattice: a set of error type references keyed by a stable canonical
+// The exceptions lattice: a set of error type references keyed by a stable canonical
 // identity, or TOP ("an unknown error") which absorbs everything. `origins` runs
 // in parallel with `types` (same keys) so each escaping type carries the throw
 // site(s) it came from, propagated across the call graph.
-export interface ThrowsValue {
+export interface ExceptionsValue {
   readonly top: boolean;
   readonly types: ReadonlyMap<string, string>; // canonical key -> display name
   readonly origins: ReadonlyMap<string, ReadonlyArray<ThrowOrigin>>; // key -> throw sites
@@ -59,21 +59,21 @@ function mergeOrigins(
   return m;
 }
 
-export function bottom(): ThrowsValue {
+export function bottom(): ExceptionsValue {
   return { top: false, types: new Map(), origins: NO_ORIGINS };
 }
 
-export function top(): ThrowsValue {
+export function top(): ExceptionsValue {
   return { top: true, types: new Map(), origins: NO_ORIGINS };
 }
 
-export function single(key: string, display: string): ThrowsValue {
+export function single(key: string, display: string): ExceptionsValue {
   return { top: false, types: new Map([[key, display]]), origins: NO_ORIGINS };
 }
 
 // Attach a throw site to every type currently in `v` — used where a `throw`
 // statement produces `v`, so the site rides along as the value propagates.
-export function withOrigin(v: ThrowsValue, origin: ThrowOrigin): ThrowsValue {
+export function withOrigin(v: ExceptionsValue, origin: ThrowOrigin): ExceptionsValue {
   if (v.top) return v;
   const origins = new Map<string, ReadonlyArray<ThrowOrigin>>(v.origins);
   for (const k of v.types.keys()) {
@@ -85,7 +85,7 @@ export function withOrigin(v: ThrowsValue, origin: ThrowOrigin): ThrowsValue {
 }
 
 // Every distinct origin across all types, deduped — the diagnostic's throw list.
-export function originsOf(v: ThrowsValue): ReadonlyArray<ThrowOrigin> {
+export function originsOf(v: ExceptionsValue): ReadonlyArray<ThrowOrigin> {
   const out: ThrowOrigin[] = [];
   const seen = new Set<string>();
   for (const list of v.origins.values()) {
@@ -99,7 +99,7 @@ export function originsOf(v: ThrowsValue): ReadonlyArray<ThrowOrigin> {
   return out;
 }
 
-export function join(a: ThrowsValue, b: ThrowsValue): ThrowsValue {
+export function join(a: ExceptionsValue, b: ExceptionsValue): ExceptionsValue {
   if (a.top || b.top) return top();
   const m = new Map(a.types);
   for (const [k, d] of b.types) if (!m.has(k)) m.set(k, d);
@@ -110,7 +110,7 @@ export function join(a: ThrowsValue, b: ThrowsValue): ThrowsValue {
   return { top: false, types: m, origins: mergeOrigins(a.origins, b.origins) };
 }
 
-export function equals(a: ThrowsValue, b: ThrowsValue): boolean {
+export function equals(a: ExceptionsValue, b: ExceptionsValue): boolean {
   if (a.top || b.top) return a.top === b.top;
   if (a.types.size !== b.types.size) return false;
   for (const k of a.types.keys()) if (!b.types.has(k)) return false;
@@ -118,7 +118,7 @@ export function equals(a: ThrowsValue, b: ThrowsValue): boolean {
 }
 
 // Cap at WIDEN_CAP distinct types; on overflow or after 3 growing rounds, TOP.
-export function widen(prev: ThrowsValue, next: ThrowsValue, round: number): ThrowsValue {
+export function widen(prev: ExceptionsValue, next: ExceptionsValue, round: number): ExceptionsValue {
   if (next.top) return next;
   if (next.types.size > WIDEN_CAP) return top();
   if (round >= 3 && !prev.top && next.types.size > prev.types.size) return top();
@@ -127,7 +127,7 @@ export function widen(prev: ThrowsValue, next: ThrowsValue, round: number): Thro
 
 // Catch discharge: TOP minus anything stays TOP (an unknown error is never fully
 // handled by a finite catch); a finite set drops the discharged keys.
-export function subtract(a: ThrowsValue, keys: ReadonlySet<string>): ThrowsValue {
+export function subtract(a: ExceptionsValue, keys: ReadonlySet<string>): ExceptionsValue {
   if (a.top) return a;
   const m = new Map<string, string>();
   const origins = new Map<string, ReadonlyArray<ThrowOrigin>>();
@@ -140,12 +140,12 @@ export function subtract(a: ThrowsValue, keys: ReadonlySet<string>): ThrowsValue
   return { top: false, types: m, origins };
 }
 
-export function isEmpty(v: ThrowsValue): boolean {
+export function isEmpty(v: ExceptionsValue): boolean {
   return !v.top && v.types.size === 0;
 }
 
 // Human-readable rendering for diagnostics/hovers.
-export function render(v: ThrowsValue): string {
+export function render(v: ExceptionsValue): string {
   if (v.top) return TOP_DISPLAY;
   return Array.from(v.types.values()).sort().join(" | ");
 }

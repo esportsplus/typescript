@@ -1,5 +1,5 @@
 import type { Channel } from "../kernel/types";
-import { createThrowsChannel } from "./throws/channel";
+import { createExceptionsChannel } from "../exceptions/channel";
 
 // Channel factories by name. Only channels with a landed implementation appear
 // here; config may enable others (resources/async/context) and analyze skips the
@@ -7,7 +7,7 @@ import { createThrowsChannel } from "./throws/channel";
 // fixpoint engine is generic over the lattice and only ever feeds a channel the
 // values it produced itself.
 const FACTORIES: Readonly<Record<string, () => Channel<unknown>>> = {
-  throws: () => createThrowsChannel() as unknown as Channel<unknown>,
+  exceptions: () => createExceptionsChannel() as unknown as Channel<unknown>,
 };
 
 export function channelFor(name: string): Channel<unknown> | undefined {
