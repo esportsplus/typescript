@@ -1,9 +1,9 @@
-// Base throws-channel overlay. Top-level keys are lib sections; each section
+// Base exceptions-channel overlay. Top-level keys are lib sections; each section
 // maps an overlay key (see load.ts overlayKey) to a throws entry:
 //   { "throws": ["SyntaxError"] }   - the error types the leaf may throw
 //   { "throwsFromCallbacks": [0] }  - inherits whatever the arg at that index throws
 //   { "throws": [] }                - modeled as non-throwing (so it is not logged)
-// This whole file is the "throws" channel section (channel is implicit here).
+// This whole file is the "exceptions" channel section (channel is implicit here).
 {
   "lib.es5": {
     "JSON.parse": { "throws": ["SyntaxError"] },

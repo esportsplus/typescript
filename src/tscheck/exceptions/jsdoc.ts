@@ -1,7 +1,7 @@
 import * as ts from "~/tscheck/adapter";
 
-import type { FunctionLike } from "../../kernel/types";
-import { bottom, join, single, top, TOP_KEY, typeRef, type ThrowsValue } from "./value";
+import type { FunctionLike } from "../kernel/types";
+import { bottom, join, single, top, TOP_KEY, typeRef, type ExceptionsValue } from "./value";
 
 // Parse `@throws {TypeName}` / `@throws TypeName` (and `@exception`) tags on a
 // function, resolving each named type to a canonical key at the function's scope.
@@ -10,7 +10,7 @@ import { bottom, join, single, top, TOP_KEY, typeRef, type ThrowsValue } from ".
 export function declaredThrows(
   node: FunctionLike,
   checker: ts.TypeChecker,
-): { value: ThrowsValue; declared: boolean } {
+): { value: ExceptionsValue; declared: boolean } {
   let value = bottom();
   let declared = false;
   for (const tag of ts.getJSDocTags(node)) {
@@ -33,7 +33,7 @@ export function declaredThrows(
   return { value, declared };
 }
 
-function refsToValue(refs: ReadonlyArray<{ key: string; display: string }>): ThrowsValue {
+function refsToValue(refs: ReadonlyArray<{ key: string; display: string }>): ExceptionsValue {
   let v = bottom();
   for (const r of refs) v = join(v, r.key === TOP_KEY ? top() : single(r.key, r.display));
   return v;

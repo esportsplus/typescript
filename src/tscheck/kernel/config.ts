@@ -12,10 +12,10 @@ import type {
 
 // The known channel names. Config for any other key is rejected so typos fail
 // loudly instead of silently disabling a check.
-const CHANNEL_NAMES = ["throws", "resources", "async", "context"] as const;
+const CHANNEL_NAMES = ["exceptions", "resources", "async", "context"] as const;
 
 const DEFAULT_ENABLED: Readonly<Record<string, boolean>> = {
-  throws: true,
+  exceptions: true,
   resources: false,
   async: false,
   context: false,

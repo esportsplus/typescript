@@ -14,8 +14,8 @@ import type {
   SinkConfig,
   Summary,
   TransferContext,
-} from "../../kernel/types";
-import { isFunctionLike, locationOf } from "../../kernel/ids";
+} from "../kernel/types";
+import { isFunctionLike, locationOf } from "../kernel/ids";
 import { declaredThrows } from "./jsdoc";
 import {
   bottom,
@@ -33,13 +33,13 @@ import {
   widen,
   withOrigin,
   type ThrowOrigin,
-  type ThrowsValue,
+  type ExceptionsValue,
 } from "./value";
 
 // Non-public checker capabilities we lean on (assignability for subtype discharge
 // and global name resolution for overlay/JSDoc type names). Local cast only.
 
-interface ThrowsOverlayEntry {
+interface ExceptionsOverlayEntry {
   throws?: unknown;
   throwsFromCallbacks?: unknown;
 }
@@ -51,7 +51,7 @@ interface Env {
   readonly dispatch: Dispatch;
   readonly sinks: ReadonlyArray<SinkConfig>;
   readonly fn: FunctionInfo;
-  readonly summaryOf: (fn: FunctionInfo) => Summary<ThrowsValue>;
+  readonly summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>;
   readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
   readonly logLeaf: (name: string) => void;
   readonly typeTable: Map<string, ts.Type>;
@@ -63,12 +63,12 @@ interface Env {
   readonly unhandled?: { readonly origins: ReadonlySet<string>; readonly active: boolean };
 }
 
-export function createThrowsChannel(): Channel<ThrowsValue> {
+export function createExceptionsChannel(): Channel<ExceptionsValue> {
   // Origins that escape to a call-graph root uncaught — computed once per run,
   // only when "cross-module" mode needs it.
   let unhandledCache: { origins: ReadonlySet<string>; active: boolean } | undefined;
   const computeUnhandled = (
-    ctx: DiagnoseContext<ThrowsValue>,
+    ctx: DiagnoseContext<ExceptionsValue>,
   ): { origins: ReadonlySet<string>; active: boolean } => {
     if (unhandledCache) return unhandledCache;
     const roots = ctx.roots();
@@ -80,13 +80,13 @@ export function createThrowsChannel(): Channel<ThrowsValue> {
     return unhandledCache;
   };
   return {
-    name: "throws",
+    name: "exceptions",
     version: "1",
     bottom,
     join,
     equals,
     widen,
-    transfer(ctx: TransferContext<ThrowsValue>): Summary<ThrowsValue> {
+    transfer(ctx: TransferContext<ExceptionsValue>): Summary<ExceptionsValue> {
       const env = makeEnv(ctx.checker, ctx.dispatch, ctx.sinks, ctx.fn, ctx.summaryOf, ctx.resolveCall, ctx.logUnmodeledLeaf);
       const body = bodyOf(ctx.fn.node);
       let value = body ? escapeOf(env, body, undefined) : bottom();
@@ -96,7 +96,7 @@ export function createThrowsChannel(): Channel<ThrowsValue> {
       if (decl.declared) value = decl.value;
       return { value, fromCallbacks: env.fromCallbacks };
     },
-    diagnose(ctx: DiagnoseContext<ThrowsValue>): ReadonlyArray<Diagnostic> {
+    diagnose(ctx: DiagnoseContext<ExceptionsValue>): ReadonlyArray<Diagnostic> {
       const out: Diagnostic[] = [];
       const base = makeEnv(ctx.checker, ctx.dispatch, ctx.sinks, ctx.fn, ctx.summaryOf, ctx.resolveCall, () => {});
       const env: Env =
@@ -112,7 +112,7 @@ export function createThrowsChannel(): Channel<ThrowsValue> {
         if (!isEmpty(excess)) {
           const nn = (ctx.fn.node as { name?: ts.Node }).name;
           out.push({
-            channel: "throws",
+            channel: "exceptions",
             message: `Throws ${render(excess)} but declares only ${render(decl.value)}`,
             location: locationOf(nn ?? ctx.fn.node, ctx.fn.sourceFile),
             related: [],
@@ -136,7 +136,7 @@ function makeEnv(
   dispatch: Dispatch,
   sinks: ReadonlyArray<SinkConfig>,
   fn: FunctionInfo,
-  summaryOf: (fn: FunctionInfo) => Summary<ThrowsValue>,
+  summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>,
   resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution,
   logLeaf: (name: string) => void,
 ): Env {
@@ -175,7 +175,7 @@ function bodyOf(node: FunctionLike): ts.Node | undefined {
 // Walk `node`, NOT descending into nested function bodies (their own graph
 // nodes). `binding`, when set, is the enclosing catch variable — a bare rethrow
 // of it contributes nothing (its effect is carried by the try remainder).
-function escapeOf(env: Env, node: ts.Node, binding: ts.Symbol | undefined): ThrowsValue {
+function escapeOf(env: Env, node: ts.Node, binding: ts.Symbol | undefined): ExceptionsValue {
   let acc = bottom();
   const visit = (n: ts.Node): void => {
     if (isFunctionLike(n)) return;
@@ -202,9 +202,9 @@ function escapeOf(env: Env, node: ts.Node, binding: ts.Symbol | undefined): Thro
   return acc;
 }
 
-function tryEscape(env: Env, node: ts.TryStatement, binding: ts.Symbol | undefined): ThrowsValue {
+function tryEscape(env: Env, node: ts.TryStatement, binding: ts.Symbol | undefined): ExceptionsValue {
   const tryEsc = escapeOf(env, node.tryBlock, binding);
-  let result: ThrowsValue;
+  let result: ExceptionsValue;
   if (node.catchClause) {
     const bindSym = bindingSymOf(env, node.catchClause) ?? binding;
     const discharge = dischargedKeys(env, node.catchClause, tryEsc, bindSym);
@@ -227,7 +227,7 @@ function tryEscape(env: Env, node: ts.TryStatement, binding: ts.Symbol | undefin
 function dischargedKeys(
   env: Env,
   cc: ts.CatchClause,
-  tryEsc: ThrowsValue,
+  tryEsc: ExceptionsValue,
   bindSym: ts.Symbol | undefined,
 ): Set<string> {
   if (tryEsc.top) return new Set();
@@ -402,7 +402,7 @@ function isSubclassOf(c: ts.Type, base: ts.Type, seen = new Set<ts.Type>()): boo
 // Call sites
 // ---------------------------------------------------------------------------
 
-function callEscape(env: Env, call: ts.CallExpression | ts.NewExpression): ThrowsValue {
+function callEscape(env: Env, call: ts.CallExpression | ts.NewExpression): ExceptionsValue {
   detectParamCall(env, call);
   const res = env.resolveCall(call);
   let v = bottom();
@@ -422,8 +422,8 @@ function callEscape(env: Env, call: ts.CallExpression | ts.NewExpression): Throw
   return v;
 }
 
-function overlayValue(env: Env, res: CalleeResolution, call: ts.CallExpression | ts.NewExpression): ThrowsValue {
-  const entry = (res.overlay?.entry ?? {}) as ThrowsOverlayEntry;
+function overlayValue(env: Env, res: CalleeResolution, call: ts.CallExpression | ts.NewExpression): ExceptionsValue {
+  const entry = (res.overlay?.entry ?? {}) as ExceptionsOverlayEntry;
   let v = bottom();
   if (Array.isArray(entry.throws)) {
     for (const name of entry.throws) if (typeof name === "string") v = join(v, namedValue(env, name, call));
@@ -439,7 +439,7 @@ function overlayValue(env: Env, res: CalleeResolution, call: ts.CallExpression |
 
 // Resolve an overlay/JSDoc type name against the lib/global scope so its key
 // matches thrown values; fall back to the raw name when unresolved.
-function namedValue(env: Env, name: string, location: ts.Node): ThrowsValue {
+function namedValue(env: Env, name: string, location: ts.Node): ExceptionsValue {
   const sym = env.checker.resolveName(name, ts.SymbolFlags.Type, location, false);
   if (sym) {
     const t = env.checker.getDeclaredTypeOfSymbol(sym);
@@ -483,7 +483,7 @@ function calleeSelectors(callee: ts.Expression): Set<string> {
 
 // Absent `absorbs` swallows everything; otherwise only listed type displays are
 // discharged and the rest leak. TOP leaks past a partial sink.
-function applySink(v: ThrowsValue, sink: SinkConfig): ThrowsValue {
+function applySink(v: ExceptionsValue, sink: SinkConfig): ExceptionsValue {
   if (!sink.absorbs) return bottom();
   if (v.top) return v;
   const absorb = new Set(sink.absorbs);
@@ -511,7 +511,7 @@ function applySink(v: ThrowsValue, sink: SinkConfig): ThrowsValue {
 //                    where a caller should be careful, not where errors originate.
 //  - "cross-module": like "consumers", but only when the throwing callee lives in
 //                    a DIFFERENT module (package) — internal calls are yours to see.
-function reportMode(ctx: DiagnoseContext<ThrowsValue>): string {
+function reportMode(ctx: DiagnoseContext<ExceptionsValue>): string {
   const cc = ctx.channelConfig;
   if (typeof cc === "object" && cc !== null) {
     const r = (cc as Record<string, unknown>)["report"];
@@ -520,13 +520,13 @@ function reportMode(ctx: DiagnoseContext<ThrowsValue>): string {
   return "consumers";
 }
 
-function consumersOnly(ctx: DiagnoseContext<ThrowsValue>): boolean {
+function consumersOnly(ctx: DiagnoseContext<ExceptionsValue>): boolean {
   const mode = reportMode(ctx);
   return mode === "consumers" || mode === "cross-module";
 }
 
 // `errorCause: true` (channel config) enables the use-error-cause check.
-function errorCauseEnabled(ctx: DiagnoseContext<ThrowsValue>): boolean {
+function errorCauseEnabled(ctx: DiagnoseContext<ExceptionsValue>): boolean {
   const cc = ctx.channelConfig;
   return typeof cc === "object" && cc !== null && (cc as Record<string, unknown>)["errorCause"] === true;
 }
@@ -559,7 +559,7 @@ function checkErrorCause(node: ts.Node, out: Diagnostic[]): void {
           !hasCauseArg(m.expression)
         ) {
           out.push({
-            channel: "throws",
+            channel: "exceptions",
             message: "Rethrow drops the caught error — pass `{ cause }` to preserve it",
             location: locationOf(m, m.getSourceFile()),
             related: [],
@@ -601,7 +601,7 @@ function packageRootOf(fileName: string): string {
 // resolved target is in the caller's own package, the throw is internal — skip.
 function crossesModuleBoundary(
   env: Env,
-  ctx: DiagnoseContext<ThrowsValue>,
+  ctx: DiagnoseContext<ExceptionsValue>,
   call: ts.CallExpression | ts.NewExpression,
 ): boolean {
   const res = env.resolveCall(call);
@@ -612,7 +612,7 @@ function crossesModuleBoundary(
 
 // Up-stack filter: true unless every throw behind `rem` is caught before reaching
 // any call-graph root (i.e. handled by some ancestor). No roots => not applicable.
-function reachesTop(env: Env, rem: ThrowsValue): boolean {
+function reachesTop(env: Env, rem: ExceptionsValue): boolean {
   const u = env.unhandled;
   if (!u || !u.active) return true;
   for (const o of originsOf(rem)) if (u.origins.has(`${o.fileName}:${o.pos}`)) return true;
@@ -621,10 +621,10 @@ function reachesTop(env: Env, rem: ThrowsValue): boolean {
 
 function walkDiagnostics(
   env: Env,
-  ctx: DiagnoseContext<ThrowsValue>,
+  ctx: DiagnoseContext<ExceptionsValue>,
   node: ts.Node,
   binding: ts.Symbol | undefined,
-  remainder: ThrowsValue | undefined,
+  remainder: ExceptionsValue | undefined,
   out: Diagnostic[],
 ): void {
   const visit = (n: ts.Node): void => {
@@ -674,10 +674,10 @@ function walkDiagnostics(
 // catch lets its body escape normally; a finally always escapes.
 function handleTry(
   env: Env,
-  ctx: DiagnoseContext<ThrowsValue>,
+  ctx: DiagnoseContext<ExceptionsValue>,
   n: ts.TryStatement,
   binding: ts.Symbol | undefined,
-  remainder: ThrowsValue | undefined,
+  remainder: ExceptionsValue | undefined,
   out: Diagnostic[],
 ): void {
   if (n.catchClause) {
@@ -720,16 +720,16 @@ function relatedFromOrigins(origins: ReadonlyArray<ThrowOrigin>): DiagnosticRela
 
 function callDiagnostic(
   env: Env,
-  ctx: DiagnoseContext<ThrowsValue>,
+  ctx: DiagnoseContext<ExceptionsValue>,
   call: ts.CallExpression | ts.NewExpression,
-  rem: ThrowsValue,
+  rem: ExceptionsValue,
 ): Diagnostic {
   const res = env.resolveCall(call);
   const from = calleeDisplay(res, call);
   const suffix = from ? ` (from ${from})` : "";
   const origins = originsOf(rem);
   return {
-    channel: "throws",
+    channel: "exceptions",
     message: `Call may throw ${render(rem)}${suffix} with no catch on the path to \`${ctx.fn.name}\``,
     location: locationOf(call, call.getSourceFile()),
     related: origins.length > 0 ? relatedFromOrigins(origins) : buildRelated(ctx, res.targets),
@@ -737,12 +737,12 @@ function callDiagnostic(
 }
 
 function throwDiagnostic(
-  ctx: DiagnoseContext<ThrowsValue>,
+  ctx: DiagnoseContext<ExceptionsValue>,
   node: ts.ThrowStatement,
-  rem: ThrowsValue,
+  rem: ExceptionsValue,
 ): Diagnostic {
   return {
-    channel: "throws",
+    channel: "exceptions",
     message: `Throw may throw ${render(rem)} with no catch on the path to \`${ctx.fn.name}\``,
     location: locationOf(node, node.getSourceFile()),
     related: buildRelated(ctx, []),
@@ -761,7 +761,7 @@ function calleeDisplay(res: CalleeResolution, call: ts.CallExpression | ts.NewEx
 // Related chain: where the effect originates (each callee target) plus the path
 // out to the reaching boundary.
 function buildRelated(
-  ctx: DiagnoseContext<ThrowsValue>,
+  ctx: DiagnoseContext<ExceptionsValue>,
   targets: ReadonlyArray<FunctionInfo>,
 ): ReadonlyArray<DiagnosticRelated> {
   const related: DiagnosticRelated[] = [];
@@ -780,7 +780,7 @@ function buildRelated(
 
 // Convert a thrown/error type to a lattice value, retaining each constituent's
 // concrete type for later subtype discharge.
-function valueOfType(env: Env, type: ts.Type | undefined): ThrowsValue {
+function valueOfType(env: Env, type: ts.Type | undefined): ExceptionsValue {
   let v = bottom();
   if (!type) return v;
   for (const t of constituentsOf(type)) {

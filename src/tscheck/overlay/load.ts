@@ -162,7 +162,7 @@ function readBoundaries(name: string, raw: unknown): HandlerBoundary[] {
 }
 
 // Merge overlay files in precedence order (later wins). A file is either a
-// bundle (has `overlay`/`handlerBoundaries`) or a bare throws section map.
+// bundle (has `overlay`/`handlerBoundaries`) or a bare exceptions section map.
 export function mergeOverlayData(files: ReadonlyArray<{ name: string; text: string }>): MergedOverlay {
   const channels = new Map<string, ChannelTable>();
   const boundaries: HandlerBoundary[] = [];
@@ -193,8 +193,8 @@ export function mergeOverlayData(files: ReadonlyArray<{ name: string; text: stri
         }
       }
     } else {
-      // Bare file: top-level sections belong to the throws channel.
-      mergeSections(channelFor("throws"), root);
+      // Bare file: top-level sections belong to the exceptions channel.
+      mergeSections(channelFor("exceptions"), root);
     }
   }
 
@@ -310,7 +310,7 @@ function readFile(file: string): { name: string; text: string } {
 
 export function loadOverlays(config: TscheckConfig): LoadedOverlays {
   const files: Array<{ name: string; text: string }> = [];
-  files.push(readFile(NodePath.join(HERE, "base", "throws.jsonc")));
+  files.push(readFile(NodePath.join(HERE, "base", "exceptions.jsonc")));
   for (const preset of config.presets) {
     const presetPath = NodePath.join(HERE, "presets", `${preset}.jsonc`);
     if (!NodeFS.existsSync(presetPath)) {
