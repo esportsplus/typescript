@@ -1,6 +1,6 @@
-import { DiagnosticSeverity } from 'vscode-languageserver/node';
+import { CodeActionKind, DiagnosticSeverity, MarkupKind } from 'vscode-languageserver/node';
 
-import type { Diagnostic as LspDiagnostic, DiagnosticRelatedInformation, Position, Range } from 'vscode-languageserver/node';
+import type { CodeAction, Diagnostic as LspDiagnostic, DiagnosticRelatedInformation, Hover, Position, Range, TextEdit } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { Diagnostic as AnalyzeDiagnostic, SourceLocation } from '~/probe/kernel/types';
 
@@ -62,4 +62,62 @@ function groupByFile(diagnostics: ReadonlyArray<AnalyzeDiagnostic>, severity: Di
     return grouped;
 }
 
-export { DiagnosticSeverity, groupByFile, toLspDiagnostic };
+// The findings whose anchor range covers `offset`, rendered as one hover: each
+// channel's message plus its escape/leak chain. Absent when nothing is flagged there.
+function hoverAt(diagnostics: ReadonlyArray<AnalyzeDiagnostic>, offset: number, document: TextDocument): Hover | undefined {
+    let hits = diagnostics.filter((diagnostic) => offset >= diagnostic.location.pos && offset <= diagnostic.location.end);
+
+    if (hits.length === 0) {
+        return undefined;
+    }
+
+    let lines: string[] = [];
+
+    for (let i = 0, n = hits.length; i < n; i++) {
+        let diagnostic = hits[i]!;
+
+        lines.push(`**${diagnostic.channel}** — ${diagnostic.message}`);
+
+        for (let related of diagnostic.related) {
+            lines.push(`- ${related.message}`);
+        }
+    }
+
+    return { contents: { kind: MarkupKind.Markdown, value: lines.join('\n\n') }, range: rangeOf(hits[0]!.location, document) };
+}
+
+// Quick-fix code actions for findings intersecting [startOffset, endOffset]. Fixes
+// are authored by the channels (same-file edits), mapped to the open document's
+// offsets so the client applies them at the exact ranges.
+function codeActionsAt(
+    diagnostics: ReadonlyArray<AnalyzeDiagnostic>,
+    startOffset: number,
+    endOffset: number,
+    document: TextDocument,
+    uriOf: (fileName: string) => string,
+): CodeAction[] {
+    let actions: CodeAction[] = [];
+
+    for (let diagnostic of diagnostics) {
+        if (diagnostic.location.end < startOffset || diagnostic.location.pos > endOffset) {
+            continue;
+        }
+
+        for (let fix of diagnostic.fixes ?? []) {
+            let changes: Record<string, TextEdit[]> = {};
+
+            for (let edit of fix.edits) {
+                let uri = uriOf(edit.fileName),
+                    range: Range = { start: document.positionAt(edit.pos), end: document.positionAt(edit.end) };
+
+                (changes[uri] ??= []).push({ newText: edit.newText, range });
+            }
+
+            actions.push({ edit: { changes }, kind: CodeActionKind.QuickFix, title: fix.title });
+        }
+    }
+
+    return actions;
+}
+
+export { codeActionsAt, DiagnosticSeverity, groupByFile, hoverAt, toLspDiagnostic };

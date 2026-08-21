@@ -1,15 +1,16 @@
 import * as NodeFS from 'node:fs';
 import * as NodePath from 'node:path';
 
-import { createConnection, ProposedFeatures, StreamMessageReader, StreamMessageWriter, TextDocuments, TextDocumentSyncKind } from 'vscode-languageserver/node';
+import { CodeActionKind, createConnection, ProposedFeatures, StreamMessageReader, StreamMessageWriter, TextDocuments, TextDocumentSyncKind } from 'vscode-languageserver/node';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
-import { DiagnosticSeverity, groupByFile } from './diagnostics';
+import { codeActionsAt, DiagnosticSeverity, groupByFile, hoverAt } from './diagnostics';
 import { AnalyzeWorkspace } from './workspace';
 
 import type { Connection } from 'vscode-languageserver/node';
 import type { DocumentResolver } from './diagnostics';
+import type { Diagnostic as AnalyzeDiagnostic } from '~/probe/kernel/types';
 
 // Windows hands back file URIs with inconsistent drive-letter casing and percent
 // encoding; a case-folded absolute path is the only stable key across the native
@@ -36,7 +37,8 @@ function rootFromInitialize(params: { rootUri?: string | null; workspaceFolders?
 // serves standard TypeScript features; this server publishes only analyze's
 // throw-safety diagnostics, so a client attaches it alongside the native LSP.
 function createServer(connection: Connection): void {
-    let documents = new TextDocuments(TextDocument),
+    let analyzed = new Map<string, AnalyzeDiagnostic[]>(),
+        documents = new TextDocuments(TextDocument),
         pending = new Set<string>(),
         published = new Set<string>(),
         timer: ReturnType<typeof setTimeout> | undefined,
@@ -67,6 +69,22 @@ function createServer(connection: Connection): void {
 
         if (!result) {
             return;
+        }
+
+        // Keep the raw findings per file so hover and code-action requests can look
+        // them up by position without re-running analysis.
+        analyzed = new Map();
+
+        for (let diagnostic of result.diagnostics) {
+            let key = pathKey(diagnostic.location.fileName),
+                list = analyzed.get(key);
+
+            if (!list) {
+                list = [];
+                analyzed.set(key, list);
+            }
+
+            list.push(diagnostic);
         }
 
         let openByPath = new Map(documents.all().map((document) => [pathKey(fileURLToPath(document.uri)), document])),
@@ -115,7 +133,13 @@ function createServer(connection: Connection): void {
             }
         }
 
-        return { capabilities: { textDocumentSync: TextDocumentSyncKind.Incremental } };
+        return {
+            capabilities: {
+                codeActionProvider: { codeActionKinds: [CodeActionKind.QuickFix] },
+                hoverProvider: true,
+                textDocumentSync: TextDocumentSyncKind.Incremental,
+            },
+        };
     });
 
     connection.onInitialized(() => {
@@ -127,6 +151,37 @@ function createServer(connection: Connection): void {
     connection.onShutdown(() => {
         workspace?.dispose();
         workspace = undefined;
+    });
+
+    connection.onHover((params) => {
+        let document = documents.get(params.textDocument.uri);
+
+        if (!document) {
+            return null;
+        }
+
+        let diagnostics = analyzed.get(pathKey(fileURLToPath(params.textDocument.uri)));
+
+        return diagnostics ? hoverAt(diagnostics, document.offsetAt(params.position), document) ?? null : null;
+    });
+
+    connection.onCodeAction((params) => {
+        let document = documents.get(params.textDocument.uri);
+
+        if (!document) {
+            return [];
+        }
+
+        let target = pathKey(fileURLToPath(params.textDocument.uri)),
+            diagnostics = analyzed.get(target);
+
+        if (!diagnostics) {
+            return [];
+        }
+
+        let uriOf = (fileName: string) => (pathKey(fileName) === target ? params.textDocument.uri : pathToFileURL(fileName).toString());
+
+        return codeActionsAt(diagnostics, document.offsetAt(params.range.start), document.offsetAt(params.range.end), document, uriOf);
     });
 
     documents.onDidOpen((event) => schedule([fileURLToPath(event.document.uri)]));
