@@ -106,16 +106,19 @@ describe("async channel — A3 cancellation", () => {
         return inFile(runAsync(built, { fanOut: "off" }), "cancellation.ts");
     }
 
-    it("flags a cancellable await that drops a held signal, positional and destructured", () => {
+    it("flags dropped signals: overlay-cancellable and app-wrapper inheritance", () => {
+        // drops + destructuredDrops (fetch) + wrapperDrops (an app fn that itself
+        // takes a signal); forwards/destructuredForwards/wrapperForwards pass it,
+        // neverHadSignal holds none.
         const diags = cancellation();
-        expect(diags.length).toBe(2);
+        expect(diags.length).toBe(3);
         expect(diags.every((d) => d.message.includes("cannot be cancelled"))).toBe(true);
-        expect(diags.every((d) => d.message.includes("fetch"))).toBe(true);
     });
 
-    it("does not flag a forwarded signal or a function that holds none", () => {
-        // forwards + destructuredForwards pass the signal; neverHadSignal holds one
-        // to forward — so only drops + destructuredDrops remain.
-        expect(cancellation().length).toBe(2);
+    it("offers a forward-signal quick-fix for overlay-cancellable calls only", () => {
+        const withFix = cancellation().filter((d) => d.fixes?.some((f) => f.title.includes("Forward the AbortSignal")));
+        // The two fetch drops get a `{ signal }` fix; the app-wrapper drop does not.
+        expect(withFix.length).toBe(2);
+        expect(withFix[0]!.fixes!.find((f) => f.title.includes("Forward"))!.edits[0]!.newText).toContain("signal");
     });
 });
