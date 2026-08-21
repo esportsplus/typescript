@@ -42,6 +42,8 @@ interface Env {
     readonly options: AsyncOptions;
     readonly summaryOf: (fn: FunctionInfo) => Summary<AsyncValue>;
     readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
+    // Names bound to an AbortSignal the current function holds (A3).
+    readonly held: ReadonlySet<string>;
 }
 
 function fail(message: string): never {
@@ -397,6 +399,91 @@ function routedThroughPool(env: Env, arg: ts.Expression): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Cancellation (A3)
+// ---------------------------------------------------------------------------
+
+function isAbortSignalType(type: ts.Type | undefined): boolean {
+    if (!type) {
+        return false;
+    }
+    for (const c of constituents(type)) {
+        const sym = c.getSymbol() ?? c.getAliasSymbol();
+        if (sym && sym.name === "AbortSignal") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The binding names a parameter carries that are typed `AbortSignal`, including
+// destructured option properties (`{ signal }: { signal: AbortSignal }`).
+// Name-based: a forwarded signal is passed by its binding name at the call site.
+function collectSignalNames(checker: ts.TypeChecker, name: ts.BindingName, out: Set<string>): void {
+    if (ts.isIdentifier(name)) {
+        if (isAbortSignalType(checker.getTypeAtLocation(name))) {
+            out.add(name.text);
+        }
+        return;
+    }
+    if (ts.isObjectBindingPattern(name)) {
+        for (const el of name.elements) {
+            if (el.name) {
+                collectSignalNames(checker, el.name, out);
+            }
+        }
+    }
+}
+
+function heldSignalNames(checker: ts.TypeChecker, node: FunctionLike): Set<string> {
+    const out = new Set<string>();
+    const params = (node as { parameters?: ReadonlyArray<ts.ParameterDeclaration> }).parameters ?? [];
+    for (const p of params) {
+        collectSignalNames(checker, p.name, out);
+    }
+    return out;
+}
+
+function isCancellableCall(env: Env, call: ts.CallExpression): boolean {
+    const entry = env.resolveCall(call).overlay?.entry as { cancellable?: unknown } | undefined;
+    return entry?.cancellable === true;
+}
+
+// Whether `call`'s result is directly awaited (through parens/casts).
+function isAwaited(call: ts.CallExpression): boolean {
+    let child: ts.Node = call;
+    let parent = call.parent;
+    while (
+        parent &&
+        (ts.isParenthesizedExpression(parent) || ts.isAsExpression(parent) || ts.isNonNullExpression(parent)) &&
+        (parent as { expression?: ts.Node }).expression === child
+    ) {
+        child = parent;
+        parent = parent.parent;
+    }
+    return parent !== undefined && ts.isAwaitExpression(parent);
+}
+
+// Whether any argument subtree passes a held signal by name (positional
+// `fn(signal)`, shorthand `{ signal }`, or `{ signal: signal }`).
+function forwardsSignal(call: ts.CallExpression, held: ReadonlySet<string>): boolean {
+    let found = false;
+    const visit = (n: ts.Node): void => {
+        if (found) {
+            return;
+        }
+        if (ts.isIdentifier(n) && held.has(n.text)) {
+            found = true;
+            return;
+        }
+        ts.forEachChild(n, visit);
+    };
+    for (const arg of call.arguments) {
+        visit(arg);
+    }
+    return found;
+}
+
+// ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------
 
@@ -422,6 +509,15 @@ function fanOutDiagnostic(call: ts.CallExpression, aggregator: string): Diagnost
     return {
         channel: "async",
         message: `unbounded fan-out: \`Promise.${aggregator}\` over a dynamically-sized input — cap concurrency with a pool or bound the input`,
+        location: locationOf(call, call.getSourceFile()),
+        related: [],
+    };
+}
+
+function cancellationDiagnostic(call: ts.CallExpression): Diagnostic {
+    return {
+        channel: "async",
+        message: `\`${calleeText(call)}()\` is awaited without the AbortSignal this function holds — the work cannot be cancelled`,
         location: locationOf(call, call.getSourceFile()),
         related: [],
     };
@@ -456,6 +552,17 @@ function checkOwnership(env: Env, call: ts.CallExpression | ts.NewExpression, ou
     }
 }
 
+// A cancellable callee awaited without forwarding a signal the function holds
+// leaves uncancellable work; a function holding no signal is never flagged.
+function checkCancellation(env: Env, call: ts.CallExpression, out: Diagnostic[]): void {
+    if (env.held.size === 0 || !isCancellableCall(env, call) || !isAwaited(call)) {
+        return;
+    }
+    if (!forwardsSignal(call, env.held)) {
+        out.push(cancellationDiagnostic(call));
+    }
+}
+
 // Walk one function body, never descending into nested function bodies (their own
 // graph nodes). Every call is a fan-out candidate; promise-producing chain tops
 // are ownership candidates.
@@ -466,6 +573,7 @@ function walk(env: Env, body: ts.Node, out: Diagnostic[]): void {
         }
         if (ts.isCallExpression(n)) {
             checkFanOut(env, n, out);
+            checkCancellation(env, n, out);
         }
         if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
             checkOwnership(env, n, out);
@@ -502,6 +610,7 @@ export function createAsyncChannel(): Channel<AsyncValue> {
                 options: parseOptions(ctx.channelConfig),
                 summaryOf: ctx.summaryOf,
                 resolveCall: ctx.resolveCall,
+                held: heldSignalNames(ctx.checker, ctx.fn.node),
             };
             const out: Diagnostic[] = [];
             walk(env, body, out);

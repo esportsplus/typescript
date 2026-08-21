@@ -93,3 +93,22 @@ describe("async channel — A2 promise ownership", () => {
         expect(pessimist[0]!.message).toContain("untracked structure");
     });
 });
+
+describe("async channel — A3 cancellation", () => {
+    function cancellation(): ReadonlyArray<Diagnostic> {
+        return inFile(runAsync(built, { fanOut: "off" }), "cancellation.ts");
+    }
+
+    it("flags a cancellable await that drops a held signal, positional and destructured", () => {
+        const diags = cancellation();
+        expect(diags.length).toBe(2);
+        expect(diags.every((d) => d.message.includes("cannot be cancelled"))).toBe(true);
+        expect(diags.every((d) => d.message.includes("fetch"))).toBe(true);
+    });
+
+    it("does not flag a forwarded signal or a function that holds none", () => {
+        // forwards + destructuredForwards pass the signal; neverHadSignal holds one
+        // to forward — so only drops + destructuredDrops remain.
+        expect(cancellation().length).toBe(2);
+    });
+});
