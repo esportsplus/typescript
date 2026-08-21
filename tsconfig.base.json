@@ -23,6 +23,25 @@
                 "${configDir}/storage/*"
             ]
         },
+        "plugins": [
+            {
+                "name": "tscheck",
+                // Editor squiggle color; "warn" opts down. CLI/build ignore this.
+                "severity": "error",
+                // Fail the tsc/build run when there are findings.
+                "failOnFindings": true,
+                "channels": {
+                    "throws": {
+                        "enabled": true,
+                        "report": "consumers",
+                        // Flag `throw`s inside `catch` that drop the caught error's cause.
+                        "errorCause": true
+                    }
+                },
+                // Model third-party throw behavior: "node", "express".
+                "presets": ["node"]
+            }
+        ],
         "removeComments": true,
         "resolveJsonModule": true,
         "rootDir": "${configDir}/src",
