@@ -25,13 +25,13 @@
         },
         "plugins": [
             {
-                "name": "tscheck",
+                "name": "analyze",
                 // Editor squiggle color; "warn" opts down. CLI/build ignore this.
                 "severity": "error",
                 // Fail the tsc/build run when there are findings.
                 "failOnFindings": true,
                 "channels": {
-                    "throws": {
+                    "exceptions": {
                         "enabled": true,
                         "report": "consumers",
                         // Flag `throw`s inside `catch` that drop the caught error's cause.
