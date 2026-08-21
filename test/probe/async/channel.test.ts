@@ -78,6 +78,13 @@ describe("async channel — A2 promise ownership", () => {
         expect(diags.length).toBe(2);
     });
 
+    it("offers a `void` quick-fix on an orphan", () => {
+        const orphan = ownership().find((d) => d.message.includes("syncUsers"));
+        const fix = orphan?.fixes?.find((f) => f.title.includes("void"));
+        expect(fix).toBeDefined();
+        expect(fix!.edits[0]!.newText).toBe("void ");
+    });
+
     it("flags an orphan whose return is ignored across a call boundary", () => {
         const diags = inFile(runAsync(built, { fanOut: "off" }), "cross_b.ts");
         expect(diags.length).toBe(1);

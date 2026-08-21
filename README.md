@@ -77,7 +77,13 @@ The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them
 
 ## analyze
 
-`analyze` is a static analyzer that flags calls which may throw with no `catch` on the path to a handler boundary. It runs a per-function summary fixpoint over the call graph, so a finding points at the *consumer* — the call site where a caller should be careful — and carries the throw origin as related information. It rides the `tsc` passthrough (build/CI), and ships an LSP server so editors can render the same findings.
+`analyze` is a static analyzer for effects TypeScript's types leave implicit. It runs a per-function summary fixpoint over the call graph — so a finding points at the *consumer*, the call site where a caller should be careful — and is organised into **channels**, each checking one class of effect:
+
+- **`exceptions`** — calls that may throw with no `catch` on the path to a handler boundary, `@throws` under-declaration, and `catch` rethrows that drop the caught error's `cause`. Carries the throw origin as related information.
+- **`resources`** — acquired resources (timers, event listeners, file handles, sockets, `Disposable`s, …) that can leak: not released, transferred, or `using`-bound on every path — including throwing paths, which it derives from the `exceptions` channel's summaries.
+- **`async`** — unbounded `Promise.all(…)`-style fan-out, orphaned promises whose rejections go unhandled, and awaited cancellable calls that drop an `AbortSignal` the function holds.
+
+Only `exceptions` is on by default; enable the others per project. It rides the `tsc` passthrough (build/CI), and ships an LSP server so editors can render the same findings.
 
 ### Enable
 
@@ -93,6 +99,8 @@ Add an `analyze` entry to `compilerOptions.plugins`. Analysis covers every file 
                 "severity": "error",
                 // Fail the tsc/build run when there are findings.
                 "failOnFindings": true,
+                // Per-channel config. `enabled` and `dispatch` are recognised on
+                // every channel; other keys are that channel's own options.
                 "channels": {
                     "exceptions": {
                         "enabled": true,
@@ -102,6 +110,20 @@ Add an `analyze` entry to `compilerOptions.plugins`. Analysis covers every file 
                         "report": "consumers",
                         // Flag `throw`s inside `catch` that drop the caught error's cause.
                         "errorCause": true
+                    },
+                    "resources": {
+                        "enabled": true,
+                        // Untrackable handling when a resource escapes local analysis:
+                        // "optimist" assumes transfer (silent), "pessimist" reports it.
+                        "dispatch": "optimist",
+                        // Calls that take ownership of a passed resource argument.
+                        "ownership": [{ "callee": "registerCleanup", "params": [0] }]
+                    },
+                    "async": {
+                        "enabled": true,
+                        "fanOut": "warn",                     // "off" | "warn" | "error"
+                        "fanOutAllowLiteralUpTo": 16,         // inline array/tuple size that is fine
+                        "poolFunctions": ["p-limit", "p-map"] // sanctioned concurrency wrappers
                     }
                 },
                 // Model third-party throw behavior: "node", "express".
@@ -122,7 +144,7 @@ tsc   # compiles, resolves aliases, then reports analyze findings
 
 ### Editor (LSP)
 
-The package ships a standalone language server (`esportsplus-tsc-lsp` bin, or the `@esportsplus/typescript/lsp` export) that publishes analyze findings over LSP. A client spawns it beside the native TypeScript server and merges both diagnostic streams; `severity` drives the squiggle color. Analysis runs against saved files on open and save.
+The package ships a standalone language server (`esportsplus-tsc-lsp` bin, or the `@esportsplus/typescript/lsp` export) that publishes analyze findings over LSP. A client spawns it beside the native TypeScript server and merges both diagnostic streams; `severity` drives the squiggle color. Analysis runs against saved files on open and save. Beyond diagnostics it serves **hovers** (the finding plus its origin→boundary chain) and **quick-fixes** — `void`/`await` an orphaned promise, or convert a leaked sync `Disposable` to `using`.
 
 ```typescript
 import { startServer } from '@esportsplus/typescript/lsp';

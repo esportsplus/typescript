@@ -167,12 +167,29 @@ export interface DiagnosticRelated {
   readonly location: SourceLocation;
 }
 
+// A single text replacement a quick-fix applies. `pos === end` is an insertion.
+export interface DiagnosticEdit {
+  readonly fileName: string;
+  readonly pos: number;
+  readonly end: number;
+  readonly newText: string;
+}
+
+// An offered quick-fix: a title and the edits that apply it. Authored by the
+// channel (which holds the AST); surfaced by the editor as a code action.
+export interface DiagnosticFix {
+  readonly title: string;
+  readonly edits: ReadonlyArray<DiagnosticEdit>;
+}
+
 export interface Diagnostic {
   readonly channel: string;
   readonly message: string;
   readonly location: SourceLocation;
   // The escape chain (throw/acquire site → boundary), as related locations.
   readonly related: ReadonlyArray<DiagnosticRelated>;
+  // Quick-fixes the editor can apply; omitted when none is offered.
+  readonly fixes?: ReadonlyArray<DiagnosticFix>;
 }
 
 // ---------------------------------------------------------------------------

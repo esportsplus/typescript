@@ -4,6 +4,7 @@ import type {
     CalleeResolution,
     Channel,
     Diagnostic,
+    DiagnosticFix,
     DiagnoseContext,
     Dispatch,
     FunctionInfo,
@@ -106,6 +107,19 @@ function isPromiseType(checker: ts.TypeChecker, type: ts.Type | undefined): bool
 function hasAsyncModifier(node: FunctionLike): boolean {
     const mods = (node as { modifiers?: ReadonlyArray<{ kind: ts.SyntaxKind }> }).modifiers;
     return mods?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ?? false;
+}
+
+// Whether the nearest enclosing function is async — `await` is only a valid fix
+// inside one.
+function enclosingAsync(node: ts.Node): boolean {
+    let p = node.parent;
+    while (p) {
+        if (isFunctionLike(p)) {
+            return hasAsyncModifier(p as FunctionLike);
+        }
+        p = p.parent;
+    }
+    return false;
 }
 
 // Whether invoking this function yields a promise the caller must own. An async
@@ -487,12 +501,26 @@ function forwardsSignal(call: ts.CallExpression, held: ReadonlySet<string>): boo
 // Diagnostics
 // ---------------------------------------------------------------------------
 
+// `void <expr>` is always valid; `await <expr>` only inside an async function.
+function orphanFixes(call: ts.CallExpression | ts.NewExpression): ReadonlyArray<DiagnosticFix> {
+    const sf = call.getSourceFile();
+    const pos = call.getStart(sf);
+    const fixes: DiagnosticFix[] = [
+        { title: "Ignore the result with `void`", edits: [{ fileName: sf.fileName, pos, end: pos, newText: "void " }] },
+    ];
+    if (enclosingAsync(call)) {
+        fixes.push({ title: "Await the promise", edits: [{ fileName: sf.fileName, pos, end: pos, newText: "await " }] });
+    }
+    return fixes;
+}
+
 function orphanDiagnostic(call: ts.CallExpression | ts.NewExpression): Diagnostic {
     return {
         channel: "async",
         message: `result of \`${calleeText(call)}()\` is neither awaited nor voided — rejections will be unhandled`,
         location: locationOf(call, call.getSourceFile()),
         related: [],
+        fixes: orphanFixes(call),
     };
 }
 
