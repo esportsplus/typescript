@@ -7,7 +7,7 @@ import { bottom, join, single, top, TOP_KEY, typeRef, type ExceptionsValue } fro
 // function, resolving each named type to a canonical key at the function's scope.
 // `declared` is true when at least one throws tag is present (opt-in checked
 // exceptions); `value` is the union of the declared types.
-export function declaredThrows(
+export function declaredExceptions(
   node: FunctionLike,
   checker: ts.TypeChecker,
 ): { value: ExceptionsValue; declared: boolean } {

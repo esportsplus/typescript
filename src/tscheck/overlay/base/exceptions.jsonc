@@ -1,54 +1,54 @@
 // Base exceptions-channel overlay. Top-level keys are lib sections; each section
-// maps an overlay key (see load.ts overlayKey) to a throws entry:
-//   { "throws": ["SyntaxError"] }   - the error types the leaf may throw
-//   { "throwsFromCallbacks": [0] }  - inherits whatever the arg at that index throws
-//   { "throws": [] }                - modeled as non-throwing (so it is not logged)
+// maps an overlay key (see load.ts overlayKey) to an exceptions entry:
+//   { "exceptions": ["SyntaxError"] }   - the error types the leaf may throw
+//   { "exceptionsFromCallbacks": [0] }  - inherits whatever the arg at that index throws
+//   { "exceptions": [] }                - modeled as non-throwing (so it is not logged)
 // This whole file is the "exceptions" channel section (channel is implicit here).
 {
   "lib.es5": {
-    "JSON.parse": { "throws": ["SyntaxError"] },
-    "JSON.stringify": { "throws": [] },
+    "JSON.parse": { "exceptions": ["SyntaxError"] },
+    "JSON.stringify": { "exceptions": [] },
 
-    "decodeURI": { "throws": ["URIError"] },
-    "decodeURIComponent": { "throws": ["URIError"] },
-    "encodeURI": { "throws": ["URIError"] },
-    "encodeURIComponent": { "throws": ["URIError"] },
+    "decodeURI": { "exceptions": ["URIError"] },
+    "decodeURIComponent": { "exceptions": ["URIError"] },
+    "encodeURI": { "exceptions": ["URIError"] },
+    "encodeURIComponent": { "exceptions": ["URIError"] },
 
-    "RegExp": { "throws": ["SyntaxError"] },
+    "RegExp": { "exceptions": ["SyntaxError"] },
 
-    "Number.parseInt": { "throws": [] },
-    "Number.parseFloat": { "throws": [] },
-    "parseInt": { "throws": [] },
-    "parseFloat": { "throws": [] },
+    "Number.parseInt": { "exceptions": [] },
+    "Number.parseFloat": { "exceptions": [] },
+    "parseInt": { "exceptions": [] },
+    "parseFloat": { "exceptions": [] },
 
-    "Array#map": { "throwsFromCallbacks": [0] },
-    "Array#forEach": { "throwsFromCallbacks": [0] },
-    "Array#filter": { "throwsFromCallbacks": [0] },
-    "Array#reduce": { "throwsFromCallbacks": [0] },
-    "Array#reduceRight": { "throwsFromCallbacks": [0] },
-    "Array#some": { "throwsFromCallbacks": [0] },
-    "Array#every": { "throwsFromCallbacks": [0] },
-    "Array#find": { "throwsFromCallbacks": [0] },
-    "Array#findIndex": { "throwsFromCallbacks": [0] },
-    "Array#sort": { "throwsFromCallbacks": [0] }
+    "Array#map": { "exceptionsFromCallbacks": [0] },
+    "Array#forEach": { "exceptionsFromCallbacks": [0] },
+    "Array#filter": { "exceptionsFromCallbacks": [0] },
+    "Array#reduce": { "exceptionsFromCallbacks": [0] },
+    "Array#reduceRight": { "exceptionsFromCallbacks": [0] },
+    "Array#some": { "exceptionsFromCallbacks": [0] },
+    "Array#every": { "exceptionsFromCallbacks": [0] },
+    "Array#find": { "exceptionsFromCallbacks": [0] },
+    "Array#findIndex": { "exceptionsFromCallbacks": [0] },
+    "Array#sort": { "exceptionsFromCallbacks": [0] }
   },
 
   "lib.es2015": {
-    "Map#forEach": { "throwsFromCallbacks": [0] },
-    "Set#forEach": { "throwsFromCallbacks": [0] }
+    "Map#forEach": { "exceptionsFromCallbacks": [0] },
+    "Set#forEach": { "exceptionsFromCallbacks": [0] }
   },
 
   "lib.es2019": {
-    "Array#flatMap": { "throwsFromCallbacks": [0] }
+    "Array#flatMap": { "exceptionsFromCallbacks": [0] }
   },
 
   "lib.es2020": {
-    "BigInt": { "throws": ["RangeError", "SyntaxError", "TypeError"] }
+    "BigInt": { "exceptions": ["RangeError", "SyntaxError", "TypeError"] }
   },
 
   "lib.dom": {
-    "URL": { "throws": ["TypeError"] },
-    "URLSearchParams": { "throws": ["TypeError"] },
-    "structuredClone": { "throws": ["DataCloneError"] }
+    "URL": { "exceptions": ["TypeError"] },
+    "URLSearchParams": { "exceptions": ["TypeError"] },
+    "structuredClone": { "exceptions": ["DataCloneError"] }
   }
 }

@@ -2,7 +2,7 @@
 
 A tscheck channel (see `tscheck-kernel-plan.md`). Second channel to land (kernel
 K4) — it hardens the plugin interface with a summary shape different from
-`throws`.
+`exceptions`.
 
 **The port:** Effect's `Scope`/`acquireRelease` guarantees a resource acquired is
 released exactly once, on every path, including failure paths. Plain TS has the
@@ -13,7 +13,7 @@ through the call graph and reports resources that can leak.
 ## The obligation model
 
 An **acquire site** creates an obligation; the obligation is met when, on every
-path from the acquire (including throwing paths — consume the `throws` channel's
+path from the acquire (including throwing paths — consume the `exceptions` channel's
 summaries to know which calls can throw), one of:
 
 - **Discharge** — the paired release is called on the tracked value (`clearInterval`
@@ -78,7 +78,7 @@ disposable, add ownership-transfer annotation.
 
 - **R1 — Sync obligations (requires K1; lands with K4).** Acquire/discharge/
   transfer on straight-line and branching sync code, `using` support, finally
-  discharge, throws-channel integration for exceptional paths, base preset,
+  discharge, exceptions-channel integration for exceptional paths, base preset,
   local-accountability tracking + degradation log.
   *Accept:* fixtures — leak on early return, leak on throwing path, finally
   discharge, `using` discharge, transfer by return, transfer by ownership
@@ -87,7 +87,7 @@ disposable, add ownership-transfer annotation.
   modes.
 - **R2 — Async lifetimes.** `await using`; obligations across `await` points
   (a throw between acquire and release via rejected await is a leak path —
-  reuse throws M4 rejection sets); resources acquired in async loops.
+  reuse exceptions M4 rejection sets); resources acquired in async loops.
 - **R3 — Editor (requires K3).** Hover "acquires/leaks", quick-fixes above.
 
 ## First step

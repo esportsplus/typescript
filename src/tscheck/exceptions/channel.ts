@@ -16,7 +16,7 @@ import type {
   TransferContext,
 } from "../kernel/types";
 import { isFunctionLike, locationOf } from "../kernel/ids";
-import { declaredThrows } from "./jsdoc";
+import { declaredExceptions } from "./jsdoc";
 import {
   bottom,
   constituentsOf,
@@ -32,7 +32,7 @@ import {
   TOP_KEY,
   widen,
   withOrigin,
-  type ThrowOrigin,
+  type ExceptionOrigin,
   type ExceptionsValue,
 } from "./value";
 
@@ -40,8 +40,8 @@ import {
 // and global name resolution for overlay/JSDoc type names). Local cast only.
 
 interface ExceptionsOverlayEntry {
-  throws?: unknown;
-  throwsFromCallbacks?: unknown;
+  exceptions?: unknown;
+  exceptionsFromCallbacks?: unknown;
 }
 
 // Per-analysis working state shared by every helper. `typeTable` retains the
@@ -92,7 +92,7 @@ export function createExceptionsChannel(): Channel<ExceptionsValue> {
       let value = body ? escapeOf(env, body, undefined) : bottom();
       // A `@throws` declaration is taken as the checked summary; inference beyond
       // it is reported in diagnose, not folded back into the summary.
-      const decl = declaredThrows(ctx.fn.node, ctx.checker);
+      const decl = declaredExceptions(ctx.fn.node, ctx.checker);
       if (decl.declared) value = decl.value;
       return { value, fromCallbacks: env.fromCallbacks };
     },
@@ -105,7 +105,7 @@ export function createExceptionsChannel(): Channel<ExceptionsValue> {
 
       // @throws under-declaration: emit on any reached function whose inferred
       // escapes exceed its declaration.
-      const decl = declaredThrows(ctx.fn.node, ctx.checker);
+      const decl = declaredExceptions(ctx.fn.node, ctx.checker);
       if (decl.declared && body) {
         const inferred = escapeOf(env, body, undefined);
         const excess = subtract(inferred, new Set(decl.value.types.keys()));
@@ -425,11 +425,11 @@ function callEscape(env: Env, call: ts.CallExpression | ts.NewExpression): Excep
 function overlayValue(env: Env, res: CalleeResolution, call: ts.CallExpression | ts.NewExpression): ExceptionsValue {
   const entry = (res.overlay?.entry ?? {}) as ExceptionsOverlayEntry;
   let v = bottom();
-  if (Array.isArray(entry.throws)) {
-    for (const name of entry.throws) if (typeof name === "string") v = join(v, namedValue(env, name, call));
+  if (Array.isArray(entry.exceptions)) {
+    for (const name of entry.exceptions) if (typeof name === "string") v = join(v, namedValue(env, name, call));
   }
-  if (Array.isArray(entry.throwsFromCallbacks)) {
-    for (const i of entry.throwsFromCallbacks) {
+  if (Array.isArray(entry.exceptionsFromCallbacks)) {
+    for (const i of entry.exceptionsFromCallbacks) {
       if (typeof i !== "number") continue;
       for (const f of res.functionArgs.get(i) ?? []) v = join(v, env.summaryOf(f).value);
     }
@@ -488,7 +488,7 @@ function applySink(v: ExceptionsValue, sink: SinkConfig): ExceptionsValue {
   if (v.top) return v;
   const absorb = new Set(sink.absorbs);
   const kept = new Map<string, string>();
-  const keptOrigins = new Map<string, ReadonlyArray<ThrowOrigin>>();
+  const keptOrigins = new Map<string, ReadonlyArray<ExceptionOrigin>>();
   for (const [k, d] of v.types) {
     if (absorb.has(d)) continue;
     kept.set(k, d);
@@ -693,7 +693,7 @@ function handleTry(
 }
 
 // A `throw` statement as a portable origin record: location + one-line source.
-function originOf(node: ts.ThrowStatement): ThrowOrigin {
+function originOf(node: ts.ThrowStatement): ExceptionOrigin {
   const sf = node.getSourceFile();
   const start = node.getStart(sf);
   const { line, character } = sf.getLineAndCharacterOfPosition(start);
@@ -711,7 +711,7 @@ function originOf(node: ts.ThrowStatement): ThrowOrigin {
 // The throw sites behind an escape, as related-information entries: each carries
 // the throw's source text and a click-to-jump location, so a reader sees every
 // potential throw without opening the files.
-function relatedFromOrigins(origins: ReadonlyArray<ThrowOrigin>): DiagnosticRelated[] {
+function relatedFromOrigins(origins: ReadonlyArray<ExceptionOrigin>): DiagnosticRelated[] {
   return origins.slice(0, 8).map((o) => ({
     message: o.text,
     location: { fileName: o.fileName, line: o.line, column: o.column, pos: o.pos, end: o.end },

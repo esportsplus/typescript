@@ -1,7 +1,7 @@
 # tscheck `async` channel — Structured Concurrency for Plain TS
 
 A tscheck channel (see `tscheck-kernel-plan.md`). Requires kernel K1; benefits
-from the `throws` channel's M4 rejection sets but does not require them.
+from the `exceptions` channel's M4 rejection sets but does not require them.
 
 **The port:** Effect fibers are structured — children are supervised, scoped to
 their parent, and interruption propagates. Plain TS promises are unstructured:
@@ -10,7 +10,7 @@ and ignore cancellation unless every layer hand-threads an `AbortSignal`. This
 channel checks the three properties that make promise code Effect-shaped without
 Effect.
 
-**Division of labor:** *where a rejection escapes to* is the `throws` channel
+**Division of labor:** *where a rejection escapes to* is the `exceptions` channel
 (M4). This channel owns promise **lifecycle**: ownership of the promise value,
 concurrency structure, and cancellation plumbing.
 
@@ -90,5 +90,5 @@ aggregation call. Cancellation: at the unforwarded await. Quick-fixes: add
 ## First step
 
 A1 alone on a real tree — it needs no propagation machinery beyond K1's walk,
-so it can ship early while `throws` is still proving its noise floor, and it
+so it can ship early while `exceptions` is still proving its noise floor, and it
 gives fast evidence the multi-channel product shape works.

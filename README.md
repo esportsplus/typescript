@@ -94,7 +94,7 @@ Add a `tscheck` entry to `compilerOptions.plugins`. Analysis covers every file t
                 // Fail the tsc/build run when there are findings.
                 "failOnFindings": true,
                 "channels": {
-                    "throws": {
+                    "exceptions": {
                         "enabled": true,
                         // "consumers" (default): uncaught calls only.
                         // "cross-module": only when the throwing callee is in another package.
