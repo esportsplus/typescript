@@ -104,6 +104,7 @@ export function runChannel<V>(
   channel: Channel<V>,
   dispatch: Dispatch,
   channelConfig: unknown,
+  peers: ReadonlyMap<string, SummaryStore<unknown>>,
 ): { store: SummaryStore<V>; diagnostics: Diagnostic[] } {
   const graph = analysis.graph;
   const reached = graph.reachedFunctions();
@@ -137,7 +138,9 @@ export function runChannel<V>(
     sinks: analysis.config.sinks,
     summaryOf,
     resolveCall: (call) => graph.resolveCall(call, channel.name),
+    resolveCallFor: (peerChannel, call) => graph.resolveCall(call, peerChannel),
     resolveFunctionValue: (expr) => graph.resolveFunctionValue(expr),
+    peerSummaryValue: (peerChannel, fnId) => peers.get(peerChannel)?.get(fnId).value,
     logUnmodeledLeaf: (name) => {
       unmodeledLeaves.set(name, (unmodeledLeaves.get(name) ?? 0) + 1);
     },
@@ -251,7 +254,9 @@ export function runChannel<V>(
       isBoundary: boundaries.has(fn.id),
       summaryOf,
       resolveCall: (call) => graph.resolveCall(call, channel.name),
+      resolveCallFor: (peerChannel, call) => graph.resolveCall(call, peerChannel),
       resolveFunctionValue: (expr) => graph.resolveFunctionValue(expr),
+      peerSummaryValue: (peerChannel, fnId) => peers.get(peerChannel)?.get(fnId).value,
       pathToBoundary,
       roots: () => roots,
     };

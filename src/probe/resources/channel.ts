@@ -12,6 +12,8 @@ import type {
     Summary,
     TransferContext,
 } from "../kernel/types";
+import { overlayThrows } from "../exceptions/channel";
+import { isEmpty, type ExceptionsValue } from "../exceptions/value";
 import { isFunctionLike, locationOf } from "../kernel/ids";
 import { bottom, equals, fromParams, join, widen, type ResourcesValue } from "./value";
 
@@ -58,6 +60,8 @@ interface Env {
     readonly ownership: ReadonlyArray<Ownership>;
     readonly summaryOf: (fn: FunctionInfo) => Summary<ResourcesValue>;
     readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
+    readonly resolveExceptions: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
+    readonly peerThrows: (fnId: string) => boolean;
     readonly logDegrade: (message: string) => void;
     readonly paramSymbols: Map<ts.Symbol, number>;
 }
@@ -147,6 +151,25 @@ function isExitStatement(n: ts.Node): boolean {
 
 function isCallLike(n: ts.Node): boolean {
     return ts.isCallExpression(n) || ts.isNewExpression(n);
+}
+
+// Whether a call can throw (propagate an exception) into the current function,
+// per the `exceptions` channel consulted through the kernel peer API: an
+// overlay-modeled thrower, an app callee whose exceptions summary is non-empty,
+// or — under pessimist — an unresolved callee. A throwing call between an acquire
+// and its release is a path on which the release is skipped, so the resource leaks.
+function callCanThrow(env: Env, call: ts.CallExpression | ts.NewExpression): boolean {
+    const res = env.resolveExceptions(call);
+
+    if (res.overlay) {
+        return overlayThrows(res.overlay.entry);
+    }
+
+    if (res.targets.length > 0) {
+        return res.targets.some((t) => env.peerThrows(t.id));
+    }
+
+    return res.unresolved && env.dispatch === "pessimist";
 }
 
 // Climb to the statement whose parent is the enclosing block.
@@ -436,10 +459,9 @@ function finallyDischarges(env: Env, sym: ts.Symbol, acq: Acquire | undefined, d
 }
 
 // A discharge or transfer that dominates every exit: a same-block statement after
-// the acquire, reached with no intervening early exit and no intervening call.
-// The "no intervening call" rule is the exceptions-channel approximation (see the
-// KERNEL GAP note at the foot of this file): any call between acquire and release
-// is a potential throwing bypass, so the release is not guaranteed.
+// the acquire, reached with no intervening early exit and no intervening call that
+// can throw. A throwing call between acquire and release is a bypass path on which
+// the release never runs (see `callCanThrow`), so the release is not guaranteed.
 function firstGuaranteed(env: Env, sym: ts.Symbol, acq: Acquire | undefined, declStmt: ts.Node, block: ts.Block): boolean {
     const stmts = block.statements;
     const idx = stmts.findIndex((s) => s === declStmt);
@@ -459,7 +481,7 @@ function firstGuaranteed(env: Env, sym: ts.Symbol, acq: Acquire | undefined, dec
             return false;
         }
 
-        if (containsMatch(s, isCallLike)) {
+        if (containsMatch(s, (n) => isCallLike(n) && callCanThrow(env, n as ts.CallExpression | ts.NewExpression))) {
             return false;
         }
     }
@@ -779,6 +801,8 @@ function makeEnv(
     ownership: ReadonlyArray<Ownership>,
     summaryOf: (fn: FunctionInfo) => Summary<ResourcesValue>,
     resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution,
+    resolveCallFor: (channel: string, call: ts.CallExpression | ts.NewExpression) => CalleeResolution,
+    peerSummaryValue: (channel: string, fnId: string) => unknown,
     logDegrade: (message: string) => void,
 ): Env {
     const paramSymbols = new Map<ts.Symbol, number>();
@@ -796,7 +820,26 @@ function makeEnv(
         });
     }
 
-    return { checker, dispatch, fn, ownership, summaryOf, resolveCall, logDegrade, paramSymbols };
+    const resolveExceptions = (call: ts.CallExpression | ts.NewExpression): CalleeResolution =>
+        resolveCallFor("exceptions", call);
+    const peerThrows = (fnId: string): boolean => {
+        const value = peerSummaryValue("exceptions", fnId);
+
+        return value !== undefined && !isEmpty(value as ExceptionsValue);
+    };
+
+    return {
+        checker,
+        dispatch,
+        fn,
+        ownership,
+        summaryOf,
+        resolveCall,
+        resolveExceptions,
+        peerThrows,
+        logDegrade,
+        paramSymbols,
+    };
 }
 
 // A parameter this function takes ownership of: it discharges or transfers that
@@ -939,16 +982,13 @@ function diagnoseClassFields(env: Env, ctx: DiagnoseContext<ResourcesValue>, out
 // Channel
 // ---------------------------------------------------------------------------
 
-// KERNEL GAP (documented): the plan calls for consuming the `exceptions` channel's
-// summaries to know which calls can throw (for leak-on-throwing-path). The kernel
-// does not share summaries across channels, and this channel must not build that.
-// Approximation: within a tracked region, ANY call between the acquire and a plain
-// (non-`finally`, non-`using`) release is treated as a potential throwing bypass,
-// so the release is not "guaranteed" and the resource is reported as leaking. This
-// over-reports straight-line code with benign intervening calls; the correct fix in
-// both real code and the plan is `try/finally` or `using`, which this channel
-// recognises as safe. When cross-channel summary sharing lands, replace the
-// `isCallLike` test in `firstGuaranteed` with an exceptions-summary throw query.
+// Leak-on-throwing-path consults the `exceptions` channel via the kernel peer API
+// (this channel declares `dependsOn: ["exceptions"]`): a call between an acquire
+// and a plain (non-`finally`, non-`using`) release breaks the "released on every
+// path" guarantee only when that call can actually throw (see `callCanThrow`).
+// When the exceptions channel is disabled its summaries are absent, so app calls
+// degrade to non-throwing and only overlay-modeled throwers (e.g. JSON.parse) and,
+// under pessimist, unresolved callees still count as bypass paths.
 export const createResourcesChannel = (
     // Silent by default: degradation is surfaced as a pessimist-mode diagnostic.
     // Callers that want to measure the v1 tracking noise floor inject a logger.
@@ -957,19 +997,20 @@ export const createResourcesChannel = (
     return {
         name: "resources",
         version: "1",
+        dependsOn: ["exceptions"],
         bottom,
         join,
         equals,
         widen,
         transfer(ctx: TransferContext<ResourcesValue>): Summary<ResourcesValue> {
             const ownership = parseOwnership(ctx.channelConfig);
-            const env = makeEnv(ctx.checker, ctx.dispatch, ctx.fn, ownership, ctx.summaryOf, ctx.resolveCall, onDegrade);
+            const env = makeEnv(ctx.checker, ctx.dispatch, ctx.fn, ownership, ctx.summaryOf, ctx.resolveCall, ctx.resolveCallFor, ctx.peerSummaryValue, onDegrade);
 
             return { value: fromParams(computeOwnership(env)), fromCallbacks: new Set() };
         },
         diagnose(ctx: DiagnoseContext<ResourcesValue>): ReadonlyArray<Diagnostic> {
             const ownership = parseOwnership(ctx.channelConfig);
-            const env = makeEnv(ctx.checker, ctx.dispatch, ctx.fn, ownership, ctx.summaryOf, ctx.resolveCall, onDegrade);
+            const env = makeEnv(ctx.checker, ctx.dispatch, ctx.fn, ownership, ctx.summaryOf, ctx.resolveCall, ctx.resolveCallFor, ctx.peerSummaryValue, onDegrade);
             const out: Diagnostic[] = [];
 
             diagnoseClassFields(env, ctx, out);

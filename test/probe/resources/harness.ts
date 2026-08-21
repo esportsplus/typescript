@@ -29,6 +29,9 @@ interface AnalyzeOptions {
     readonly dispatch?: Dispatch;
     readonly options?: unknown;
     readonly entry?: string;
+    // Enable the exceptions channel too, so resources can consult its throw
+    // summaries via the kernel peer API. Callers filter to `channel === "resources"`.
+    readonly exceptions?: boolean;
 }
 
 // Build a fixture project from `sources` (relative path -> TS text), run ONLY the
@@ -51,7 +54,7 @@ export const analyzeFixture = (
             const config = configFromObject(
                 {
                     channels: {
-                        exceptions: { enabled: false },
+                        exceptions: { enabled: opts.exceptions ?? false },
                         // parseChannels folds every key other than enabled/dispatch
                         // into the channel's opaque options, so spread them directly.
                         resources: {

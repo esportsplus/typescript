@@ -92,8 +92,14 @@ export interface TransferContext<V> {
   summaryOf(fn: FunctionInfo): Summary<V>;
   // Resolve a call/new expression to targets + function args + overlay.
   resolveCall(call: ts.CallExpression | ts.NewExpression): CalleeResolution;
+  // Resolve a call against a named peer channel's overlay section — targets are
+  // channel-independent; only the overlay layer differs.
+  resolveCallFor(channel: string, call: ts.CallExpression | ts.NewExpression): CalleeResolution;
   // Resolve an expression used as a function value to the functions it may be.
   resolveFunctionValue(expr: ts.Expression): ReadonlyArray<FunctionInfo>;
+  // Converged summary value of a peer channel for a function id, or undefined
+  // when that peer channel did not run (peer dependencies are optional).
+  peerSummaryValue(channel: string, fnId: string): unknown;
   // Record an unmodeled bodyless leaf for the growth worklist.
   logUnmodeledLeaf(name: string): void;
 }
@@ -112,7 +118,9 @@ export interface DiagnoseContext<V> {
   readonly isBoundary: boolean;
   summaryOf(fn: FunctionInfo): Summary<V>;
   resolveCall(call: ts.CallExpression | ts.NewExpression): CalleeResolution;
+  resolveCallFor(channel: string, call: ts.CallExpression | ts.NewExpression): CalleeResolution;
   resolveFunctionValue(expr: ts.Expression): ReadonlyArray<FunctionInfo>;
+  peerSummaryValue(channel: string, fnId: string): unknown;
   // A path of functions from `fn` out to the nearest reaching boundary, for the
   // diagnostic's related-information chain.
   pathToBoundary(fn: FunctionInfo): ReadonlyArray<FunctionInfo>;
@@ -126,6 +134,9 @@ export interface DiagnoseContext<V> {
 export interface Channel<V> {
   readonly name: string;
   readonly version: string;
+  // Peer channels whose summaries this channel reads; the kernel runs them first
+  // when they are enabled. Optional — a disabled peer is absent, not an error.
+  readonly dependsOn?: ReadonlyArray<string>;
   bottom(): V;
   join(a: V, b: V): V;
   // Convergence test for the fixpoint; `true` when `next` adds nothing to `prev`.

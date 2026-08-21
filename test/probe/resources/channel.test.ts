@@ -206,4 +206,46 @@ describe("resources channel — R1", () => {
         expect(pessimist[0]!.message).toContain("untrackable");
         expect(optimist).toHaveLength(0);
     });
+
+    it("a benign (non-throwing) app call between acquire and release does not force a leak", () => {
+        const diags = analyzeFixture({
+            "index.ts": [
+                "export function pure() {}",
+                "export function work() {",
+                "    const h = setInterval(() => {}, 1000);",
+                "    pure();",
+                "    clearInterval(h);",
+                "}",
+            ].join("\n"),
+        });
+
+        expect(diags).toHaveLength(0);
+    });
+
+    it("with exceptions enabled, a throwing helper leaks while a pure one stays safe", () => {
+        const diags = analyzeFixture(
+            {
+                "index.ts": [
+                    "export function pure() {}",
+                    "export function boom() {",
+                    "    throw new Error('x');",
+                    "}",
+                    "export function leaks() {",
+                    "    const h = setInterval(() => {}, 1000);",
+                    "    boom();",
+                    "    clearInterval(h);",
+                    "}",
+                    "export function safe() {",
+                    "    const h = setInterval(() => {}, 1000);",
+                    "    pure();",
+                    "    clearInterval(h);",
+                    "}",
+                ].join("\n"),
+            },
+            { exceptions: true },
+        ).filter((d) => d.channel === "resources");
+
+        expect(diags).toHaveLength(1);
+        expect(diags[0]!.message).toContain("can leak");
+    });
 });

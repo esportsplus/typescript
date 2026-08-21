@@ -44,6 +44,17 @@ interface ExceptionsOverlayEntry {
   exceptionsFromCallbacks?: unknown;
 }
 
+// Whether a call to a symbol modeled by this channel's overlay can throw: it
+// either declares thrown types or inherits throws from a callback argument.
+// Exposed for peer channels (resources) that consult exception behavior.
+export function overlayThrows(entry: unknown): boolean {
+  const e = (entry ?? {}) as ExceptionsOverlayEntry;
+  return (
+    (Array.isArray(e.exceptions) && e.exceptions.length > 0) ||
+    (Array.isArray(e.exceptionsFromCallbacks) && e.exceptionsFromCallbacks.length > 0)
+  );
+}
+
 // Per-analysis working state shared by every helper. `typeTable` retains the
 // concrete `ts.Type` behind each key so subtype-based catch discharge can run.
 interface Env {
