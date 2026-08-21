@@ -12,6 +12,9 @@ import fs from 'fs';
 import languageService from '~/compiler/language-service';
 import path from 'path';
 import sourcemap from '~/compiler/sourcemap';
+import { analyze } from '~/tscheck/kernel/analyze';
+import { formatDiagnostics } from '~/tscheck/kernel/format';
+import { loadConfigFromTsconfig } from '~/tscheck/kernel/config';
 
 
 type PluginConfig = {
@@ -401,13 +404,20 @@ function main(): void {
         return passthrough();
     }
 
+    let flags = classifyFlags(process.argv.slice(2));
+
+    // Run tscheck for any project whose tsconfig carries a `tscheck` plugin entry,
+    // on every real (non-informational, non-watch) tsc invocation. Findings are
+    // printed but do not fail the build — the compiler's own result stands.
+    if (!flags.informational && !flags.watch) {
+        runTscheck(tsconfig);
+    }
+
     let pluginConfigs = resolvePluginConfigs(tsconfig);
 
     if (pluginConfigs.length === 0) {
         return passthrough();
     }
-
-    let flags = classifyFlags(process.argv.slice(2));
 
     if (flags.informational) {
         return passthrough();
@@ -430,6 +440,38 @@ function main(): void {
 
 function normalizePath(fileName: string): string {
     return path.resolve(fileName).replace(BACKSLASH_REGEX, '/');
+}
+
+function runTscheck(tsconfig: string): void {
+    let config;
+
+    try {
+        config = loadConfigFromTsconfig(tsconfig);
+    }
+    catch (error) {
+        console.error(`${PACKAGE_NAME}: tscheck config error: ${error instanceof Error ? error.message : String(error)}`);
+
+        return;
+    }
+
+    if (!config) {
+        return;
+    }
+
+    try {
+        let result = analyze(config);
+
+        if (result.diagnostics.length > 0) {
+            console.error(formatDiagnostics(result.diagnostics, config.projectRoot));
+
+            if (config.failOnFindings) {
+                process.exit(1);
+            }
+        }
+    }
+    catch (error) {
+        console.error(`${PACKAGE_NAME}: tscheck failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }
 
 function passthrough(): void {

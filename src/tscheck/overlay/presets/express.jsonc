@@ -1,0 +1,25 @@
+// Express preset bundle. `handlerBoundaries` promote route callbacks to
+// analysis boundaries (loadOverlays exposes them via boundariesFromPresets()).
+// `overlay` follows the channel -> section -> key shape.
+{
+  "handlerBoundaries": [
+    { "callee": "express.Router#get", "callbackArgs": [1] },
+    { "callee": "express.Router#post", "callbackArgs": [1] },
+    { "callee": "express.Router#put", "callbackArgs": [1] },
+    { "callee": "express.Router#patch", "callbackArgs": [1] },
+    { "callee": "express.Router#delete", "callbackArgs": [1] },
+    { "callee": "express.Router#all", "callbackArgs": [1] },
+    { "callee": "express.Router#use", "callbackArgs": [0, 1] },
+    { "callee": "express.Application#get", "callbackArgs": [1] },
+    { "callee": "express.Application#post", "callbackArgs": [1] },
+    { "callee": "express.Application#use", "callbackArgs": [0, 1] }
+  ],
+  "overlay": {
+    "throws": {
+      "express": {
+        "Response#json": { "throws": ["TypeError"] },
+        "Response#sendFile": { "throws": ["TypeError"] }
+      }
+    }
+  }
+}

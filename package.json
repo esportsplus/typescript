@@ -56,7 +56,7 @@
         "agent:build": "pnpm build",
         "agent:test": "pnpm typecheck && pnpm test",
         "bench:run": "vitest bench --run",
-        "build": "tsc -p tsconfig.package.json && tsc-alias -p tsconfig.package.json",
+        "build": "tsc -p tsconfig.package.json && tsc-alias -p tsconfig.package.json && node -e \"const fs=require('fs');fs.cpSync('src/tscheck/overlay','build/tscheck/overlay',{recursive:true,filter:(s)=>!/\\.[cm]?tsx?$/.test(s)})\"",
         "-": "-",
         "prepare": "pnpm build",
         "prepublishOnly": "pnpm build",

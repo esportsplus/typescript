@@ -1,0 +1,17 @@
+// Node preset bundle. `overlay` is keyed by channel, then section (module),
+// then overlay key. A couple of node:fs / node:path throwers prove the shape.
+{
+  "overlay": {
+    "throws": {
+      "node:fs": {
+        "readFileSync": { "throws": ["Error"] },
+        "writeFileSync": { "throws": ["Error"] },
+        "mkdirSync": { "throws": ["Error"] }
+      },
+      "node:path": {
+        "relative": { "throws": ["TypeError"] },
+        "resolve": { "throws": ["TypeError"] }
+      }
+    }
+  }
+}
