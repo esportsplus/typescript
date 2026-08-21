@@ -1,6 +1,6 @@
 import * as NodePath from "node:path";
 
-import * as ts from "~/analyze/adapter";
+import * as ts from "~/probe/adapter";
 
 export type BuiltProgram = {
     program: ts.Program;

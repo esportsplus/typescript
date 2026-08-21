@@ -1,4 +1,4 @@
-import * as ts from "~/analyze/adapter";
+import * as ts from "~/probe/adapter";
 
 // One `throw` site a type escaped from: enough to render and jump to it inline.
 export interface ExceptionOrigin {

@@ -1,12 +1,12 @@
 import * as NodePath from 'node:path';
 
-import * as ts from '~/analyze/adapter';
+import * as ts from '~/probe/adapter';
 
-import { analyzeProgram } from '~/analyze/kernel/analyze';
-import { loadConfigFromTsconfig } from '~/analyze/kernel/config';
+import { analyzeProgram } from '~/probe/kernel/analyze';
+import { loadConfigFromTsconfig } from '~/probe/kernel/config';
 
-import type { AnalyzeResult } from '~/analyze/kernel/analyze';
-import type { AnalyzeConfig } from '~/analyze/kernel/types';
+import type { AnalyzeResult } from '~/probe/kernel/analyze';
+import type { AnalyzeConfig } from '~/probe/kernel/types';
 
 type Snapshot = ReturnType<ts.API['updateSnapshot']>;
 

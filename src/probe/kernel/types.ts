@@ -1,4 +1,4 @@
-import type * as ts from "~/analyze/adapter";
+import type * as ts from "~/probe/adapter";
 
 // ---------------------------------------------------------------------------
 // Function identity

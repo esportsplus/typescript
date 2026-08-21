@@ -1,6 +1,6 @@
 import * as NodeFS from "node:fs";
 
-import * as ts from "~/analyze/adapter";
+import * as ts from "~/probe/adapter";
 
 import type {
   CalleeResolution,

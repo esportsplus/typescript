@@ -2,7 +2,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
-import * as ts from "~/analyze/adapter";
+import * as ts from "~/probe/adapter";
 
 import type {
   HandlerBoundary,
