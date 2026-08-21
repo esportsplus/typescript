@@ -239,7 +239,7 @@ export function configFromObject(raw: unknown, projectRoot: string): AnalyzeConf
   return normalizeConfig(raw as RawConfig, projectRoot);
 }
 
-// Read the analyze config from a tsconfig.json's `plugins: [{ name: "analyze", … }]`
+// Read the analyze config from a tsconfig.json's `plugins: [{ name: "ts-probe", … }]`
 // entry — the same inline config the language-service plugin uses, so the CLI and
 // editor share one source. Returns undefined when there is no analyze plugin entry.
 // The resolved config's `tsconfigPath` points back at this tsconfig.
@@ -282,7 +282,7 @@ function readTsconfigPlugins(
 export function loadConfigFromTsconfig(tsconfigPath: string): AnalyzeConfig | undefined {
   const resolved = NodePath.resolve(tsconfigPath);
   const plugins = readTsconfigPlugins(resolved, new Set()) ?? [];
-  const entry = plugins.find((p) => p !== null && typeof p === "object" && p.name === "analyze");
+  const entry = plugins.find((p) => p !== null && typeof p === "object" && p.name === "ts-probe");
   if (!entry) {
     return undefined;
   }

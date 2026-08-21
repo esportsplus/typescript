@@ -1,4 +1,4 @@
-import * as ts from "~/analyze/adapter";
+import * as ts from "~/probe/adapter";
 
 import { isFunctionLike, makeFunctionInfo } from "./ids";
 import type {

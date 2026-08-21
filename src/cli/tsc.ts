@@ -12,9 +12,9 @@ import fs from 'fs';
 import languageService from '~/compiler/language-service';
 import path from 'path';
 import sourcemap from '~/compiler/sourcemap';
-import { analyze } from '~/analyze/kernel/analyze';
-import { formatDiagnostics } from '~/analyze/kernel/format';
-import { loadConfigFromTsconfig } from '~/analyze/kernel/config';
+import { analyze } from '~/probe/kernel/analyze';
+import { formatDiagnostics } from '~/probe/kernel/format';
+import { loadConfigFromTsconfig } from '~/probe/kernel/config';
 
 
 type PluginConfig = {

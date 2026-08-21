@@ -88,7 +88,7 @@ Add an `analyze` entry to `compilerOptions.plugins`. Analysis covers every file 
     "compilerOptions": {
         "plugins": [
             {
-                "name": "analyze",
+                "name": "ts-probe",
                 // Editor squiggle color; "warn" opts down. CLI/build ignore this.
                 "severity": "error",
                 // Fail the tsc/build run when there are findings.

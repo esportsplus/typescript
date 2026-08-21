@@ -1,4 +1,4 @@
-import * as ts from "~/analyze/adapter";
+import * as ts from "~/probe/adapter";
 
 import { channelFor, implementedChannels } from "../channels/registry";
 import { buildCallGraph } from "./graph";
