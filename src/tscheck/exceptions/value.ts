@@ -1,7 +1,7 @@
 import * as ts from "~/tscheck/adapter";
 
 // One `throw` site a type escaped from: enough to render and jump to it inline.
-export interface ThrowOrigin {
+export interface ExceptionOrigin {
   readonly fileName: string;
   readonly pos: number;
   readonly end: number;
@@ -17,7 +17,7 @@ export interface ThrowOrigin {
 export interface ExceptionsValue {
   readonly top: boolean;
   readonly types: ReadonlyMap<string, string>; // canonical key -> display name
-  readonly origins: ReadonlyMap<string, ReadonlyArray<ThrowOrigin>>; // key -> throw sites
+  readonly origins: ReadonlyMap<string, ReadonlyArray<ExceptionOrigin>>; // key -> throw sites
 }
 
 // Reserved key/display for `any`/`unknown` thrown values, which collapse to TOP.
@@ -29,17 +29,17 @@ const WIDEN_CAP = 8;
 // Cap on retained origin sites per type (a few examples suffice).
 const ORIGIN_CAP = 4;
 
-const NO_ORIGINS: ReadonlyMap<string, ReadonlyArray<ThrowOrigin>> = new Map();
+const NO_ORIGINS: ReadonlyMap<string, ReadonlyArray<ExceptionOrigin>> = new Map();
 
-function originId(o: ThrowOrigin): string {
+function originId(o: ExceptionOrigin): string {
   return `${o.fileName}:${o.pos}`;
 }
 
 function mergeOrigins(
-  a: ReadonlyMap<string, ReadonlyArray<ThrowOrigin>>,
-  b: ReadonlyMap<string, ReadonlyArray<ThrowOrigin>>,
-): Map<string, ReadonlyArray<ThrowOrigin>> {
-  const m = new Map<string, ReadonlyArray<ThrowOrigin>>(a);
+  a: ReadonlyMap<string, ReadonlyArray<ExceptionOrigin>>,
+  b: ReadonlyMap<string, ReadonlyArray<ExceptionOrigin>>,
+): Map<string, ReadonlyArray<ExceptionOrigin>> {
+  const m = new Map<string, ReadonlyArray<ExceptionOrigin>>(a);
   for (const [k, list] of b) {
     const prev = m.get(k);
     if (!prev) {
@@ -73,9 +73,9 @@ export function single(key: string, display: string): ExceptionsValue {
 
 // Attach a throw site to every type currently in `v` — used where a `throw`
 // statement produces `v`, so the site rides along as the value propagates.
-export function withOrigin(v: ExceptionsValue, origin: ThrowOrigin): ExceptionsValue {
+export function withOrigin(v: ExceptionsValue, origin: ExceptionOrigin): ExceptionsValue {
   if (v.top) return v;
-  const origins = new Map<string, ReadonlyArray<ThrowOrigin>>(v.origins);
+  const origins = new Map<string, ReadonlyArray<ExceptionOrigin>>(v.origins);
   for (const k of v.types.keys()) {
     const prev = origins.get(k) ?? [];
     if (prev.some((o) => originId(o) === originId(origin))) continue;
@@ -85,8 +85,8 @@ export function withOrigin(v: ExceptionsValue, origin: ThrowOrigin): ExceptionsV
 }
 
 // Every distinct origin across all types, deduped — the diagnostic's throw list.
-export function originsOf(v: ExceptionsValue): ReadonlyArray<ThrowOrigin> {
-  const out: ThrowOrigin[] = [];
+export function originsOf(v: ExceptionsValue): ReadonlyArray<ExceptionOrigin> {
+  const out: ExceptionOrigin[] = [];
   const seen = new Set<string>();
   for (const list of v.origins.values()) {
     for (const o of list) {
@@ -130,7 +130,7 @@ export function widen(prev: ExceptionsValue, next: ExceptionsValue, round: numbe
 export function subtract(a: ExceptionsValue, keys: ReadonlySet<string>): ExceptionsValue {
   if (a.top) return a;
   const m = new Map<string, string>();
-  const origins = new Map<string, ReadonlyArray<ThrowOrigin>>();
+  const origins = new Map<string, ReadonlyArray<ExceptionOrigin>>();
   for (const [k, d] of a.types) {
     if (keys.has(k)) continue;
     m.set(k, d);

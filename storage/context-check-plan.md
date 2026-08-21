@@ -1,7 +1,7 @@
 # tscheck `context` channel — Requirements (`R`) for Plain TS
 
 A tscheck channel (see `tscheck-kernel-plan.md`). **Exploratory** — build after
-`throws` and `resources` prove the kernel; drop it if the noise floor
+`exceptions` and `resources` prove the kernel; drop it if the noise floor
 disappoints. It is the loosest port of the four, because Effect's `R` is about
 *provision* (DI) and plain TS has no provision mechanism to check against — so
 this channel checks the half that is portable: making **ambient requirements

@@ -68,7 +68,7 @@ export interface CalleeResolution {
 }
 
 // A per-channel overlay entry for one modeled symbol. `entry` is the raw
-// channel-specific JSON (the exceptions channel reads `{ throws, throwsFromCallbacks }`).
+// channel-specific JSON (the exceptions channel reads `{ exceptions, exceptionsFromCallbacks }`).
 export interface OverlayLookup {
   readonly pkg: string;
   readonly symbol: string;

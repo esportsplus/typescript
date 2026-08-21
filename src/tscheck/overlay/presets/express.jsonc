@@ -17,8 +17,8 @@
   "overlay": {
     "exceptions": {
       "express": {
-        "Response#json": { "throws": ["TypeError"] },
-        "Response#sendFile": { "throws": ["TypeError"] }
+        "Response#json": { "exceptions": ["TypeError"] },
+        "Response#sendFile": { "exceptions": ["TypeError"] }
       }
     }
   }
