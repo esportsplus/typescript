@@ -52,7 +52,7 @@ const all = (file: SourceFile, pkg: string): ImportInfo[] => {
         }
 
         let bindings = stmt.importClause?.namedBindings,
-            declTypeOnly = stmt.importClause?.isTypeOnly ?? false,
+            declTypeOnly = stmt.importClause?.phaseModifier === SyntaxKind.TypeKeyword,
             specifiers = new Map<string, string>(),
             typeOnly = new Set<string>();
 

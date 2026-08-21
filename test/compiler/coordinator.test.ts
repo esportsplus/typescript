@@ -347,11 +347,11 @@ describe('coordinator.transform', () => {
     it('preserves a type-only import when rewriting a package\'s imports', () => {
         let code = "import { html } from 'my-pkg';\nimport type { Renderable } from 'my-pkg';\nlet x = 1;",
             file = parse(code),
-            program = makeProgram(file),
+            project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ namespace: 'NS', package: 'my-pkg', remove: ['html'] }]
             })),
-            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+            result = coordinator.transform([plugin], code, file, project, '/root', new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import * as NS from 'my-pkg';");
