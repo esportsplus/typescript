@@ -1,0 +1,48 @@
+// Base resources-channel overlay. A BUNDLE file: the `overlay.resources` section
+// maps lib/module sections to an overlay key (see load.ts overlayKey) to a
+// resources entry:
+//   { "acquires": "Interval", "releasedBy": "clearInterval" }   - free-function release
+//   { "acquires": "FileHandle", "releasedBy": "#close" }        - method release on the value
+//   { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] }
+//                                                               - receiver-keyed pair release
+//   { "acquires": "AbortController", "informational": true }    - modeled, not obligation-bearing
+{
+    "overlay": {
+        "resources": {
+            "lib.dom": {
+                "setInterval": { "acquires": "Interval", "releasedBy": "clearInterval" },
+                "setTimeout": { "acquires": "Timeout", "releasedBy": "clearTimeout" },
+
+                "EventTarget#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
+                "Element#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
+                "HTMLElement#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
+                "Window#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
+                "Document#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
+                "AbortSignal#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
+
+                "ResizeObserver": { "acquires": "ResizeObserver", "releasedBy": "#disconnect" },
+                "MutationObserver": { "acquires": "MutationObserver", "releasedBy": "#disconnect" },
+                "WebSocket": { "acquires": "WebSocket", "releasedBy": "#close" },
+                "AbortController": { "acquires": "AbortController", "informational": true }
+            },
+
+            "node:timers": {
+                "setInterval": { "acquires": "Interval", "releasedBy": "clearInterval" },
+                "setTimeout": { "acquires": "Timeout", "releasedBy": "clearTimeout" }
+            },
+
+            "node:fs/promises": {
+                "open": { "acquires": "FileHandle", "releasedBy": "#close" }
+            },
+
+            "node:net": {
+                "Socket": { "acquires": "Socket", "releasedBy": "#destroy" },
+                "Server#listen": { "acquires": "Server", "releasedBy": "#close" }
+            },
+
+            "node:http": {
+                "Server#listen": { "acquires": "Server", "releasedBy": "#close" }
+            }
+        }
+    }
+}

@@ -1,0 +1,13 @@
+// Base async-channel overlay bundle. The "async" section maps a lib symbol (see
+// load.ts overlayKey) to an async entry. Cancellable leaves accept an
+// `AbortSignal` and should be forwarded any signal the calling function holds:
+//   { "cancellable": true }   - awaiting this without the held signal is a finding
+{
+  "overlay": {
+    "async": {
+      "lib.dom": {
+        "fetch": { "cancellable": true }
+      }
+    }
+  }
+}
