@@ -29,11 +29,11 @@ export function formatDiagnostics(
   projectRoot: string,
 ): string {
   if (diagnostics.length === 0) {
-    return "tscheck: no findings.";
+    return "analyze: no findings.";
   }
   const body = diagnostics
     .map((d) => formatDiagnostic(d, projectRoot))
     .join("\n\n");
   const noun = diagnostics.length === 1 ? "finding" : "findings";
-  return `${body}\n\ntscheck: ${diagnostics.length} ${noun}.`;
+  return `${body}\n\nanalyze: ${diagnostics.length} ${noun}.`;
 }

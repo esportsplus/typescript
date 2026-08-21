@@ -7,7 +7,7 @@ import type {
   Dispatch,
   HandlerBoundary,
   SinkConfig,
-  TscheckConfig,
+  AnalyzeConfig,
 } from "./types";
 
 // The known channel names. Config for any other key is rejected so typos fail
@@ -34,7 +34,7 @@ interface RawConfig {
 }
 
 function fail(message: string): never {
-  throw new Error(`tscheck config: ${message}`);
+  throw new Error(`analyze config: ${message}`);
 }
 
 // Strip line/block comments and trailing commas so JSON.parse accepts JSONC.
@@ -197,7 +197,7 @@ function parseChannels(value: unknown): Record<string, ChannelConfig> {
 
 // Turn raw parsed JSONC into a validated, defaulted config. Pure — no I/O — so
 // it is directly testable. `projectRoot` anchors relative paths.
-function normalizeConfig(raw: RawConfig, projectRoot: string): TscheckConfig {
+function normalizeConfig(raw: RawConfig, projectRoot: string): AnalyzeConfig {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     fail(`root must be a JSON object`);
   }
@@ -223,7 +223,7 @@ function normalizeConfig(raw: RawConfig, projectRoot: string): TscheckConfig {
 }
 
 // Parse config text (JSONC) into a validated config anchored at `projectRoot`.
-export function parseConfig(text: string, projectRoot: string): TscheckConfig {
+export function parseConfig(text: string, projectRoot: string): AnalyzeConfig {
   let parsed: RawConfig;
   try {
     parsed = JSON.parse(stripJsonc(text)) as RawConfig;
@@ -235,13 +235,13 @@ export function parseConfig(text: string, projectRoot: string): TscheckConfig {
 
 // Validate an already-parsed config object (e.g. the tsserver plugin entry in
 // tsconfig.json, minus its `name`) anchored at `projectRoot`.
-export function configFromObject(raw: unknown, projectRoot: string): TscheckConfig {
+export function configFromObject(raw: unknown, projectRoot: string): AnalyzeConfig {
   return normalizeConfig(raw as RawConfig, projectRoot);
 }
 
-// Read the tscheck config from a tsconfig.json's `plugins: [{ name: "tscheck", … }]`
+// Read the analyze config from a tsconfig.json's `plugins: [{ name: "analyze", … }]`
 // entry — the same inline config the language-service plugin uses, so the CLI and
-// editor share one source. Returns undefined when there is no tscheck plugin entry.
+// editor share one source. Returns undefined when there is no analyze plugin entry.
 // The resolved config's `tsconfigPath` points back at this tsconfig.
 // Read `compilerOptions.plugins` from a tsconfig, following relative `extends`.
 function readTsconfigPlugins(
@@ -279,18 +279,18 @@ function readTsconfigPlugins(
   return plugins;
 }
 
-export function loadConfigFromTsconfig(tsconfigPath: string): TscheckConfig | undefined {
+export function loadConfigFromTsconfig(tsconfigPath: string): AnalyzeConfig | undefined {
   const resolved = NodePath.resolve(tsconfigPath);
   const plugins = readTsconfigPlugins(resolved, new Set()) ?? [];
-  const entry = plugins.find((p) => p !== null && typeof p === "object" && p.name === "tscheck");
+  const entry = plugins.find((p) => p !== null && typeof p === "object" && p.name === "analyze");
   if (!entry) {
     return undefined;
   }
   return { ...configFromObject(entry, NodePath.dirname(resolved)), tsconfigPath: resolved };
 }
 
-// Load and validate tscheck.config.jsonc found at or above `startDir`.
-export function loadConfig(configPath: string): TscheckConfig {
+// Load and validate analyze.config.jsonc found at or above `startDir`.
+export function loadConfig(configPath: string): AnalyzeConfig {
   if (!NodeFS.existsSync(configPath)) {
     fail(`no config file at ${configPath}`);
   }

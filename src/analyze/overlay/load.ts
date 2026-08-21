@@ -2,13 +2,13 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
-import * as ts from "~/tscheck/adapter";
+import * as ts from "~/analyze/adapter";
 
 import type {
   HandlerBoundary,
   OverlayLookup,
   OverlaySet,
-  TscheckConfig,
+  AnalyzeConfig,
 } from "../kernel/types";
 
 // Namespace-like globals whose members read as `Global.member` instead of
@@ -98,12 +98,12 @@ function parseJsonc(name: string, text: string): Record<string, unknown> {
   try {
     parsed = JSON.parse(stripJsonc(text));
   } catch (error) {
-    throw new Error(`tscheck overlay: invalid JSONC in ${name}: ${(error as Error).message}`, {
+    throw new Error(`analyze overlay: invalid JSONC in ${name}: ${(error as Error).message}`, {
       cause: error,
     });
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`tscheck overlay: ${name} must be a JSON object`);
+    throw new Error(`analyze overlay: ${name} must be a JSON object`);
   }
   return parsed as Record<string, unknown>;
 }
@@ -137,24 +137,24 @@ function readBoundaries(name: string, raw: unknown): HandlerBoundary[] {
     return [];
   }
   if (!Array.isArray(raw)) {
-    throw new Error(`tscheck overlay: ${name} handlerBoundaries must be an array`);
+    throw new Error(`analyze overlay: ${name} handlerBoundaries must be an array`);
   }
   return raw.map((item, index) => {
     if (typeof item !== "object" || item === null) {
-      throw new Error(`tscheck overlay: ${name} handlerBoundaries[${index}] must be an object`);
+      throw new Error(`analyze overlay: ${name} handlerBoundaries[${index}] must be an object`);
     }
     const obj = item as Record<string, unknown>;
     const callee = obj["callee"];
     const callbackArgs = obj["callbackArgs"];
     if (typeof callee !== "string") {
-      throw new Error(`tscheck overlay: ${name} handlerBoundaries[${index}].callee must be a string`);
+      throw new Error(`analyze overlay: ${name} handlerBoundaries[${index}].callee must be a string`);
     }
     if (
       !Array.isArray(callbackArgs) ||
       callbackArgs.some((v) => typeof v !== "number" || !Number.isInteger(v))
     ) {
       throw new Error(
-        `tscheck overlay: ${name} handlerBoundaries[${index}].callbackArgs must be an array of integers`,
+        `analyze overlay: ${name} handlerBoundaries[${index}].callbackArgs must be an array of integers`,
       );
     }
     return { callee, callbackArgs: callbackArgs as ReadonlyArray<number> };
@@ -184,7 +184,7 @@ export function mergeOverlayData(files: ReadonlyArray<{ name: string; text: stri
       const overlay = root["overlay"];
       if (overlay !== undefined) {
         if (!isSectionMap(overlay)) {
-          throw new Error(`tscheck overlay: ${file.name} overlay must be an object`);
+          throw new Error(`analyze overlay: ${file.name} overlay must be an object`);
         }
         for (const [channel, sections] of Object.entries(overlay)) {
           if (isSectionMap(sections)) {
@@ -308,19 +308,19 @@ function readFile(file: string): { name: string; text: string } {
   return { name: file, text: NodeFS.readFileSync(file, "utf8") };
 }
 
-export function loadOverlays(config: TscheckConfig): LoadedOverlays {
+export function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
   const files: Array<{ name: string; text: string }> = [];
   files.push(readFile(NodePath.join(HERE, "base", "exceptions.jsonc")));
   for (const preset of config.presets) {
     const presetPath = NodePath.join(HERE, "presets", `${preset}.jsonc`);
     if (!NodeFS.existsSync(presetPath)) {
-      throw new Error(`tscheck overlay: unknown preset "${preset}" (no file at ${presetPath})`);
+      throw new Error(`analyze overlay: unknown preset "${preset}" (no file at ${presetPath})`);
     }
     files.push(readFile(presetPath));
   }
   for (const overlay of config.overlays) {
     if (!NodeFS.existsSync(overlay)) {
-      throw new Error(`tscheck overlay: overlay file not found: ${overlay}`);
+      throw new Error(`analyze overlay: overlay file not found: ${overlay}`);
     }
     files.push(readFile(overlay));
   }

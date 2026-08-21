@@ -1,6 +1,6 @@
 import * as NodePath from "node:path";
 
-import * as ts from "~/tscheck/adapter";
+import * as ts from "~/analyze/adapter";
 
 export type BuiltProgram = {
     program: ts.Program;
@@ -23,7 +23,7 @@ export function buildProgram(tsconfigPath: string): BuiltProgram {
     if (!project) {
         snapshot.dispose();
         api.close();
-        throw new Error(`tscheck program: project not found for ${configPath}`);
+        throw new Error(`analyze program: project not found for ${configPath}`);
     }
 
     const { program, checker } = project;

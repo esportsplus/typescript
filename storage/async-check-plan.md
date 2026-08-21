@@ -1,6 +1,6 @@
-# tscheck `async` channel — Structured Concurrency for Plain TS
+# analyze `async` channel — Structured Concurrency for Plain TS
 
-A tscheck channel (see `tscheck-kernel-plan.md`). Requires kernel K1; benefits
+A analyze channel (see `analyze-kernel-plan.md`). Requires kernel K1; benefits
 from the `exceptions` channel's M4 rejection sets but does not require them.
 
 **The port:** Effect fibers are structured — children are supervised, scoped to

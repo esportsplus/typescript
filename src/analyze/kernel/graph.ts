@@ -1,4 +1,4 @@
-import * as ts from "~/tscheck/adapter";
+import * as ts from "~/analyze/adapter";
 
 import { isFunctionLike, makeFunctionInfo } from "./ids";
 import type {
@@ -8,7 +8,7 @@ import type {
   FunctionLike,
   HandlerBoundary,
   OverlaySet,
-  TscheckConfig,
+  AnalyzeConfig,
 } from "./types";
 
 // Channel-independent facts about one call site, computed once and cached. The
@@ -39,7 +39,7 @@ interface Selector {
 export function buildCallGraph(
   program: ts.Program,
   checker: ts.TypeChecker,
-  config: TscheckConfig,
+  config: AnalyzeConfig,
   overlays: OverlaySet,
 ): CallGraph {
   const programFiles = new Set(ts.getSourceFiles(program));

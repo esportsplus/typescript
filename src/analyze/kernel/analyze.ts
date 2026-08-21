@@ -1,4 +1,4 @@
-import * as ts from "~/tscheck/adapter";
+import * as ts from "~/analyze/adapter";
 
 import { channelFor, implementedChannels } from "../channels/registry";
 import { buildCallGraph } from "./graph";
@@ -6,7 +6,7 @@ import { buildProgram } from "./program";
 import { runChannel } from "./fixpoint";
 import { loadOverlays } from "../overlay/load";
 
-import type { Analysis, Diagnostic, FunctionInfo, TscheckConfig } from "./types";
+import type { Analysis, Diagnostic, FunctionInfo, AnalyzeConfig } from "./types";
 
 export interface AnalyzeResult {
   readonly diagnostics: ReadonlyArray<Diagnostic>;
@@ -27,14 +27,14 @@ function isStrict(options: ts.CompilerOptions): boolean {
 export function analyzeProgram(
   program: ts.Program,
   checker: ts.TypeChecker,
-  config: TscheckConfig,
+  config: AnalyzeConfig,
 ): AnalyzeResult {
   const strict = isStrict(program.getCompilerOptions());
   const overlays = loadOverlays(config);
 
   // Preset handler boundaries are kernel config; fold them in before the graph
   // expands boundaries so preset-declared callbacks are analyzed as entries.
-  const effectiveConfig: TscheckConfig = {
+  const effectiveConfig: AnalyzeConfig = {
     ...config,
     handlerBoundaries: [
       ...config.handlerBoundaries,
@@ -54,7 +54,7 @@ export function analyzeProgram(
   const notices: string[] = [];
   if (!strict) {
     notices.push(
-      "tscheck: tsconfig is not strict — the guarantee floor is whatever your tsconfig proves.",
+      "analyze: tsconfig is not strict — the guarantee floor is whatever your tsconfig proves.",
     );
   }
 
@@ -89,7 +89,7 @@ export function analyzeProgram(
 }
 
 // Build a Program from the config's tsconfig, then analyze it — the CLI path.
-export function analyze(config: TscheckConfig): AnalyzeResult {
+export function analyze(config: AnalyzeConfig): AnalyzeResult {
   const built = buildProgram(config.tsconfigPath);
   try {
     return analyzeProgram(built.program, built.checker, config);

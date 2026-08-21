@@ -1,6 +1,6 @@
-# tscheck `resources` channel — Scope/acquireRelease for Plain TS
+# analyze `resources` channel — Scope/acquireRelease for Plain TS
 
-A tscheck channel (see `tscheck-kernel-plan.md`). Second channel to land (kernel
+A analyze channel (see `analyze-kernel-plan.md`). Second channel to land (kernel
 K4) — it hardens the plugin interface with a summary shape different from
 `exceptions`.
 

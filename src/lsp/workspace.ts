@@ -1,26 +1,26 @@
 import * as NodePath from 'node:path';
 
-import * as ts from '~/tscheck/adapter';
+import * as ts from '~/analyze/adapter';
 
-import { analyzeProgram } from '~/tscheck/kernel/analyze';
-import { loadConfigFromTsconfig } from '~/tscheck/kernel/config';
+import { analyzeProgram } from '~/analyze/kernel/analyze';
+import { loadConfigFromTsconfig } from '~/analyze/kernel/config';
 
-import type { AnalyzeResult } from '~/tscheck/kernel/analyze';
-import type { TscheckConfig } from '~/tscheck/kernel/types';
+import type { AnalyzeResult } from '~/analyze/kernel/analyze';
+import type { AnalyzeConfig } from '~/analyze/kernel/types';
 
 type Snapshot = ReturnType<ts.API['updateSnapshot']>;
 
-// Owns one long-lived native compiler session for a project and re-runs tscheck's
+// Owns one long-lived native compiler session for a project and re-runs analyze's
 // whole-project analysis against its incrementally-updated program. The API/snapshot
 // are live IPC handles; call dispose() when the server shuts the project down.
-class TscheckWorkspace {
+class AnalyzeWorkspace {
     private api: ts.API;
     private configPath: string;
     private snapshot: Snapshot | undefined;
 
-    // The parsed tscheck plugin entry, or undefined when the tsconfig opts out of
-    // tscheck. A configless workspace stays inert — analyze() yields nothing.
-    config: TscheckConfig | undefined;
+    // The parsed analyze plugin entry, or undefined when the tsconfig opts out of
+    // analyze. A configless workspace stays inert — analyze() yields nothing.
+    config: AnalyzeConfig | undefined;
 
     constructor(tsconfigPath: string) {
         this.configPath = NodePath.resolve(tsconfigPath);
@@ -75,4 +75,4 @@ class TscheckWorkspace {
     }
 }
 
-export { TscheckWorkspace };
+export { AnalyzeWorkspace };

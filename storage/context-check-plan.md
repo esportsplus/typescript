@@ -1,6 +1,6 @@
-# tscheck `context` channel — Requirements (`R`) for Plain TS
+# analyze `context` channel — Requirements (`R`) for Plain TS
 
-A tscheck channel (see `tscheck-kernel-plan.md`). **Exploratory** — build after
+A analyze channel (see `analyze-kernel-plan.md`). **Exploratory** — build after
 `exceptions` and `resources` prove the kernel; drop it if the noise floor
 disappoints. It is the loosest port of the four, because Effect's `R` is about
 *provision* (DI) and plain TS has no provision mechanism to check against — so
@@ -40,7 +40,7 @@ at entry points.
    touch singletons").
 3. **Impurity markers** — `Date.now`/`new Date()`, `Math.random`, `crypto`
    randomness, locale/TZ-sensitive APIs, via overlay. Informational: powers a
-   `tscheck context --report` purity report (which functions are deterministic)
+   `analyze context --report` purity report (which functions are deterministic)
    — useful for test design and for spotting the nondeterminism that makes
    tests flake — and an optional forbid-glob like singletons.
 
