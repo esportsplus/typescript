@@ -1,12 +1,20 @@
 import * as ts from "~/probe/adapter";
 
-import { channelFor, implementedChannels } from "../channels/registry";
+import { channelFor, implementedChannels } from "../channels";
 import { buildCallGraph } from "./graph";
 import { buildProgram } from "./program";
 import { runChannel } from "./fixpoint";
 import { loadOverlays } from "../overlay/load";
 
-import type { Analysis, Diagnostic, FunctionInfo, AnalyzeConfig } from "./types";
+import type {
+  Analysis,
+  Channel,
+  ChannelConfig,
+  Diagnostic,
+  FunctionInfo,
+  SummaryStore,
+  AnalyzeConfig,
+} from "./types";
 
 export interface AnalyzeResult {
   readonly diagnostics: ReadonlyArray<Diagnostic>;
@@ -62,6 +70,7 @@ export function analyzeProgram(
   const skippedChannels: string[] = [];
   const implemented = new Set(implementedChannels());
 
+  const runnable = new Map<string, { config: ChannelConfig; channel: Channel<unknown> }>();
   for (const [name, channelConfig] of Object.entries(effectiveConfig.channels)) {
     if (!channelConfig.enabled) {
       continue;
@@ -70,13 +79,33 @@ export function analyzeProgram(
       skippedChannels.push(name);
       continue;
     }
-    const channel = channelFor(name)!;
-    const result = runChannel(
-      analysis,
-      channel,
-      channelConfig.dispatch,
-      channelConfig.options,
-    );
+    runnable.set(name, { config: channelConfig, channel: channelFor(name)! });
+  }
+
+  // Order so a channel's declared peer dependencies run first, making their
+  // summaries available; a disabled/unimplemented dependency is simply absent.
+  const ordered: string[] = [];
+  const placed = new Set<string>();
+  const place = (name: string, stack: ReadonlySet<string>): void => {
+    if (placed.has(name) || !runnable.has(name) || stack.has(name)) {
+      return;
+    }
+    const next = new Set(stack).add(name);
+    for (const dep of runnable.get(name)!.channel.dependsOn ?? []) {
+      place(dep, next);
+    }
+    placed.add(name);
+    ordered.push(name);
+  };
+  for (const name of runnable.keys()) {
+    place(name, new Set());
+  }
+
+  const peers = new Map<string, SummaryStore<unknown>>();
+  for (const name of ordered) {
+    const { config, channel } = runnable.get(name)!;
+    const result = runChannel(analysis, channel, config.dispatch, config.options, peers);
+    peers.set(name, result.store);
     diagnostics.push(...result.diagnostics);
   }
 
