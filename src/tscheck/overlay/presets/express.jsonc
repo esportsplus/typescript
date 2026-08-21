@@ -15,7 +15,7 @@
     { "callee": "express.Application#use", "callbackArgs": [0, 1] }
   ],
   "overlay": {
-    "throws": {
+    "exceptions": {
       "express": {
         "Response#json": { "throws": ["TypeError"] },
         "Response#sendFile": { "throws": ["TypeError"] }

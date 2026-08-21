@@ -2,7 +2,7 @@
 // then overlay key. A couple of node:fs / node:path throwers prove the shape.
 {
   "overlay": {
-    "throws": {
+    "exceptions": {
       "node:fs": {
         "readFileSync": { "throws": ["Error"] },
         "writeFileSync": { "throws": ["Error"] },
