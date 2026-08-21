@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import * as root from '~/index';
+import * as ts from '~/ts';
 
 
 describe('index', () => {
-    it('exposes no exported keys', () => {
-        expect(Object.keys(root)).toEqual([]);
+    it('exposes ts and nothing else', () => {
+        expect(Object.keys(root)).toEqual(['ts']);
     });
 
-    it('does not export ts', () => {
-        expect('ts' in root).toBe(false);
+    it('vends the same surface as the ts module', () => {
+        expect(Object.keys(root.ts).sort()).toEqual(Object.keys(ts).sort());
     });
 });

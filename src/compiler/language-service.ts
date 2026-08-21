@@ -27,6 +27,12 @@ type ScratchEntry = {
     snapshot: Snapshot;
 };
 
+type ScratchResult = {
+    checker: Checker;
+    program: Program;
+    sourceFile: SourceFile;
+};
+
 type UpdateResult = {
     checker: Checker;
     program: Program;
@@ -50,6 +56,31 @@ function advance(entry: Entry, changed: string[]): void {
     entry.api.clearSourceFileCache();
     entry.project = resolveProject(snapshot, entry.configFileName);
     entry.snapshot = snapshot;
+}
+
+function advanceScratch(id: string, content: string): ScratchEntry {
+    if (!scratchEntry) {
+        scratchEntry = createScratch(id);
+    }
+    else if (scratchEntry.file !== id) {
+        reseedScratch(scratchEntry, id);
+    }
+
+    let entry = scratchEntry;
+
+    entry.contents.set(id, content);
+
+    let snapshot = entry.api.updateSnapshot({ fileChanges: { changed: [id] } });
+
+    if (!entry.snapshot.isDisposed()) {
+        entry.snapshot.dispose();
+    }
+
+    entry.api.clearSourceFileCache();
+    entry.project = resolveProject(snapshot, entry.config);
+    entry.snapshot = snapshot;
+
+    return entry;
 }
 
 function createEntry(root: string): Entry {
@@ -288,36 +319,19 @@ const invalidate = (root: string, fileName: string): void => {
 };
 
 const parse = (fileName: string, content: string): SourceFile => {
-    let id = normalize(fileName);
+    return scratch(fileName, content).sourceFile;
+};
 
-    if (!scratchEntry) {
-        scratchEntry = createScratch(id);
-    }
-    else if (scratchEntry.file !== id) {
-        reseedScratch(scratchEntry, id);
-    }
-
-    let entry = scratchEntry;
-
-    entry.contents.set(id, content);
-
-    let snapshot = entry.api.updateSnapshot({ fileChanges: { changed: [id] } });
-
-    if (!entry.snapshot.isDisposed()) {
-        entry.snapshot.dispose();
-    }
-
-    entry.api.clearSourceFileCache();
-    entry.project = resolveProject(snapshot, entry.config);
-    entry.snapshot = snapshot;
-
-    let source = entry.project.program.getSourceFile(id);
+const scratch = (fileName: string, content: string): ScratchResult => {
+    let id = normalize(fileName),
+        entry = advanceScratch(id, content),
+        source = entry.project.program.getSourceFile(id);
 
     if (!source) {
         throw new Error(`${PACKAGE_NAME}: failed to parse ${fileName}`);
     }
 
-    return source;
+    return { checker: entry.project.checker, program: entry.project.program, sourceFile: source };
 };
 
 const update = (root: string, fileName: string, content: string): UpdateResult => {
@@ -353,5 +367,6 @@ const update = (root: string, fileName: string, content: string): UpdateResult =
 };
 
 
-export default { dispose, findConfig, invalidate, parse, update };
-export { dispose, findConfig, invalidate, parse, update };
+export default { dispose, findConfig, invalidate, parse, scratch, update };
+export { dispose, findConfig, invalidate, parse, scratch, update };
+export type { ScratchResult, UpdateResult };
