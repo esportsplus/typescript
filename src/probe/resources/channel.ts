@@ -4,6 +4,7 @@ import type {
     CalleeResolution,
     Channel,
     Diagnostic,
+    DiagnosticFix,
     DiagnosticRelated,
     DiagnoseContext,
     Dispatch,
@@ -196,6 +197,22 @@ function isDisposableType(env: Env, type: ts.Type | undefined): boolean {
 
     for (const prop of env.checker.getPropertiesOfType(type)) {
         if (prop.name.startsWith("__@dispose") || prop.name.startsWith("__@asyncDispose")) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Only a *sync* Disposable can convert to a plain `using` (AsyncDisposable needs
+// `await using`), so the quick-fix checks for `Symbol.dispose` specifically.
+function hasSyncDispose(env: Env, type: ts.Type | undefined): boolean {
+    if (!type) {
+        return false;
+    }
+
+    for (const prop of env.checker.getPropertiesOfType(type)) {
+        if (prop.name.startsWith("__@dispose")) {
             return true;
         }
     }
@@ -741,12 +758,62 @@ function relatedPath(ctx: DiagnoseContext<ResourcesValue>): DiagnosticRelated[] 
     return related;
 }
 
-function leakDiagnostic(ctx: DiagnoseContext<ResourcesValue>, node: ts.Node, acq: Acquire, why: string): Diagnostic {
+// Replace a `const`/`let` keyword with `using` for a sync-Disposable acquire. The
+// source-text check guards against a flag/source mismatch (no fix offered then).
+function usingFix(env: Env, call: ts.CallExpression | ts.NewExpression): DiagnosticFix | undefined {
+    if (!hasSyncDispose(env, env.checker.getTypeAtLocation(call))) {
+        return undefined;
+    }
+
+    let p: ts.Node = call;
+
+    while (
+        p.parent &&
+        (ts.isParenthesizedExpression(p.parent) ||
+            ts.isNonNullExpression(p.parent) ||
+            ts.isAsExpression(p.parent) ||
+            ts.isAwaitExpression(p.parent))
+    ) {
+        p = p.parent;
+    }
+
+    const decl = p.parent;
+
+    if (!decl || !ts.isVariableDeclaration(decl)) {
+        return undefined;
+    }
+
+    const list = decl.parent;
+
+    if (!list || !ts.isVariableDeclarationList(list) || (list.flags & ts.NodeFlags.Using) !== 0) {
+        return undefined;
+    }
+
+    const sf = call.getSourceFile();
+    const start = list.getStart(sf);
+    const keyword =
+        (list.flags & ts.NodeFlags.Let) !== 0 ? "let" : (list.flags & ts.NodeFlags.Const) !== 0 ? "const" : undefined;
+
+    if (!keyword || sf.text.slice(start, start + keyword.length) !== keyword) {
+        return undefined;
+    }
+
+    return { title: "Convert to `using`", edits: [{ fileName: sf.fileName, pos: start, end: start + keyword.length, newText: "using" }] };
+}
+
+function leakDiagnostic(
+    ctx: DiagnoseContext<ResourcesValue>,
+    node: ts.Node,
+    acq: Acquire,
+    why: string,
+    fixes?: ReadonlyArray<DiagnosticFix>,
+): Diagnostic {
     return {
         channel: "resources",
         message: `\`${acq.label}\` resource can leak — ${why}`,
         location: locationOf(node, node.getSourceFile()),
         related: relatedPath(ctx),
+        fixes,
     };
 }
 
@@ -917,7 +984,8 @@ function diagnoseAcquire(
         const outcome = handleOutcome(env, acq, binding.sym, declStmt, block, body);
 
         if (outcome === "leak") {
-            out.push(leakDiagnostic(ctx, call, acq, "no release, transfer, or `using` on every path"));
+            const fix = usingFix(env, call);
+            out.push(leakDiagnostic(ctx, call, acq, "no release, transfer, or `using` on every path", fix ? [fix] : undefined));
         }
         else if (outcome === "degrade") {
             env.logDegrade(`${acq.label} at ${env.fn.fileName}:${call.getStart()} flows to an opaque sink`);

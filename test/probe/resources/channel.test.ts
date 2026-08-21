@@ -222,6 +222,23 @@ describe("resources channel — R1", () => {
         expect(diags).toHaveLength(0);
     });
 
+    it("offers a `using` quick-fix on a leaked sync Disposable", () => {
+        const diags = analyzeFixture({
+            "index.ts": [
+                MAKE_RESOURCE,
+                "export function withoutUsing() {",
+                "    const r = makeResource();",
+                "    r.valueOf();",
+                "}",
+            ].join("\n"),
+        });
+
+        expect(diags).toHaveLength(1);
+        const fix = diags[0]!.fixes?.find((f) => f.title.includes("using"));
+        expect(fix).toBeDefined();
+        expect(fix!.edits[0]!.newText).toBe("using");
+    });
+
     it("with exceptions enabled, a throwing helper leaks while a pure one stays safe", () => {
         const diags = analyzeFixture(
             {
