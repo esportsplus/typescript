@@ -310,6 +310,7 @@ function readFile(file: string): { name: string; text: string } {
 
 export function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
   const files: Array<{ name: string; text: string }> = [];
+  files.push(readFile(NodePath.join(HERE, "base", "async.jsonc")));
   files.push(readFile(NodePath.join(HERE, "base", "exceptions.jsonc")));
   for (const preset of config.presets) {
     const presetPath = NodePath.join(HERE, "presets", `${preset}.jsonc`);
