@@ -35,6 +35,15 @@
                 "open": { "acquires": "FileHandle", "releasedBy": "#close" }
             },
 
+            "node:fs": {
+                "createReadStream": { "acquires": "ReadStream", "releasedBy": "#destroy" },
+                "createWriteStream": { "acquires": "WriteStream", "releasedBy": "#destroy" }
+            },
+
+            "node:worker_threads": {
+                "Worker": { "acquires": "Worker", "releasedBy": "#terminate" }
+            },
+
             "node:net": {
                 "Socket": { "acquires": "Socket", "releasedBy": "#destroy" },
                 "Server#listen": { "acquires": "Server", "releasedBy": "#close" }

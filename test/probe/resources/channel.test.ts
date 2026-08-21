@@ -239,6 +239,62 @@ describe("resources channel — R1", () => {
         expect(fix!.edits[0]!.newText).toBe("using");
     });
 
+    it("offers a try/finally quick-fix that wraps the region and releases the handle", () => {
+        const diags = analyzeFixture({
+            "index.ts": [
+                "declare function work(): void;",
+                "export function poll() {",
+                "    const h = setInterval(() => {}, 1000);",
+                "    work();",
+                "}",
+            ].join("\n"),
+        });
+
+        expect(diags).toHaveLength(1);
+        const fix = diags[0]!.fixes?.find((f) => f.title.includes("try/finally"));
+        expect(fix).toBeDefined();
+        expect(fix!.edits[0]!.newText).toBe(
+            ["    try {", "        work();", "    }", "    finally {", "        clearInterval(h);", "    }"].join("\n"),
+        );
+    });
+
+    it("tracks an acquire inside a loop body: released in-iteration is safe", () => {
+        const diags = analyzeFixture({
+            "index.ts": [
+                "export function run(items: string[]) {",
+                "    for (let i = 0, n = items.length; i < n; i++) {",
+                "        const h = setInterval(() => {}, 1000);",
+                "        clearInterval(h);",
+                "    }",
+                "}",
+            ].join("\n"),
+        });
+
+        expect(diags).toHaveLength(0);
+    });
+
+    it("leaks an acquire in a loop when a throwing await bypasses the in-loop release", () => {
+        const diags = analyzeFixture(
+            {
+                "index.ts": [
+                    "export async function boom() {",
+                    "    throw new Error('x');",
+                    "}",
+                    "export async function run(items: string[]) {",
+                    "    for (let i = 0, n = items.length; i < n; i++) {",
+                    "        const h = setInterval(() => {}, 1000);",
+                    "        await boom();",
+                    "        clearInterval(h);",
+                    "    }",
+                    "}",
+                ].join("\n"),
+            },
+            { exceptions: true },
+        ).filter((d) => d.channel === "resources");
+
+        expect(diags).toHaveLength(1);
+    });
+
     it("with exceptions enabled, a throwing helper leaks while a pure one stays safe", () => {
         const diags = analyzeFixture(
             {
