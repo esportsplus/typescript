@@ -1,0 +1,6 @@
+# Approve dependency build scripts (pnpm errors on unapproved ones during install/publish) and trust
+# our own scope so freshly published first-party deps bypass the minimumReleaseAge gate.
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@esportsplus/*'

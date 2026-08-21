@@ -344,6 +344,23 @@ describe('coordinator.transform', () => {
         expect(result.code).not.toMatch(/import\s*\{[^}]*reactive[^}]*\}\s*from\s*'my-pkg'/);
     });
 
+    it('preserves a type-only import when rewriting a package\'s imports', () => {
+        let code = "import { html } from 'my-pkg';\nimport type { Renderable } from 'my-pkg';\nlet x = 1;",
+            file = parse(code),
+            program = makeProgram(file),
+            plugin = makePlugin(() => ({
+                imports: [{ namespace: 'NS', package: 'my-pkg', remove: ['html'] }]
+            })),
+            result = coordinator.transform([plugin], code, file, program, '/root', new Map());
+
+        expect(result.changed).toBe(true);
+        expect(result.code).toContain("import * as NS from 'my-pkg';");
+        // Renderable must stay type-only (import type { ... } or inline `type Renderable`) so it is
+        // erased at runtime — a runtime `import { Renderable }` fails when it has no runtime export.
+        expect(result.code).toMatch(/import\s+type\s*\{[^}]*Renderable|import\s*\{[^}]*type\s+Renderable/);
+        expect(result.code).not.toMatch(/import\s*\{\s*Renderable\s*\}\s*from\s*'my-pkg'/);
+    });
+
     // F-TEST-003: Import manipulation integration tests
 
     it('adds specifiers to existing import', () => {
