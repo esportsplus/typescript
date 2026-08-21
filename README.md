@@ -144,7 +144,7 @@ tsc   # compiles, resolves aliases, then reports analyze findings
 
 ### Editor (LSP)
 
-The package ships a standalone language server (`esportsplus-tsc-lsp` bin, or the `@esportsplus/typescript/lsp` export) that publishes analyze findings over LSP. A client spawns it beside the native TypeScript server and merges both diagnostic streams; `severity` drives the squiggle color. Analysis runs against saved files on open and save. Beyond diagnostics it serves **hovers** (the finding plus its origin→boundary chain) and **quick-fixes** — `void`/`await` an orphaned promise, or convert a leaked sync `Disposable` to `using`.
+The package ships a standalone language server (`esportsplus-tsc-lsp` bin, or the `@esportsplus/typescript/lsp` export) that publishes analyze findings over LSP. A client spawns it beside the native TypeScript server and merges both diagnostic streams; `severity` drives the squiggle color. Analysis runs against saved files on open and save. Beyond diagnostics it serves **hovers** (the finding plus its origin→boundary chain) and **quick-fixes** — `void`/`await` an orphaned promise, forward an `AbortSignal`, or fix a leaked handle by converting it to `using` or wrapping the region in `try/finally`.
 
 ```typescript
 import { startServer } from '@esportsplus/typescript/lsp';
