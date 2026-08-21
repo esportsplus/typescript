@@ -1,6 +1,6 @@
 // Adapter that presents the native TypeScript 7 `unstable` modules under the
-// classic `ts.*` surface tscheck was written against. tscheck files import this
-// as `import * as ts from "~/tscheck/adapter"`.
+// classic `ts.*` surface analyze was written against. analyze files import this
+// as `import * as ts from "~/analyze/adapter"`.
 export * from 'typescript/unstable/ast';
 export * from 'typescript/unstable/ast/is';
 export * from 'typescript/unstable/sync';

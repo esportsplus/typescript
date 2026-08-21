@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { DiagnosticSeverity, groupByFile } from './diagnostics';
-import { TscheckWorkspace } from './workspace';
+import { AnalyzeWorkspace } from './workspace';
 
 import type { Connection } from 'vscode-languageserver/node';
 import type { DocumentResolver } from './diagnostics';
@@ -32,15 +32,15 @@ function rootFromInitialize(params: { rootUri?: string | null; workspaceFolders?
     return folder ? fileURLToPath(folder) : undefined;
 }
 
-// Wire a tscheck language server onto a JSON-RPC connection. The native compiler
-// serves standard TypeScript features; this server publishes only tscheck's
+// Wire an analyze language server onto a JSON-RPC connection. The native compiler
+// serves standard TypeScript features; this server publishes only analyze's
 // throw-safety diagnostics, so a client attaches it alongside the native LSP.
 function createServer(connection: Connection): void {
     let documents = new TextDocuments(TextDocument),
         pending = new Set<string>(),
         published = new Set<string>(),
         timer: ReturnType<typeof setTimeout> | undefined,
-        workspace: TscheckWorkspace | undefined;
+        workspace: AnalyzeWorkspace | undefined;
 
     // The native API reads files from disk, so unsaved buffers are not reflected;
     // analysis runs on open and on save against the last-saved project state.
@@ -59,7 +59,7 @@ function createServer(connection: Connection): void {
             workspace.refresh(changed);
         }
         catch (error) {
-            connection.console.error(`tscheck: snapshot refresh failed — ${(error as Error).message}`);
+            connection.console.error(`analyze: snapshot refresh failed — ${(error as Error).message}`);
             return;
         }
 
@@ -111,7 +111,7 @@ function createServer(connection: Connection): void {
             let tsconfig = findTsconfig(root);
 
             if (tsconfig) {
-                workspace = new TscheckWorkspace(tsconfig);
+                workspace = new AnalyzeWorkspace(tsconfig);
             }
         }
 
@@ -145,7 +145,7 @@ function createServer(connection: Connection): void {
     connection.listen();
 }
 
-// Start a stdio-based tscheck language server. Clients (the T3 Code file viewer,
+// Start a stdio-based analyze language server. Clients (the T3 Code file viewer,
 // or any LSP host) spawn this and connect it beside the native TypeScript server.
 function startServer(): void {
     createServer(createConnection(ProposedFeatures.all, new StreamMessageReader(process.stdin), new StreamMessageWriter(process.stdout)));

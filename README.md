@@ -18,7 +18,7 @@ Extends the TypeScript compiler with a plugin architecture for custom AST transf
 - Vite plugin for dev/build integration
 - CLI wrapper for `tsc` with automatic plugin detection
 - Language service caching for incremental compilation
-- `tscheck` throw-safety analysis on the `tsc` passthrough and over LSP
+- `analyze` throw-safety analysis on the `tsc` passthrough and over LSP
 
 ## Usage
 
@@ -75,20 +75,20 @@ tsc
 
 The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them, runs coordinated compilation, and automatically calls `tsc-alias` afterward. The package installs `tsc`/`tsc-alias` bins (also under the unambiguous `esportsplus-tsc`/`esportsplus-tsc-alias` names).
 
-## tscheck
+## analyze
 
-`tscheck` is a static analyzer that flags calls which may throw with no `catch` on the path to a handler boundary. It runs a per-function summary fixpoint over the call graph, so a finding points at the *consumer* — the call site where a caller should be careful — and carries the throw origin as related information. It rides the `tsc` passthrough (build/CI), and ships an LSP server so editors can render the same findings.
+`analyze` is a static analyzer that flags calls which may throw with no `catch` on the path to a handler boundary. It runs a per-function summary fixpoint over the call graph, so a finding points at the *consumer* — the call site where a caller should be careful — and carries the throw origin as related information. It rides the `tsc` passthrough (build/CI), and ships an LSP server so editors can render the same findings.
 
 ### Enable
 
-Add a `tscheck` entry to `compilerOptions.plugins`. Analysis covers every file the tsconfig includes (ignoring excludes); no config beyond the entry is required.
+Add an `analyze` entry to `compilerOptions.plugins`. Analysis covers every file the tsconfig includes (ignoring excludes); no config beyond the entry is required.
 
 ```jsonc
 {
     "compilerOptions": {
         "plugins": [
             {
-                "name": "tscheck",
+                "name": "analyze",
                 // Editor squiggle color; "warn" opts down. CLI/build ignore this.
                 "severity": "error",
                 // Fail the tsc/build run when there are findings.
@@ -114,15 +114,15 @@ Add a `tscheck` entry to `compilerOptions.plugins`. Analysis covers every file t
 
 ### CLI / build
 
-The `tsc` passthrough runs tscheck after a successful compile and prints findings to stderr. With `failOnFindings: true`, a run with findings exits non-zero — drop it into CI as a gate.
+The `tsc` passthrough runs analyze after a successful compile and prints findings to stderr. With `failOnFindings: true`, a run with findings exits non-zero — drop it into CI as a gate.
 
 ```bash
-tsc   # compiles, resolves aliases, then reports tscheck findings
+tsc   # compiles, resolves aliases, then reports analyze findings
 ```
 
 ### Editor (LSP)
 
-The package ships a standalone language server (`esportsplus-tsc-lsp` bin, or the `@esportsplus/typescript/lsp` export) that publishes tscheck findings over LSP. A client spawns it beside the native TypeScript server and merges both diagnostic streams; `severity` drives the squiggle color. Analysis runs against saved files on open and save.
+The package ships a standalone language server (`esportsplus-tsc-lsp` bin, or the `@esportsplus/typescript/lsp` export) that publishes analyze findings over LSP. A client spawns it beside the native TypeScript server and merges both diagnostic streams; `severity` drives the squiggle color. Analysis runs against saved files on open and save.
 
 ```typescript
 import { startServer } from '@esportsplus/typescript/lsp';
@@ -151,9 +151,9 @@ No exports. Import the TypeScript compiler API directly from `typescript/unstabl
 
 | Export | Description |
 |---|---|
-| `startServer` | Start the stdio tscheck LSP server |
+| `startServer` | Start the stdio analyze LSP server |
 | `createServer` | Wire the server onto an existing JSON-RPC connection |
-| `TscheckWorkspace` | Long-lived native session that re-runs tscheck analysis |
+| `AnalyzeWorkspace` | Long-lived native session that re-runs the analysis |
 
 ### Types
 

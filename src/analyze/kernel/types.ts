@@ -1,4 +1,4 @@
-import type * as ts from "~/tscheck/adapter";
+import type * as ts from "~/analyze/adapter";
 
 // ---------------------------------------------------------------------------
 // Function identity
@@ -189,7 +189,7 @@ export interface ChannelConfig {
   readonly options: unknown;
 }
 
-export interface TscheckConfig {
+export interface AnalyzeConfig {
   readonly projectRoot: string;
   readonly tsconfigPath: string;
   readonly entryPoints: ReadonlyArray<string>;
@@ -251,7 +251,7 @@ export interface SummaryStore<V> {
 export interface Analysis {
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
-  readonly config: TscheckConfig;
+  readonly config: AnalyzeConfig;
   readonly overlays: OverlaySet;
   readonly graph: CallGraph;
 }

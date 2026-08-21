@@ -12,9 +12,9 @@ import fs from 'fs';
 import languageService from '~/compiler/language-service';
 import path from 'path';
 import sourcemap from '~/compiler/sourcemap';
-import { analyze } from '~/tscheck/kernel/analyze';
-import { formatDiagnostics } from '~/tscheck/kernel/format';
-import { loadConfigFromTsconfig } from '~/tscheck/kernel/config';
+import { analyze } from '~/analyze/kernel/analyze';
+import { formatDiagnostics } from '~/analyze/kernel/format';
+import { loadConfigFromTsconfig } from '~/analyze/kernel/config';
 
 
 type PluginConfig = {
@@ -406,11 +406,11 @@ function main(): void {
 
     let flags = classifyFlags(process.argv.slice(2));
 
-    // Run tscheck for any project whose tsconfig carries a `tscheck` plugin entry,
+    // Run analyze for any project whose tsconfig carries a `analyze` plugin entry,
     // on every real (non-informational, non-watch) tsc invocation. Findings are
     // printed but do not fail the build — the compiler's own result stands.
     if (!flags.informational && !flags.watch) {
-        runTscheck(tsconfig);
+        runAnalyze(tsconfig);
     }
 
     let pluginConfigs = resolvePluginConfigs(tsconfig);
@@ -442,14 +442,14 @@ function normalizePath(fileName: string): string {
     return path.resolve(fileName).replace(BACKSLASH_REGEX, '/');
 }
 
-function runTscheck(tsconfig: string): void {
+function runAnalyze(tsconfig: string): void {
     let config;
 
     try {
         config = loadConfigFromTsconfig(tsconfig);
     }
     catch (error) {
-        console.error(`${PACKAGE_NAME}: tscheck config error: ${error instanceof Error ? error.message : String(error)}`);
+        console.error(`${PACKAGE_NAME}: analyze config error: ${error instanceof Error ? error.message : String(error)}`);
 
         return;
     }
@@ -470,7 +470,7 @@ function runTscheck(tsconfig: string): void {
         }
     }
     catch (error) {
-        console.error(`${PACKAGE_NAME}: tscheck failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.error(`${PACKAGE_NAME}: analyze failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 

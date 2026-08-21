@@ -1,4 +1,4 @@
-import * as ts from "~/tscheck/adapter";
+import * as ts from "~/analyze/adapter";
 
 import type { FunctionInfo, FunctionLike, SourceLocation } from "./types";
 

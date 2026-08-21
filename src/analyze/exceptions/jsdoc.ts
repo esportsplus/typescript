@@ -1,4 +1,4 @@
-import * as ts from "~/tscheck/adapter";
+import * as ts from "~/analyze/adapter";
 
 import type { FunctionLike } from "../kernel/types";
 import { bottom, join, single, top, TOP_KEY, typeRef, type ExceptionsValue } from "./value";
