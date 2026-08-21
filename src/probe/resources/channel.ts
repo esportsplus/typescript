@@ -950,7 +950,9 @@ function diagnoseClassFields(env: Env, ctx: DiagnoseContext<ResourcesValue>, out
 // recognises as safe. When cross-channel summary sharing lands, replace the
 // `isCallLike` test in `firstGuaranteed` with an exceptions-summary throw query.
 export const createResourcesChannel = (
-    onDegrade: (message: string) => void = (message) => console.error(`resources: degradation: ${message}`),
+    // Silent by default: degradation is surfaced as a pessimist-mode diagnostic.
+    // Callers that want to measure the v1 tracking noise floor inject a logger.
+    onDegrade: (message: string) => void = () => {},
 ): Channel<ResourcesValue> => {
     return {
         name: "resources",
