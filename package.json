@@ -65,5 +65,5 @@
     },
     "type": "module",
     "types": "build/index.d.ts",
-    "version": "0.29.6"
+    "version": "0.30.0"
 }
