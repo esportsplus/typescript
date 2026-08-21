@@ -200,6 +200,9 @@ export interface TscheckConfig {
   readonly channels: Readonly<Record<string, ChannelConfig>>;
   // CLI/build gate: when true, a run with findings exits nonzero.
   readonly failOnFindings: boolean;
+  // Editor squiggle severity. Findings surface as errors unless the tsconfig
+  // plugin entry opts down with "severity": "warn". Ignored by the CLI gate.
+  readonly severity: "error" | "warning";
 }
 
 // ---------------------------------------------------------------------------

@@ -30,6 +30,7 @@ interface RawConfig {
   overlays?: unknown;
   channels?: unknown;
   failOnFindings?: unknown;
+  severity?: unknown;
 }
 
 function fail(message: string): never {
@@ -217,6 +218,7 @@ function normalizeConfig(raw: RawConfig, projectRoot: string): TscheckConfig {
     ),
     channels: parseChannels(raw.channels),
     failOnFindings: raw.failOnFindings === true,
+    severity: raw.severity === "warn" || raw.severity === "warning" ? "warning" : "error",
   };
 }
 
