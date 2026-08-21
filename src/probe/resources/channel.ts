@@ -801,6 +801,75 @@ function usingFix(env: Env, call: ts.CallExpression | ts.NewExpression): Diagnos
     return { title: "Convert to `using`", edits: [{ fileName: sf.fileName, pos: start, end: start + keyword.length, newText: "using" }] };
 }
 
+// The release call to synthesize for a leaked handle: a free releaser takes the
+// binding as its argument, a `#method` releaser is called on it, and a bare sync
+// Disposable is disposed. Unknown/async release yields no text (no fix).
+function releaseText(env: Env, acq: Acquire, name: string, call: ts.CallExpression | ts.NewExpression): string | undefined {
+    if (acq.releasedBy) {
+        return acq.releasedBy.startsWith("#") ? `${name}.${acq.releasedBy.slice(1)}()` : `${acq.releasedBy}(${name})`;
+    }
+
+    if (hasSyncDispose(env, env.checker.getTypeAtLocation(call))) {
+        return `${name}[Symbol.dispose]()`;
+    }
+
+    return undefined;
+}
+
+// Wrap the statements after the acquire (to the end of its block) in try/finally
+// with the synthesized release. Text-generating, so it is offered only when the
+// release is known and there is a region to guard; indentation follows the acquire.
+function tryFinallyFix(
+    env: Env,
+    acq: Acquire,
+    sym: ts.Symbol,
+    declStmt: ts.Node,
+    block: ts.Block,
+    call: ts.CallExpression | ts.NewExpression,
+): DiagnosticFix | undefined {
+    const release = releaseText(env, acq, sym.name, call);
+
+    if (!release) {
+        return undefined;
+    }
+
+    const stmts = block.statements;
+    const idx = stmts.findIndex((s) => s === declStmt);
+
+    if (idx < 0 || idx + 1 >= stmts.length) {
+        return undefined;
+    }
+
+    const sf = call.getSourceFile();
+    const text = sf.text;
+    const first = stmts[idx + 1]!;
+    const last = stmts[stmts.length - 1]!;
+    const declStart = declStmt.getStart(sf);
+
+    let lineStart = first.getStart(sf);
+    let declLineStart = declStart;
+
+    while (lineStart > 0 && text[lineStart - 1] !== "\n") {
+        lineStart -= 1;
+    }
+
+    while (declLineStart > 0 && text[declLineStart - 1] !== "\n") {
+        declLineStart -= 1;
+    }
+
+    const base = text.slice(declLineStart, declStart);
+    const unit = "    ";
+    const regionEnd = last.getEnd();
+    const region = text
+        .slice(lineStart, regionEnd)
+        .split("\n")
+        .map((line) => (line.length > 0 ? unit + line : line))
+        .join("\n");
+    const replacement = `${base}try {\n${region}\n${base}}\n${base}finally {\n${base}${unit}${release};\n${base}}`;
+
+    return { title: "Wrap in try/finally", edits: [{ fileName: sf.fileName, pos: lineStart, end: regionEnd, newText: replacement }] };
+}
+
 function leakDiagnostic(
     ctx: DiagnoseContext<ResourcesValue>,
     node: ts.Node,
@@ -984,8 +1053,19 @@ function diagnoseAcquire(
         const outcome = handleOutcome(env, acq, binding.sym, declStmt, block, body);
 
         if (outcome === "leak") {
-            const fix = usingFix(env, call);
-            out.push(leakDiagnostic(ctx, call, acq, "no release, transfer, or `using` on every path", fix ? [fix] : undefined));
+            const fixes: DiagnosticFix[] = [];
+            const asUsing = usingFix(env, call);
+            const wrapped = tryFinallyFix(env, acq, binding.sym, declStmt, block, call);
+
+            if (asUsing) {
+                fixes.push(asUsing);
+            }
+
+            if (wrapped) {
+                fixes.push(wrapped);
+            }
+
+            out.push(leakDiagnostic(ctx, call, acq, "no release, transfer, or `using` on every path", fixes.length > 0 ? fixes : undefined));
         }
         else if (outcome === "degrade") {
             env.logDegrade(`${acq.label} at ${env.fn.fileName}:${call.getStart()} flows to an opaque sink`);

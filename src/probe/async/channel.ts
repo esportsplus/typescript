@@ -457,9 +457,20 @@ function heldSignalNames(checker: ts.TypeChecker, node: FunctionLike): Set<strin
     return out;
 }
 
-function isCancellableCall(env: Env, call: ts.CallExpression): boolean {
+function overlayCancellable(env: Env, call: ts.CallExpression): boolean {
     const entry = env.resolveCall(call).overlay?.entry as { cancellable?: unknown } | undefined;
     return entry?.cancellable === true;
+}
+
+// A call whose callee wants an AbortSignal: an overlay-marked cancellable leaf,
+// or an app function that itself declares an AbortSignal parameter. The latter is
+// wrapper inheritance — a wrapper that accepts a signal to forward propagates the
+// requirement to its own callers.
+function callRequiresSignal(env: Env, call: ts.CallExpression): boolean {
+    if (overlayCancellable(env, call)) {
+        return true;
+    }
+    return env.resolveCall(call).targets.some((t) => heldSignalNames(env.checker, t.node).size > 0);
 }
 
 // Whether `call`'s result is directly awaited (through parens/casts).
@@ -542,12 +553,44 @@ function fanOutDiagnostic(call: ts.CallExpression, aggregator: string): Diagnost
     };
 }
 
-function cancellationDiagnostic(call: ts.CallExpression): Diagnostic {
+// "Forward the signal" is only a safe generic edit for an overlay-cancellable
+// call, whose signal rides an options object (`fetch(url, { signal })`). An app
+// callee takes the signal positionally, so no generic edit is offered there.
+function signalFix(env: Env, call: ts.CallExpression): ReadonlyArray<DiagnosticFix> | undefined {
+    if (!overlayCancellable(env, call)) {
+        return undefined;
+    }
+
+    const name: string | undefined = env.held.values().next().value;
+
+    if (!name) {
+        return undefined;
+    }
+
+    const sf = call.getSourceFile();
+    const prop = name === "signal" ? "signal" : `signal: ${name}`;
+    const last = call.arguments.length > 0 ? call.arguments[call.arguments.length - 1] : undefined;
+
+    if (last && ts.isObjectLiteralExpression(last)) {
+        const at = last.getStart(sf) + 1;
+        const newText = last.properties.length > 0 ? ` ${prop},` : ` ${prop} `;
+
+        return [{ title: "Forward the AbortSignal", edits: [{ fileName: sf.fileName, pos: at, end: at, newText }] }];
+    }
+
+    const close = call.getEnd() - 1;
+    const newText = call.arguments.length > 0 ? `, { ${prop} }` : `{ ${prop} }`;
+
+    return [{ title: "Forward the AbortSignal", edits: [{ fileName: sf.fileName, pos: close, end: close, newText }] }];
+}
+
+function cancellationDiagnostic(call: ts.CallExpression, fixes: ReadonlyArray<DiagnosticFix> | undefined): Diagnostic {
     return {
         channel: "async",
         message: `\`${calleeText(call)}()\` is awaited without the AbortSignal this function holds — the work cannot be cancelled`,
         location: locationOf(call, call.getSourceFile()),
         related: [],
+        fixes,
     };
 }
 
@@ -583,11 +626,11 @@ function checkOwnership(env: Env, call: ts.CallExpression | ts.NewExpression, ou
 // A cancellable callee awaited without forwarding a signal the function holds
 // leaves uncancellable work; a function holding no signal is never flagged.
 function checkCancellation(env: Env, call: ts.CallExpression, out: Diagnostic[]): void {
-    if (env.held.size === 0 || !isCancellableCall(env, call) || !isAwaited(call)) {
+    if (env.held.size === 0 || !callRequiresSignal(env, call) || !isAwaited(call)) {
         return;
     }
     if (!forwardsSignal(call, env.held)) {
-        out.push(cancellationDiagnostic(call));
+        out.push(cancellationDiagnostic(call, signalFix(env, call)));
     }
 }
 
