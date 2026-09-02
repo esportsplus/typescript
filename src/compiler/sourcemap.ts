@@ -213,6 +213,27 @@ function resolveOffset(mapping: PositionMapping, offset: number): number {
     return result;
 }
 
+function resolveOffsets(mapping: PositionMapping): (offset: number) => number {
+    const cursors = mapping.generations.map(() => 0);
+    return (offset) => {
+        let result = offset;
+        for (let i = mapping.generations.length - 1; i >= 0; i--) {
+            const anchors = mapping.generations[i];
+            while (
+                cursors[i] + 1 < anchors.length &&
+                result >= anchors[cursors[i] + 1].afterStart
+            ) {
+                cursors[i] += 1;
+            }
+            const anchor = anchors[cursors[i]];
+            result = anchor.identity
+                ? anchor.beforeStart + (result - anchor.afterStart)
+                : anchor.beforeStart;
+        }
+        return result;
+    };
+}
+
 function segmentAt(starts: number[], offset: number, genColumn: number): Segment {
     let position = offsetToLineCol(starts, offset);
 
@@ -378,12 +399,13 @@ const originalPositionFor = (mapping: PositionMapping, transformedText: string, 
 // so a segment lands at every character-class transition — the granularity those queries arrive at.
 const toSourceMapV3 = (mapping: PositionMapping, transformedText: string, originalText: string, source: string): SourceMapV3 => {
     let oStarts = lineStarts(originalText),
+        resolve = resolveOffsets(mapping),
         segments: Segment[][] = [],
         tStarts = lineStarts(transformedText);
 
     for (let line = 0, n = tStarts.length; line < n; line++) {
         let end = line + 1 < n ? tStarts[line + 1] - 1 : transformedText.length,
-            previous = resolveOffset(mapping, tStarts[line]),
+            previous = resolve(tStarts[line]),
             start = tStarts[line];
 
         let row: Segment[] = [segmentAt(oStarts, previous, 0)];
@@ -395,7 +417,7 @@ const toSourceMapV3 = (mapping: PositionMapping, transformedText: string, origin
                 continue;
             }
 
-            let resolved = resolveOffset(mapping, offset);
+            let resolved = resolve(offset);
 
             if (resolved === previous) {
                 continue;
