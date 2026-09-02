@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
 import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runTscAlias } from '~/cli/tsc';
 import { flatten, format } from '~/cli/diagnostics';
+import sourcemap from '~/compiler/sourcemap';
 
 import fs from 'fs';
 import os from 'os';
@@ -623,5 +624,29 @@ describe('diagnostics', () => {
         expect(clean).toContain('source.ts:2:7');
         expect(clean).toContain('const bad = 2;');
         expect(clean).toContain('~~~');
+    });
+
+    it('maps a transformed diagnostic back to the original source location', () => {
+        let source = 'const value: string = 1;\n',
+            prefix = 'const generatedA = 1;\nconst generatedB = 2;\n',
+            sourcePath = path.join(tmpDir, 'source.ts'),
+            pos = prefix.length + source.indexOf('1'),
+            mapping = sourcemap.buildGeneration(source, [{ end: 0, newText: prefix, start: 0 }]),
+            diagnostic: Diagnostic = {
+                category: DiagnosticCategory.Error,
+                code: 2322,
+                end: pos + 1,
+                fileName: sourcePath,
+                pos,
+                text: 'Type number is not assignable to type string.'
+            };
+
+        fs.writeFileSync(sourcePath, source);
+
+        let transformed = new Map([[sourcePath.replace(/\\/g, '/'), { code: prefix + source, mapping: { generations: [mapping] } }]]),
+            clean = format([diagnostic], tmpDir, transformed).replace(/\x1b\[[0-9;]*m/g, '');
+
+        expect(clean).toContain('source.ts:1:23');
+        expect(clean).toContain('const value: string = 1;');
     });
 });

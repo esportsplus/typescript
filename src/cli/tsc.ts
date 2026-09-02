@@ -118,7 +118,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     ];
 
     if (diagnostics.length > 0) {
-        console.error(format(diagnostics, root));
+        console.error(format(diagnostics, root, transformedFiles));
     }
 
     if (diagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {

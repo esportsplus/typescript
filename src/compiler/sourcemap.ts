@@ -412,6 +412,6 @@ const toSourceMapV3 = (mapping: PositionMapping, transformedText: string, origin
 };
 
 
-export default { buildGeneration, composeEmittedMap, decode, encode, originalPositionFor, toSourceMapV3 };
-export { buildGeneration, composeEmittedMap, decode, encode, originalPositionFor, toSourceMapV3 };
+export default { buildGeneration, composeEmittedMap, decode, encode, originalPositionFor, resolveOffset, toSourceMapV3 };
+export { buildGeneration, composeEmittedMap, decode, encode, originalPositionFor, resolveOffset, toSourceMapV3 };
 export type { Edit, OffsetAnchor, PositionMapping, Segment, SourceMapV3 };

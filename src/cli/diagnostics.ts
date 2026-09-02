@@ -1,8 +1,10 @@
 import { readFileSync } from 'fs';
 import { computeLineStarts } from 'typescript/unstable/ast/scanner';
 import { type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
+import type { PositionMapping } from '~/compiler/sourcemap';
 
 import path from 'path';
+import { resolveOffset } from '~/compiler/sourcemap';
 
 
 const ANSI_BLUE = '\x1b[94m';
@@ -54,7 +56,7 @@ function categoryLabel(category: DiagnosticCategory): string {
     }
 }
 
-function formatOne(diagnostic: Diagnostic, root: string): string {
+function formatOne(diagnostic: Diagnostic, root: string, transformed?: Map<string, { code: string; mapping: PositionMapping }>): string {
     let category = categoryLabel(diagnostic.category),
         code = `${ANSI_GREY}TS${diagnostic.code}${ANSI_RESET}`,
         color = categoryColor(diagnostic.category),
@@ -65,6 +67,9 @@ function formatOne(diagnostic: Diagnostic, root: string): string {
     }
 
     let location = `${ANSI_CYAN}${path.relative(root, diagnostic.fileName).replace(BACKSLASH_REGEX, '/')}${ANSI_RESET}`,
+        entry = transformed?.get(diagnostic.fileName.replace(BACKSLASH_REGEX, '/')),
+        end = entry ? resolveOffset(entry.mapping, diagnostic.end) : diagnostic.end,
+        pos = entry ? resolveOffset(entry.mapping, diagnostic.pos) : diagnostic.pos,
         text = readSource(diagnostic.fileName);
 
     if (text === undefined) {
@@ -72,11 +77,11 @@ function formatOne(diagnostic: Diagnostic, root: string): string {
     }
 
     let lineStarts = computeLineStarts(text),
-        line = lineOfPosition(lineStarts, diagnostic.pos),
-        character = diagnostic.pos - lineStarts[line],
+        line = lineOfPosition(lineStarts, pos),
+        character = pos - lineStarts[line],
         lineEnd = line + 1 < lineStarts.length ? lineStarts[line + 1] : text.length,
         source = text.slice(lineStarts[line], lineEnd).replace(TRAILING_NEWLINE_REGEX, ''),
-        width = Math.max(1, Math.min(diagnostic.end, lineEnd) - diagnostic.pos),
+        width = Math.max(1, Math.min(end, lineEnd) - pos),
         underline = `${' '.repeat(character)}${color}${'~'.repeat(width)}${ANSI_RESET}`,
         header = `${location}:${ANSI_YELLOW}${line + 1}${ANSI_RESET}:${ANSI_YELLOW}${character + 1}${ANSI_RESET} - ${color}${category}${ANSI_RESET} ${code}: ${message}`;
 
@@ -129,11 +134,11 @@ const flatten = (diagnostic: Diagnostic, indent: number = 0): string => {
     return result;
 };
 
-const format = (diagnostics: readonly Diagnostic[], root: string): string => {
+const format = (diagnostics: readonly Diagnostic[], root: string, transformed?: Map<string, { code: string; mapping: PositionMapping }>): string => {
     let parts: string[] = [];
 
     for (let i = 0, n = diagnostics.length; i < n; i++) {
-        parts.push(formatOne(diagnostics[i], root));
+        parts.push(formatOne(diagnostics[i], root, transformed));
     }
 
     return parts.join('\n\n');
