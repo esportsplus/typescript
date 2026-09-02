@@ -532,8 +532,8 @@ export function buildCallGraph(
         }
     }
 
-    while (worklist.length > 0) {
-        const fn = worklist.shift()!;
+    for (let workIndex = 0; workIndex < worklist.length; workIndex++) {
+        const fn = worklist[workIndex];
         for (const call of callsIn(fn)) {
             // getCore reaches the callee targets and any function-valued arguments.
             getCore(call);
