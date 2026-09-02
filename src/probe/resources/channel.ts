@@ -1029,19 +1029,6 @@ function diagnoseAcquire(
         return;
     }
 
-    // Unbound acquire: a direct return / ownership-taking argument transfers it; a
-    // `this.x =` store is a class-level obligation handled at the constructor. Any
-    // other discarded handle is left untracked in v1 (see plan: local accountability).
-    const parent = call.parent;
-
-    if (parent && ts.isReturnStatement(parent)) {
-        return;
-    }
-
-    if (parent && (ts.isCallExpression(parent) || ts.isNewExpression(parent))) {
-        // Passed straight into another call — ownership may transfer; not a local leak.
-        return;
-    }
 }
 
 // A constructor also carries its class's field/`this`-stored obligations.
