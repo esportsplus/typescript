@@ -1,6 +1,7 @@
 import * as NodePath from 'node:path';
 
 import { readPlugins } from '~/tsconfig';
+import { stripJsonc } from '~/jsonc';
 
 import type {
     ChannelConfig,
@@ -38,7 +39,7 @@ function fail(message: string): never {
 
 // Strip line/block comments and trailing commas so JSON.parse accepts JSONC.
 // String-literal aware so `"http://"` and `"a,]"` survive intact.
-function stripJsonc(text: string): string {
+function legacyStripJsonc(text: string): string {
     let out = '';
     let i = 0;
     const n = text.length;
@@ -87,6 +88,8 @@ function stripJsonc(text: string): string {
     // Drop trailing commas before } or ].
     return out.replace(/,(\s*[}\]])/g, '$1');
 }
+
+void legacyStripJsonc;
 
 function asStringArray(value: unknown, field: string): ReadonlyArray<string> {
     if (value === undefined) {

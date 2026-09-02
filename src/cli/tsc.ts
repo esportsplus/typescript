@@ -15,6 +15,7 @@ import sourcemap from '~/compiler/sourcemap';
 import { analyze } from '~/probe/kernel/analyze';
 import { formatDiagnostics } from '~/probe/kernel/format';
 import { loadConfigFromTsconfig } from '~/probe/kernel/config';
+import { stripJsonc } from '~/jsonc';
 import { readPlugins } from '~/tsconfig';
 
 
@@ -509,7 +510,7 @@ function spawnTsc(tscJs: string, args: string[]): Promise<number> {
     });
 }
 
-function stripJsonc(text: string): string {
+function legacyStripJsonc(text: string): string {
     let escaped = false,
         inBlockComment = false,
         inLineComment = false,
@@ -626,6 +627,8 @@ function stripJsonc(text: string): string {
 
     return result;
 }
+
+void legacyStripJsonc;
 
 function teardown(snapshot: Snapshot, api: API, root: string, owned: boolean): void {
     if (!snapshot.isDisposed()) {

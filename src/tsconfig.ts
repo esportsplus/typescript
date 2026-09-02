@@ -2,6 +2,8 @@ import { createRequire } from 'node:module';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { stripJsonc } from './jsonc';
+
 let require = createRequire(import.meta.url);
 
 function extendsTarget(specifier: unknown, fromDir: string): string | null {
@@ -38,7 +40,7 @@ function extendsTarget(specifier: unknown, fromDir: string): string | null {
     }
 }
 
-function stripJsonc(text: string): string {
+function legacyStripJsonc(text: string): string {
     let escaped = false,
         inBlockComment = false,
         inLineComment = false,
@@ -155,6 +157,8 @@ function stripJsonc(text: string): string {
 
     return result;
 }
+
+void legacyStripJsonc;
 
 const readPlugins = (tsconfigPath: string): ReadonlyArray<unknown> | undefined => {
     let seen = new Set<string>();

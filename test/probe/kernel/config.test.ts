@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { configFromObject, loadConfigFromTsconfig, parseConfig } from "~/probe/kernel/config";
+import { stripJsonc } from '~/jsonc';
 
 const ROOT = "/project";
 
@@ -31,6 +32,12 @@ describe("kernel config — JSONC parsing", () => {
         const config = parseConfig(text, ROOT);
         expect(config.entryPoints).toEqual(["src/**/*.ts"]);
         expect(config.channels["async"]!.enabled).toBe(true);
+    });
+
+    it('preserves comma-like text inside strings while stripping trailing commas', () => {
+        const config = JSON.parse(stripJsonc('{"a":"x,]","b":[1,],}'));
+
+        expect(config).toEqual({ a: 'x,]', b: [1] });
     });
 
     it("throws a prefixed error on invalid JSONC", () => {

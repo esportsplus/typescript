@@ -3,6 +3,7 @@ import * as NodePath from 'node:path';
 import * as NodeURL from 'node:url';
 
 import * as ts from '~/probe/adapter';
+import { stripJsonc } from '~/jsonc';
 
 import type {
     HandlerBoundary,
@@ -44,7 +45,7 @@ export interface LoadedOverlays extends OverlaySet {
 // JSONC parsing (inlined so this subsystem stays extractable by directory move)
 // ---------------------------------------------------------------------------
 
-function stripJsonc(text: string): string {
+function legacyStripJsonc(text: string): string {
     let out = '';
     let i = 0;
     const n = text.length;
@@ -92,6 +93,8 @@ function stripJsonc(text: string): string {
     }
     return out.replace(/,(\s*[}\]])/g, '$1');
 }
+
+void legacyStripJsonc;
 
 function parseJsonc(name: string, text: string): Record<string, unknown> {
     let parsed: unknown;
