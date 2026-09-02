@@ -25,7 +25,7 @@ import {
 export type TypeChecker = Checker;
 
 // Classic `ts.forEachChild(node, cb)` → the node method on the native AST.
-export function forEachChild<T>(
+function forEachChild<T>(
     node: Node,
     cb: (child: Node) => T | undefined,
 ): T | undefined {
@@ -37,7 +37,7 @@ export function forEachChild<T>(
 }
 
 // `isClassLike` is not in ast/is; classes are exactly these two kinds.
-export function isClassLike(node: Node): boolean {
+function isClassLike(node: Node): boolean {
     return (
         node.kind === SyntaxKind.ClassDeclaration ||
         node.kind === SyntaxKind.ClassExpression
@@ -45,7 +45,7 @@ export function isClassLike(node: Node): boolean {
 }
 
 // Native `Program` exposes file names, not materialized SourceFiles; materialize.
-export function getSourceFiles(program: Program): SourceFile[] {
+function getSourceFiles(program: Program): SourceFile[] {
     const out: SourceFile[] = [];
     for (const name of program.getSourceFileNames()) {
         const sf = program.getSourceFile(name);
@@ -57,7 +57,7 @@ export function getSourceFiles(program: Program): SourceFile[] {
 }
 
 // Native symbol declarations are lightweight `NodeHandle`s; resolve to nodes.
-export function symbolDeclarations(symbol: Symbol): Node[] {
+function symbolDeclarations(symbol: Symbol): Node[] {
     const out: Node[] = [];
     for (const handle of symbol.declarations ?? []) {
         const node = handle.resolve();
@@ -68,13 +68,16 @@ export function symbolDeclarations(symbol: Symbol): Node[] {
     return out;
 }
 
-export function symbolValueDeclaration(symbol: Symbol): Node | undefined {
+function symbolValueDeclaration(symbol: Symbol): Node | undefined {
     return symbol.valueDeclaration?.resolve();
 }
 
 // Union constituents, or undefined for a non-union type.
-export function unionTypes(type: Type): readonly Type[] | undefined {
+function unionTypes(type: Type): readonly Type[] | undefined {
     return (type.flags & TypeFlags.Union) !== 0
         ? (type as UnionType).getTypes()
         : undefined;
 }
+
+
+export { forEachChild, getSourceFiles, isClassLike, symbolDeclarations, symbolValueDeclaration, unionTypes };

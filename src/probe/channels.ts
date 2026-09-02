@@ -12,11 +12,14 @@ const FACTORIES: Readonly<Record<string, (config: unknown) => Channel<unknown>>>
     resources: (config) => createResourcesChannel(config) as unknown as Channel<unknown>,
 };
 
-export function channelFor(name: string, config: unknown): Channel<unknown> | undefined {
+function channelFor(name: string, config: unknown): Channel<unknown> | undefined {
     const factory = FACTORIES[name];
     return factory ? factory(config) : undefined;
 }
 
-export function implementedChannels(): ReadonlyArray<string> {
+function implementedChannels(): ReadonlyArray<string> {
     return Object.keys(FACTORIES);
 }
+
+
+export { channelFor, implementedChannels };

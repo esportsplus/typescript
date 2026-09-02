@@ -32,20 +32,17 @@ type ChannelTable = Map<string, SectionTable>;
 type OverlayFile = { name: string; root: Record<string, unknown> };
 type UserOverlayCacheEntry = { mtimeMs: number; file: OverlayFile };
 
-export interface MergedOverlay {
+type MergedOverlay  = {
     // channel -> section -> overlayKey -> raw entry
     readonly channels: ReadonlyMap<string, ChannelTable>;
     readonly boundaries: ReadonlyArray<HandlerBoundary>;
     entry(channel: string, section: string, key: string): unknown;
-}
+};
 
-export interface LoadedOverlays extends OverlaySet {
+type LoadedOverlays = OverlaySet & {
     boundariesFromPresets(): ReadonlyArray<HandlerBoundary>;
-}
-
-// ---------------------------------------------------------------------------
+};
 // JSONC parsing (inlined so this subsystem stays extractable by directory move)
-// ---------------------------------------------------------------------------
 
 function legacyStripJsonc(text: string): string {
     let out = '';
@@ -119,10 +116,7 @@ function parseJsonc(name: string, text: string): Record<string, unknown> {
     }
     return parsed as Record<string, unknown>;
 }
-
-// ---------------------------------------------------------------------------
 // Merge (pure — no checker; directly testable)
-// ---------------------------------------------------------------------------
 
 function isSectionMap(
     value: unknown,
@@ -188,7 +182,7 @@ function readBoundaries(name: string, raw: unknown): HandlerBoundary[] {
 
 // Merge overlay files in precedence order (later wins). A file is either a
 // bundle (has `overlay`/`handlerBoundaries`) or a bare exceptions section map.
-export function mergeOverlayData(
+function mergeOverlayData(
     files: ReadonlyArray<{ name: string; text: string }>,
 ): MergedOverlay {
     return mergeParsedOverlayData(
@@ -232,7 +226,8 @@ function mergeParsedOverlayData(files: ReadonlyArray<OverlayFile>): MergedOverla
                     }
                 }
             }
-        } else {
+        }
+        else {
             // Bare file: top-level sections belong to the exceptions channel.
             mergeSections(channelFor('exceptions'), root);
         }
@@ -246,15 +241,12 @@ function mergeParsedOverlayData(files: ReadonlyArray<OverlayFile>): MergedOverla
         },
     };
 }
-
-// ---------------------------------------------------------------------------
 // Key format (pure — directly testable)
-// ---------------------------------------------------------------------------
 
 // Build the overlay key. Discriminator: a namespace-like parent (JSON, Math,
 // Number, ...) yields `Parent.member`; any other interface parent yields
 // `Interface#method`; no parent yields the bare global name.
-export function overlayKey(
+function overlayKey(
     parentName: string | undefined,
     memberName: string,
     isNamespace: boolean,
@@ -272,10 +264,7 @@ function stripConstructor(name: string): string {
         ? name.slice(0, -'Constructor'.length)
         : name;
 }
-
-// ---------------------------------------------------------------------------
 // Checker -> key resolution
-// ---------------------------------------------------------------------------
 
 function declaredParentName(symbol: ts.Symbol): string | undefined {
     for (const decl of ts.symbolDeclarations(symbol)) {
@@ -293,10 +282,10 @@ function declaredParentName(symbol: ts.Symbol): string | undefined {
 // Section-name convention: a lib file `lib.<x>[.<sub>].d.ts` collapses to
 // `lib.<x>` (so `lib.es2015.core.d.ts` -> `lib.es2015`). A node type/module
 // file `<mod>.d.ts` under @types/node (or a `node:` module) -> `node:<mod>`.
-interface SourceHint {
+type SourceHint  = {
     kind: 'lib' | 'node' | 'other';
     section: string | undefined;
-}
+};
 
 function sourceHint(symbol: ts.Symbol): SourceHint {
     for (const decl of ts.symbolDeclarations(symbol)) {
@@ -350,10 +339,7 @@ function findInSections(
     }
     return undefined;
 }
-
-// ---------------------------------------------------------------------------
 // Loading
-// ---------------------------------------------------------------------------
 
 const HERE = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const shippedOverlayCache = new Map<string, OverlayFile>();
@@ -385,7 +371,7 @@ function readUserOverlay(file: string): OverlayFile {
     return cached.file;
 }
 
-export function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
+function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
     const files: OverlayFile[] = [];
     files.push(readShippedOverlay(NodePath.join(HERE, 'base', 'async.jsonc')));
     files.push(readShippedOverlay(NodePath.join(HERE, 'base', 'exceptions.jsonc')));
@@ -446,3 +432,6 @@ export function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
         },
     };
 }
+
+
+export { loadOverlays, mergeOverlayData, overlayKey, type LoadedOverlays, type MergedOverlay };
