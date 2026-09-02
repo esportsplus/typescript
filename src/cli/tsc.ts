@@ -104,11 +104,9 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         }
     }
 
-    let program = project.program;
-
-    for (let [fileName, entry] of transformedFiles) {
-        program = languageService.update(tsconfig, fileName, entry.code).program;
-    }
+    let program = transformedFiles.size === 0
+        ? project.program
+        : languageService.updateMany(tsconfig, new Map([...transformedFiles].map(([fileName, entry]) => [fileName, entry.code]))).program;
 
     let diagnostics = [
         ...program.getConfigFileParsingDiagnostics(),

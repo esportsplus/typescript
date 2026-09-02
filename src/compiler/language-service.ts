@@ -367,13 +367,24 @@ const scratch = (fileName: string, content: string): ScratchResult => {
 };
 
 const update = (configFileName: string, fileName: string, content: string): UpdateResult => {
+    return updateMany(configFileName, new Map([[fileName, content]]));
+};
+
+const updateMany = (configFileName: string, updates: Map<string, string>): UpdateResult => {
     let entry = getEntry(configFileName),
-        id = normalize(fileName);
+        ids: string[] = [];
 
-    entry.contents.set(id, content);
+    for (let [fileName, content] of updates) {
+        let id = normalize(fileName);
 
-    if (entry.seen.has(id)) {
-        entry.pending.add(id);
+        entry.contents.set(id, content);
+        ids.push(id);
+    }
+
+    if (ids.every(id => entry.seen.has(id))) {
+        for (let i = 0, n = ids.length; i < n; i++) {
+            entry.pending.add(ids[i]);
+        }
 
         let changed = [...entry.pending];
 
@@ -386,19 +397,25 @@ const update = (configFileName: string, fileName: string, content: string): Upda
         // at that point, so a first-sight file enters the program only by recreating the API.
         recreate(entry);
         entry.pending.clear();
-        entry.seen.add(id);
+        for (let i = 0, n = ids.length; i < n; i++) {
+            entry.seen.add(ids[i]);
+        }
     }
 
-    let source = entry.project.program.getSourceFile(id);
+    for (let i = 0, n = ids.length; i < n; i++) {
+        let id = ids[i],
+            source = entry.project.program.getSourceFile(id),
+            content = entry.contents.get(id);
 
-    if (!source || source.text !== content) {
-        throw new Error(`${PACKAGE_NAME}: failed to load ${fileName} into the program`);
+        if (!source || source.text !== content) {
+            throw new Error(`${PACKAGE_NAME}: failed to load ${id} into the program`);
+        }
     }
 
     return { checker: entry.project.checker, program: entry.project.program };
 };
 
 
-export default { dispose, findConfig, invalidate, open, parse, scratch, update };
-export { dispose, findConfig, invalidate, open, parse, scratch, update };
+export default { dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
+export { dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
 export type { ScratchResult, UpdateResult };

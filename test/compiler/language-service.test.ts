@@ -65,6 +65,18 @@ describe('language-service', () => {
 
             expect(matches).toHaveLength(1);
         });
+
+        it('updates multiple overlay files in one snapshot', () => {
+            let first = root + '/src/test-virtual-batch-first.ts',
+                second = root + '/src/test-virtual-batch-second.ts',
+                { program } = languageService.updateMany(config, new Map([
+                    [first, 'export let first = 1;'],
+                    [second, 'export let second = 2;']
+                ]));
+
+            expect(program.getSourceFile(first)?.text).toBe('export let first = 1;');
+            expect(program.getSourceFile(second)?.text).toBe('export let second = 2;');
+        });
     });
 
     describe('invalidate', () => {
