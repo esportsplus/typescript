@@ -779,8 +779,7 @@ describe('coordinator.transform', () => {
             result = coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
-        expect(result.code).toContain("import { a } from 'pkg-1';");
-        expect(result.code).toContain("import { b } from 'pkg-2';");
+        expect(result.code).toBe("import { b } from 'pkg-2';\nimport { a } from 'pkg-1';\nlet x = 1;");
     });
 
     it('ImportIntent with only remove', () => {

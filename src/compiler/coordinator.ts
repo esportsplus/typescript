@@ -51,25 +51,20 @@ function applyImports(code: string, file: SourceFile, intents: ImportIntent[]): 
         }
     }
 
-    let batches: EditBatch[] = [],
+    let edits: Replacement[] = [],
         keys = [...merged.keys()];
 
     for (let i = 0, n = keys.length; i < n; i++) {
-        let before = code,
-            result = modify(code, file, keys[i], merged.get(keys[i])!);
+        let result = modify(code, file, keys[i], merged.get(keys[i])!);
 
-        code = result.code;
-
-        if (result.edits.length > 0) {
-            batches.push({ before, edits: result.edits });
-        }
-
-        if (i < n - 1) {
-            file = languageService.parse(file.fileName, code);
-        }
+        edits.push(...result.edits);
     }
 
-    return { batches, code };
+    if (edits.length === 0) {
+        return { batches: [], code };
+    }
+
+    return { batches: [{ before: code, edits }], code: replaceReverse(code, edits) };
 }
 
 function applyIntents(code: string, file: SourceFile, intents: ReplacementIntent[]): { code: string; edits: Replacement[] } {
