@@ -232,7 +232,7 @@ const transform = (
     plugins: Plugin[],
     code: string,
     file: SourceFile,
-    project: { checker: Checker; program: Program },
+    project: { checker: Checker; configPath?: string; program: Program },
     root: string,
     shared: SharedContext
 ) => {
@@ -313,7 +313,7 @@ const transform = (
             changed = true;
 
             if (i < last) {
-                currentProject = languageService.update(root, fileName, currentCode);
+                currentProject = languageService.update(project.configPath ?? languageService.findConfig(root) ?? root, fileName, currentCode);
                 currentFile = currentProject.program.getSourceFile(fileName) ??
                     languageService.parse(fileName, currentCode);
             }

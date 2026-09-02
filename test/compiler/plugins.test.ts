@@ -12,6 +12,7 @@ import vite from '~/compiler/plugins/vite';
 vi.mock('~/compiler/language-service', () => ({
     default: {
         dispose: vi.fn(),
+        findConfig: vi.fn(() => ''),
         invalidate: vi.fn(),
         parse: vi.fn((fileName: string, content: string) => ({ fileName, text: content }) as unknown as SourceFile),
         update: vi.fn((_root: string, _fileName: string, _content: string) => ({
@@ -140,10 +141,11 @@ describe('plugin.vite', () => {
     it('configResolved sets root', () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
+        vi.mocked(languageService.findConfig).mockReturnValueOnce('/my/root/tsconfig.json');
         plugin.configResolved({ root: '/my/root' });
         plugin.transform('let x = 1;', 'src/app.ts');
 
-        expect(languageService.update).toHaveBeenCalledWith('/my/root', expect.any(String), expect.any(String));
+        expect(languageService.update).toHaveBeenCalledWith('/my/root/tsconfig.json', expect.any(String), expect.any(String));
     });
 
     it('catches coordinator.transform() error and returns null', () => {
@@ -181,18 +183,20 @@ describe('plugin.vite', () => {
     it('closeBundle disposes the language service for the root', () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
+        vi.mocked(languageService.findConfig).mockReturnValueOnce('/my/root/tsconfig.json');
         plugin.configResolved({ root: '/my/root' });
         plugin.closeBundle();
 
-        expect(languageService.dispose).toHaveBeenCalledWith('/my/root');
+        expect(languageService.dispose).toHaveBeenCalledWith('/my/root/tsconfig.json');
     });
 
     it('closeWatcher disposes the language service for the root', () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
+        vi.mocked(languageService.findConfig).mockReturnValueOnce('/my/root/tsconfig.json');
         plugin.configResolved({ root: '/my/root' });
         plugin.closeWatcher();
 
-        expect(languageService.dispose).toHaveBeenCalledWith('/my/root');
+        expect(languageService.dispose).toHaveBeenCalledWith('/my/root/tsconfig.json');
     });
 });

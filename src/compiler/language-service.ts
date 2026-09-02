@@ -90,12 +90,8 @@ function advanceScratch(id: string, content: string): ScratchEntry {
     return entry;
 }
 
-function createEntry(root: string): Entry {
-    let configFileName = findConfig(root);
-
-    if (!configFileName) {
-        throw new Error(`${PACKAGE_NAME}: tsconfig.json not found`);
-    }
+function createEntry(configFileName: string): Entry {
+    let root = path.dirname(configFileName);
 
     let contents = new Map<string, string>(),
         opened = open(configFileName, overlayFileSystem(contents)),
@@ -142,12 +138,12 @@ function disposeScratch(entry: ScratchEntry): void {
     entry.api.close();
 }
 
-function getEntry(root: string): Entry {
-    let entry = cache.get(root);
+function getEntry(configFileName: string): Entry {
+    let entry = cache.get(configFileName);
 
     if (!entry) {
-        entry = createEntry(root);
-        cache.set(root, entry);
+        entry = createEntry(configFileName);
+        cache.set(configFileName, entry);
     }
 
     return entry;
@@ -331,8 +327,8 @@ const findConfig = (startDir: string): string | null => {
     }
 };
 
-const invalidate = (root: string, fileName: string): void => {
-    let entry = cache.get(root);
+const invalidate = (configFileName: string, fileName: string): void => {
+    let entry = cache.get(configFileName);
 
     if (!entry) {
         return;
@@ -360,8 +356,8 @@ const scratch = (fileName: string, content: string): ScratchResult => {
     return { checker: entry.project.checker, program: entry.project.program, sourceFile: source };
 };
 
-const update = (root: string, fileName: string, content: string): UpdateResult => {
-    let entry = getEntry(root),
+const update = (configFileName: string, fileName: string, content: string): UpdateResult => {
+    let entry = getEntry(configFileName),
         id = normalize(fileName);
 
     entry.contents.set(id, content);

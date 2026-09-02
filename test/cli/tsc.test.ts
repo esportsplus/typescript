@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
-import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, resolvePluginConfigs, runTscAlias } from '~/cli/tsc';
+import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runTscAlias } from '~/cli/tsc';
 import { flatten, format } from '~/cli/diagnostics';
 
 import fs from 'fs';
@@ -48,6 +48,33 @@ describe('normalizePath', () => {
         let result = normalizePath('relative/file.ts');
 
         expect(path.isAbsolute(result)).toBe(true);
+    });
+});
+
+
+describe('projectPath', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tsc-project-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('uses the config named by -p, including a project directory', () => {
+        let other = path.join(tmpDir, 'other');
+
+        fs.mkdirSync(other);
+        fs.writeFileSync(path.join(other, 'tsconfig.json'), '{}');
+
+        expect(projectPath(['-p', other])).toBe(path.join(other, 'tsconfig.json'));
+        expect(projectPath(['--project', path.join(other, 'tsconfig.json')])).toBe(path.join(other, 'tsconfig.json'));
+    });
+
+    it('leaves config discovery to findConfig without a project argument', () => {
+        expect(projectPath([])).toBeNull();
     });
 });
 

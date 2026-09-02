@@ -90,7 +90,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
             plugins,
             sourceFile.getFullText(),
             sourceFile,
-            { checker: project.checker, program: project.program },
+            { checker: project.checker, configPath: tsconfig, program: project.program },
             root,
             shared
         );
@@ -103,7 +103,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     let program = project.program;
 
     for (let [fileName, entry] of transformedFiles) {
-        program = languageService.update(root, fileName, entry.code).program;
+        program = languageService.update(tsconfig, fileName, entry.code).program;
     }
 
     let diagnostics = [
@@ -399,13 +399,14 @@ async function loadPlugins(configs: PluginConfig[], root: string): Promise<Plugi
 }
 
 function main(): void {
-    let tsconfig = languageService.findConfig(process.cwd());
+    let args = process.argv.slice(2),
+        tsconfig = projectPath(args) ?? languageService.findConfig(process.cwd());
 
     if (!tsconfig) {
         return passthrough();
     }
 
-    let flags = classifyFlags(process.argv.slice(2));
+    let flags = classifyFlags(args);
 
     // Run analyze for any project whose tsconfig carries a `analyze` plugin entry,
     // on every real (non-informational, non-watch) tsc invocation. Findings are
@@ -439,6 +440,30 @@ function main(): void {
 
 function normalizePath(fileName: string): string {
     return path.resolve(fileName).replace(BACKSLASH_REGEX, '/');
+}
+
+function projectPath(args: string[]): string | null {
+    for (let i = 0, n = args.length; i < n; i++) {
+        let arg = args[i],
+            value: string | undefined;
+
+        if (arg === '-p' || arg === '--project') {
+            value = args[i + 1];
+        }
+        else if (arg.startsWith('--project=')) {
+            value = arg.slice('--project='.length);
+        }
+
+        if (value !== undefined) {
+            let resolved = path.resolve(value);
+
+            return fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()
+                ? path.join(resolved, 'tsconfig.json')
+                : resolved;
+        }
+    }
+
+    return null;
 }
 
 function runAnalyze(tsconfig: string): void {
@@ -700,4 +725,4 @@ if (process.env.VITEST === undefined) {
 }
 
 
-export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, resolvePluginConfigs, runTscAlias };
+export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runTscAlias };

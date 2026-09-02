@@ -6,6 +6,7 @@ import languageService from '~/compiler/language-service';
 
 
 const root = process.cwd().replace(/\\/g, '/');
+const config = root + '/tsconfig.json';
 
 
 afterAll(() => {
@@ -18,7 +19,7 @@ describe('language-service', () => {
         it('returns a checker and program when given valid root + fileName + content', () => {
             let fileName = root + '/src/test-virtual-update.ts',
                 content = 'let x: number = 42;',
-                result = languageService.update(root, fileName, content);
+                result = languageService.update(config, fileName, content);
 
             expect(result.program).toBeDefined();
             expect(result.checker).toBeDefined();
@@ -27,7 +28,7 @@ describe('language-service', () => {
         it('updated content is reflected in the program SourceFile', () => {
             let fileName = root + '/src/test-virtual-reflect.ts',
                 content = 'let hello = "world";',
-                { program } = languageService.update(root, fileName, content),
+                { program } = languageService.update(config, fileName, content),
                 sourceFile = program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
@@ -37,9 +38,9 @@ describe('language-service', () => {
         it('reflects the latest content across repeated updates', () => {
             let fileName = root + '/src/test-virtual-version.ts';
 
-            languageService.update(root, fileName, 'let a = 1;');
+            languageService.update(config, fileName, 'let a = 1;');
 
-            let { program } = languageService.update(root, fileName, 'let a = 2;'),
+            let { program } = languageService.update(config, fileName, 'let a = 2;'),
                 sourceFile = program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
@@ -49,7 +50,7 @@ describe('language-service', () => {
         it('adds new files to the program', () => {
             let fileName = root + '/src/test-virtual-new-root.ts',
                 content = 'export const value = 1;',
-                { program } = languageService.update(root, fileName, content),
+                { program } = languageService.update(config, fileName, content),
                 sourceFile = program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
@@ -61,10 +62,10 @@ describe('language-service', () => {
         it('removes content so the next update reflects fresh content', () => {
             let fileName = root + '/src/test-virtual-invalidate.ts';
 
-            languageService.update(root, fileName, 'let val = 99;');
-            languageService.invalidate(root, fileName);
+            languageService.update(config, fileName, 'let val = 99;');
+            languageService.invalidate(config, fileName);
 
-            let { program } = languageService.update(root, fileName, 'let val = 100;'),
+            let { program } = languageService.update(config, fileName, 'let val = 100;'),
                 sourceFile = program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
@@ -74,10 +75,10 @@ describe('language-service', () => {
         it('reflects new content for invalidated files', () => {
             let fileName = root + '/src/test-virtual-inv-version.ts';
 
-            languageService.update(root, fileName, 'let a = 1;');
-            languageService.invalidate(root, fileName);
+            languageService.update(config, fileName, 'let a = 1;');
+            languageService.invalidate(config, fileName);
 
-            let { program } = languageService.update(root, fileName, 'let a = 3;'),
+            let { program } = languageService.update(config, fileName, 'let a = 3;'),
                 sourceFile = program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
@@ -140,11 +141,11 @@ describe('language-service', () => {
         it('is idempotent and recreates the entry on the next update', () => {
             let fileName = root + '/src/test-virtual-dispose.ts';
 
-            languageService.update(root, fileName, 'let a = 1;');
-            languageService.dispose(root);
-            languageService.dispose(root);
+            languageService.update(config, fileName, 'let a = 1;');
+            languageService.dispose(config);
+            languageService.dispose(config);
 
-            let { program } = languageService.update(root, fileName, 'let a = 2;'),
+            let { program } = languageService.update(config, fileName, 'let a = 2;'),
                 sourceFile = program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();

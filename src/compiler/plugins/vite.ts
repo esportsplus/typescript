@@ -34,17 +34,20 @@ let contexts = new Map<string, SharedContext>();
 
 export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
     return ({ root }: { root?: string } = {}): VitePlugin => {
+        let tsconfig: string | null = null;
+
         return {
             closeBundle() {
-                languageService.dispose(root || '');
+                languageService.dispose(tsconfig ?? '');
                 contexts.delete(root || '');
             },
             closeWatcher() {
-                languageService.dispose(root || '');
+                languageService.dispose(tsconfig ?? '');
                 contexts.delete(root || '');
             },
             configResolved(config: unknown) {
                 root ??= (config as ResolvedConfig).root;
+                tsconfig = languageService.findConfig(root);
             },
             enforce: 'pre',
             name: `${name}/compiler/vite`,
@@ -55,7 +58,8 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
 
                 try {
                     let normalizedId = id.replace(DIRECTORY_SEPARATOR_REGEX, '/'),
-                        { checker, program } = languageService.update(root || '', normalizedId, code),
+                        configPath = tsconfig ?? languageService.findConfig(root || ''),
+                        { checker, program } = languageService.update(configPath ?? '', normalizedId, code),
                         sourceFile = program.getSourceFile(normalizedId) ?? languageService.parse(normalizedId, code);
 
                     let key = root || '',
@@ -70,7 +74,7 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                             plugins,
                             code,
                             sourceFile,
-                            { checker, program },
+                            { checker, configPath: configPath ?? undefined, program },
                             key,
                             ctx
                         );
@@ -90,7 +94,7 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                 if (FILE_REGEX.test(id)) {
                     onWatchChange?.();
                     contexts.delete(root || '');
-                    languageService.invalidate(root || '', id);
+                    languageService.invalidate(tsconfig ?? '', id);
                 }
             }
         };
