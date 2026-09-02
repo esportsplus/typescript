@@ -1,6 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { analyzeFixture } from "./harness";
+import { analyzeFixture as analyze } from '../harness';
+import type { Diagnostic, Dispatch } from '~/probe/kernel/types';
+
+
+type AnalyzeOptions = {
+    dispatch?: Dispatch;
+    entry?: string;
+    exceptions?: boolean;
+    options?: unknown;
+};
+
+
+function analyzeFixture(sources: Record<string, string>, options: AnalyzeOptions = {}): ReadonlyArray<Diagnostic> {
+    return analyze(sources, {
+        channels: {
+            exceptions: { enabled: options.exceptions ?? false },
+            resources: {
+                dispatch: options.dispatch ?? 'pessimist',
+                enabled: true,
+                ...(typeof options.options === 'object' && options.options !== null ? options.options : {})
+            }
+        },
+        entryPoints: [options.entry ?? 'src/**/*.ts']
+    });
+}
 
 const MAKE_RESOURCE = "export function makeResource(): Disposable { return { [Symbol.dispose]() {} }; }\n";
 

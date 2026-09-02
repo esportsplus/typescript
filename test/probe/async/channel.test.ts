@@ -1,25 +1,51 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { buildFixtures, inFile, runAsync, type AsyncRunOptions } from "./harness";
-import type { BuiltProgram } from "~/probe/kernel/program";
+import { analyzeFixture } from '../harness';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { Diagnostic } from "~/probe/kernel/types";
 
-let built: BuiltProgram;
 
-beforeAll(() => {
-    built = buildFixtures();
-});
+type AsyncRunOptions = {
+    dispatch?: 'optimist' | 'pessimist';
+    fanOut?: 'error' | 'off' | 'warn';
+    fanOutAllowLiteralUpTo?: number;
+    poolFunctions?: ReadonlyArray<string>;
+};
 
-afterAll(() => {
-    built.dispose();
-});
+
+let fixtureDir = path.join(import.meta.dirname, 'fixtures');
+
+let sources = Object.fromEntries(
+    fs.readdirSync(fixtureDir)
+        .filter((file) => file.endsWith('.ts'))
+        .map((file) => [file, fs.readFileSync(path.join(fixtureDir, file), 'utf8')])
+);
+
+
+function inFile(diags: ReadonlyArray<Diagnostic>, file: string): ReadonlyArray<Diagnostic> {
+    return diags.filter((diagnostic) => diagnostic.location.fileName.replace(/\\/g, '/').endsWith(`/${file}`));
+}
+
+
+function runAsync(options: AsyncRunOptions = {}): ReadonlyArray<Diagnostic> {
+    let { dispatch = 'optimist', ...asyncOptions } = options;
+
+    return analyzeFixture(sources, {
+        channels: {
+            async: { dispatch, enabled: true, ...asyncOptions },
+            exceptions: { enabled: false }
+        },
+        entryPoints: []
+    }).filter((diagnostic) => diagnostic.channel === 'async');
+}
 
 function messages(diags: ReadonlyArray<Diagnostic>): string[] {
     return diags.map((d) => d.message);
 }
 
 function fanOutOf(opts: AsyncRunOptions): ReadonlyArray<Diagnostic> {
-    return inFile(runAsync(built, opts), "fanout.ts").filter((d) => d.message.startsWith("unbounded fan-out"));
+    return inFile(runAsync(opts), "fanout.ts").filter((d) => d.message.startsWith("unbounded fan-out"));
 }
 
 describe("async channel — A1 bounded fan-out", () => {
@@ -53,7 +79,7 @@ describe("async channel — A1 bounded fan-out", () => {
 
 describe("async channel — A2 promise ownership", () => {
     function ownership(opts: AsyncRunOptions = {}): ReadonlyArray<Diagnostic> {
-        return inFile(runAsync(built, { fanOut: "off", ...opts }), "ownership.ts");
+        return inFile(runAsync({ fanOut: "off", ...opts }), "ownership.ts");
     }
 
     it("flags an orphan in statement position", () => {
@@ -86,15 +112,15 @@ describe("async channel — A2 promise ownership", () => {
     });
 
     it("flags an orphan whose return is ignored across a call boundary", () => {
-        const diags = inFile(runAsync(built, { fanOut: "off" }), "cross_b.ts");
+        const diags = inFile(runAsync({ fanOut: "off" }), "cross_b.ts");
         expect(diags.length).toBe(1);
         expect(diags[0]!.message).toContain("remoteSync");
         expect(diags[0]!.message).toContain("neither awaited nor voided");
     });
 
     it("degrades a promise stored into an opaque structure by the dispatch knob", () => {
-        const optimist = inFile(runAsync(built, { fanOut: "off", dispatch: "optimist" }), "degrade.ts");
-        const pessimist = inFile(runAsync(built, { fanOut: "off", dispatch: "pessimist" }), "degrade.ts");
+        const optimist = inFile(runAsync({ fanOut: "off", dispatch: "optimist" }), "degrade.ts");
+        const pessimist = inFile(runAsync({ fanOut: "off", dispatch: "pessimist" }), "degrade.ts");
         expect(optimist.length).toBe(0);
         expect(pessimist.length).toBe(1);
         expect(pessimist[0]!.message).toContain("untracked structure");
@@ -103,7 +129,7 @@ describe("async channel — A2 promise ownership", () => {
 
 describe("async channel — A3 cancellation", () => {
     function cancellation(): ReadonlyArray<Diagnostic> {
-        return inFile(runAsync(built, { fanOut: "off" }), "cancellation.ts");
+        return inFile(runAsync({ fanOut: "off" }), "cancellation.ts");
     }
 
     it("flags dropped signals: overlay-cancellable and app-wrapper inheritance", () => {
