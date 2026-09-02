@@ -26,8 +26,7 @@ vi.mock('~/compiler/coordinator', () => ({
         transform: vi.fn((_plugins: Plugin[], code: string, _file: SourceFile, _project: { checker: Checker; program: Program }, _root: string, _ctx: Map<string, unknown>) => ({
             changed: false,
             code,
-            map: { generations: [] },
-            sourceFile: {} as SourceFile
+            map: { generations: [] }
         }))
     }
 }));
@@ -99,8 +98,7 @@ describe('plugin.vite', () => {
         vi.mocked(coordinator.transform).mockReturnValueOnce({
             changed: true,
             code: 'TRANSFORMED',
-            map: { generations: [] },
-            sourceFile: {} as SourceFile
+            map: { generations: [] }
         });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })(),

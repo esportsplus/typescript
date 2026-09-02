@@ -16,7 +16,6 @@ type CoordinatorResult = {
     changed: boolean;
     code: string;
     map: PositionMapping;
-    sourceFile: SourceFile;
 };
 
 type EditBatch = {
@@ -238,7 +237,7 @@ const transform = (
     shared: SharedContext
 ) => {
     if (plugins.length === 0) {
-        return { changed: false, code, map: { generations: [] }, sourceFile: file };
+        return { changed: false, code, map: { generations: [] } };
     }
 
     uid.scope(root, file.fileName, code);
@@ -318,13 +317,10 @@ const transform = (
                 currentFile = currentProject.program.getSourceFile(fileName) ??
                     languageService.parse(fileName, currentCode);
             }
-            else {
-                currentFile = languageService.parse(fileName, currentCode);
-            }
         }
     }
 
-    return { changed, code: currentCode, map: { generations }, sourceFile: currentFile };
+    return { changed, code: currentCode, map: { generations } };
 };
 
 
