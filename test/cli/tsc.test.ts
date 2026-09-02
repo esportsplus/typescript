@@ -77,6 +77,19 @@ describe('projectPath', () => {
     it('leaves config discovery to findConfig without a project argument', () => {
         expect(projectPath([])).toBeNull();
     });
+
+    it('selects the explicit plugin project instead of the default config', () => {
+        let defaultConfig = path.join(tmpDir, 'tsconfig.json'),
+            otherConfig = path.join(tmpDir, 'other.json');
+
+        fs.writeFileSync(defaultConfig, JSON.stringify({ compilerOptions: {} }));
+        fs.writeFileSync(otherConfig, JSON.stringify({
+            compilerOptions: { plugins: [{ transform: './plugin.mjs' }] }
+        }));
+
+        expect(resolvePluginConfigs(defaultConfig)).toEqual([]);
+        expect(resolvePluginConfigs(projectPath(['-p', otherConfig])!)).toEqual([{ transform: './plugin.mjs' }]);
+    });
 });
 
 
