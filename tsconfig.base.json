@@ -33,7 +33,7 @@
                 "channels": {
                     "exceptions": {
                         "enabled": true,
-                        "report": "consumers",
+                        "report": "cross-module",
                         // Flag `throw`s inside `catch` that drop the caught error's cause.
                         "errorCause": true
                     }
