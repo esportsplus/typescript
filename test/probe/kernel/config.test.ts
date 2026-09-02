@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { configFromObject, parseConfig } from "~/probe/kernel/config";
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { configFromObject, loadConfigFromTsconfig, parseConfig } from "~/probe/kernel/config";
 
 const ROOT = "/project";
 
@@ -77,5 +81,28 @@ describe("kernel config — validation and defaults", () => {
         expect(configFromObject({ failOnFindings: true }, ROOT).failOnFindings).toBe(true);
         expect(configFromObject({ failOnFindings: "true" }, ROOT).failOnFindings).toBe(false);
         expect(configFromObject({}, ROOT).failOnFindings).toBe(false);
+    });
+});
+
+
+describe('kernel config — tsconfig plugin discovery', () => {
+    it('finds ts-probe inherited through a package extends entry', () => {
+        let dir = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-config-')),
+            pkg = path.join(dir, 'node_modules', 'shared-config'),
+            tsconfig = path.join(dir, 'tsconfig.json');
+
+        try {
+            fs.mkdirSync(pkg, { recursive: true });
+            fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: 'shared-config' }));
+            fs.writeFileSync(path.join(pkg, 'tsconfig.json'), JSON.stringify({
+                compilerOptions: { plugins: [{ name: 'ts-probe', entryPoints: ['src/**/*.ts'] }] },
+            }));
+            fs.writeFileSync(tsconfig, JSON.stringify({ extends: 'shared-config/tsconfig.json' }));
+
+            expect(loadConfigFromTsconfig(tsconfig)?.entryPoints).toEqual(['src/**/*.ts']);
+        }
+        finally {
+            fs.rmSync(dir, { force: true, recursive: true });
+        }
     });
 });

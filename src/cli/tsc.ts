@@ -15,6 +15,7 @@ import sourcemap from '~/compiler/sourcemap';
 import { analyze } from '~/probe/kernel/analyze';
 import { formatDiagnostics } from '~/probe/kernel/format';
 import { loadConfigFromTsconfig } from '~/probe/kernel/config';
+import { readPlugins } from '~/tsconfig';
 
 
 type PluginConfig = {
@@ -307,44 +308,6 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
     }
 }
 
-function extendsTarget(specifier: unknown, fromDir: string): string | null {
-    if (typeof specifier !== 'string') {
-        return null;
-    }
-
-    if (specifier.startsWith('.')) {
-        let resolved = path.resolve(fromDir, specifier);
-
-        if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
-            return resolved;
-        }
-
-        if (fs.existsSync(resolved + '.json')) {
-            return resolved + '.json';
-        }
-
-        let nested = path.join(resolved, 'tsconfig.json');
-
-        if (fs.existsSync(nested)) {
-            return nested;
-        }
-
-        return null;
-    }
-
-    try {
-        return require.resolve(specifier, { paths: [fromDir] });
-    }
-    catch {
-        try {
-            return require.resolve(specifier + '/tsconfig.json', { paths: [fromDir] });
-        }
-        catch {
-            return null;
-        }
-    }
-}
-
 function isPlugin(value: unknown): value is Plugin {
     return typeof value === 'object' && value !== null && 'transform' in value && typeof (value as Plugin).transform === 'function';
 }
@@ -512,51 +475,8 @@ function passthrough(): void {
         });
 }
 
-function readPlugins(tsconfig: string, seen: Set<string>): unknown[] | undefined {
-    let id = path.resolve(tsconfig);
-
-    if (seen.has(id)) {
-        return undefined;
-    }
-
-    seen.add(id);
-
-    let config: { compilerOptions?: { plugins?: unknown[] }; extends?: unknown };
-
-    try {
-        config = JSON.parse(stripJsonc(fs.readFileSync(id, 'utf8')));
-    }
-    catch {
-        return undefined;
-    }
-
-    let plugins: unknown[] | undefined;
-
-    if (config?.extends !== undefined) {
-        let bases = Array.isArray(config.extends) ? config.extends : [config.extends];
-
-        for (let i = 0, n = bases.length; i < n; i++) {
-            let target = extendsTarget(bases[i], path.dirname(id));
-
-            if (target) {
-                let inherited = readPlugins(target, seen);
-
-                if (inherited !== undefined) {
-                    plugins = inherited;
-                }
-            }
-        }
-    }
-
-    if (Array.isArray(config?.compilerOptions?.plugins)) {
-        plugins = config.compilerOptions.plugins;
-    }
-
-    return plugins;
-}
-
 function resolvePluginConfigs(tsconfig: string): PluginConfig[] {
-    let plugins = readPlugins(tsconfig, new Set());
+    let plugins = readPlugins(tsconfig);
 
     if (!Array.isArray(plugins)) {
         return [];
@@ -725,4 +645,4 @@ if (process.env.VITEST === undefined) {
 }
 
 
-export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runTscAlias };
+export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runTscAlias, stripJsonc };

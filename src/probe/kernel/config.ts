@@ -1,5 +1,6 @@
-import * as NodeFS from 'node:fs';
 import * as NodePath from 'node:path';
+
+import { readPlugins } from '~/tsconfig';
 
 import type {
     ChannelConfig,
@@ -257,54 +258,13 @@ export function configFromObject(
     return normalizeConfig(raw as RawConfig, projectRoot);
 }
 
-// Read `compilerOptions.plugins` from a tsconfig, following relative `extends`.
-function readTsconfigPlugins(
-    tsconfigPath: string,
-    seen: Set<string>,
-): ReadonlyArray<{ name?: unknown }> | undefined {
-    const id = NodePath.resolve(tsconfigPath);
-    if (seen.has(id) || !NodeFS.existsSync(id)) {
-        return undefined;
-    }
-    seen.add(id);
-    let raw: { compilerOptions?: { plugins?: unknown }; extends?: unknown };
-    try {
-        raw = JSON.parse(stripJsonc(NodeFS.readFileSync(id, 'utf8')));
-    } catch {
-        return undefined;
-    }
-    let plugins: ReadonlyArray<{ name?: unknown }> | undefined;
-    if (raw.extends !== undefined) {
-        const bases = Array.isArray(raw.extends) ? raw.extends : [raw.extends];
-        for (const base of bases) {
-            if (typeof base !== 'string' || !base.startsWith('.')) {
-                continue; // package `extends` are not followed for plugin discovery
-            }
-            const target = NodePath.resolve(
-                NodePath.dirname(id),
-                base.endsWith('.json') ? base : `${base}.json`,
-            );
-            const inherited = readTsconfigPlugins(target, seen);
-            if (inherited) {
-                plugins = inherited;
-            }
-        }
-    }
-    if (Array.isArray(raw.compilerOptions?.plugins)) {
-        plugins = raw.compilerOptions.plugins as ReadonlyArray<{
-            name?: unknown;
-        }>;
-    }
-    return plugins;
-}
-
 export function loadConfigFromTsconfig(
     tsconfigPath: string,
 ): AnalyzeConfig | undefined {
     const resolved = NodePath.resolve(tsconfigPath);
-    const plugins = readTsconfigPlugins(resolved, new Set()) ?? [];
+    const plugins = readPlugins(resolved) ?? [];
     const entry = plugins.find(
-        (p) => p !== null && typeof p === 'object' && p.name === 'ts-probe',
+        (p) => p !== null && typeof p === 'object' && (p as { name?: unknown }).name === 'ts-probe',
     );
     if (!entry) {
         return undefined;
