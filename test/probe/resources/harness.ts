@@ -4,14 +4,13 @@ import path from "node:path";
 import { analyzeProgram } from "~/probe/kernel/analyze";
 import { buildProgram } from "~/probe/kernel/program";
 import { configFromObject } from "~/probe/kernel/config";
+import { createFixtureDir } from "../../cli/fixtures";
 
 import type { Diagnostic, Dispatch } from "~/probe/kernel/types";
 
 // A self-contained on-disk fixture project: one tsconfig plus a set of source
 // files. Fixtures live under storage/ (inside the repo) so lib resolution walks
 // up to the repo node_modules, matching the CLI's own fixture strategy.
-const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
-
 const TSCONFIG = {
     compilerOptions: {
         lib: ["esnext", "dom"],
@@ -41,7 +40,7 @@ export const analyzeFixture = (
     sources: Record<string, string>,
     opts: AnalyzeOptions = {},
 ): ReadonlyArray<Diagnostic> => {
-    const dir = fs.mkdtempSync(path.join(REPO_ROOT, "storage", "res-fixture-"));
+    const dir = createFixtureDir(".fixture-resources-");
     try {
         fs.writeFileSync(path.join(dir, "tsconfig.json"), JSON.stringify(TSCONFIG));
         for (const [rel, text] of Object.entries(sources)) {
