@@ -104,9 +104,14 @@ Add an `analyze` entry to `compilerOptions.plugins`. Analysis covers every file 
                 "channels": {
                     "exceptions": {
                         "enabled": true,
-                        // "consumers" (default): uncaught calls only.
-                        // "cross-module": only when the throwing callee is in another package.
-                        // "all": throws AND uncaught calls.
+                        // "consumers" (default): uncaught calls only, and only when
+                        //   the throwing callee is in another PACKAGE — a throw within
+                        //   this package is its own contract, seen only where an
+                        //   external consumer calls in.
+                        // "cross-module": like "consumers" but the boundary is the
+                        //   FILE — a callee thrown from the caller's own file stays
+                        //   silent; a call from another file reports.
+                        // "all": throws AND every uncaught call.
                         "report": "consumers",
                         // Flag `throw`s inside `catch` that drop the caught error's cause.
                         "errorCause": true

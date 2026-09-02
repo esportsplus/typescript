@@ -29,7 +29,7 @@ function inner(): void {
         expect(atBoundary[0]!.message).toContain("from inner");
     });
 
-    it("reports the throw itself in `all` mode but not in `consumers` mode", () => {
+    it("reports the throw itself in `all` mode but not in the boundary-gated modes", () => {
         const sources = {
             "a.ts": `export function producer(): void { throw new TypeError('x'); }
 export function consumer(): void { producer(); }
@@ -37,22 +37,48 @@ export function consumer(): void { producer(); }
         };
         const all = analyzeFixture(sources, { report: "all" });
         expect(messages(all).some((m) => m.startsWith("Throw may throw TypeError"))).toBe(true);
+        expect(toBoundary(all, "consumer").length).toBe(1);
 
-        const consumers = analyzeFixture(sources, { report: "consumers" });
-        expect(messages(consumers).some((m) => m.startsWith("Throw may throw"))).toBe(false);
-        expect(toBoundary(consumers, "consumer").length).toBe(1);
+        for (const report of ["consumers", "cross-module"] as const) {
+            const gated = analyzeFixture(sources, { report });
+            expect(messages(gated).some((m) => m.startsWith("Throw may throw"))).toBe(false);
+        }
     });
 
-    it("in `cross-module` mode a call whose targets share the caller's package stays silent", () => {
-        const sources = {
+    it("`cross-module` silences a same-file call but flags a cross-file one", () => {
+        const sameFile = {
             "a.ts": `export function producer(): void { throw new TypeError('x'); }
 export function consumer(): void { producer(); }
 `,
         };
-        // `consumers` reports the internal call; `cross-module` suppresses it
-        // because producer lives in the same package as consumer.
-        expect(toBoundary(analyzeFixture(sources, { report: "consumers" }), "consumer").length).toBe(1);
-        expect(toBoundary(analyzeFixture(sources, { report: "cross-module" }), "consumer").length).toBe(0);
+        // producer is authored in consumer's own file — the file's own contract.
+        expect(toBoundary(analyzeFixture(sameFile, { report: "cross-module" }), "consumer").length).toBe(0);
+
+        const crossFile = {
+            "producer.ts": `export function producer(): void { throw new TypeError('x'); }
+`,
+            "a.ts": `import { producer } from "./producer";
+
+export function consumer(): void { producer(); }
+`,
+        };
+        // producer is authored in another file — consumer is a foreign caller that must handle it.
+        expect(toBoundary(analyzeFixture(crossFile, { report: "cross-module" }), "consumer").length).toBe(1);
+    });
+
+    it("`consumers` keys on the package, silencing a same-package cross-file call that `cross-module` flags", () => {
+        const crossFile = {
+            "producer.ts": `export function producer(): void { throw new TypeError('x'); }
+`,
+            "a.ts": `import { producer } from "./producer";
+
+export function consumer(): void { producer(); }
+`,
+        };
+        // Different file, same package (both resolve to the fixture's package root):
+        // `consumers` treats it as first-party and stays silent; `cross-module` reports.
+        expect(toBoundary(analyzeFixture(crossFile, { report: "consumers" }), "consumer").length).toBe(0);
+        expect(toBoundary(analyzeFixture(crossFile, { report: "cross-module" }), "consumer").length).toBe(1);
     });
 });
 

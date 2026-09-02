@@ -72,9 +72,10 @@ type Env  = {
     readonly typeAt: (node: ts.Node) => ts.Type | undefined;
     readonly paramSymbols: Map<ts.Symbol, number>;
     readonly fromCallbacks: Set<number>;
-    // Present only in "cross-module" diagnose: the throw origins that reach a
-    // call-graph root uncaught (so a call whose origins are all absent is handled
-    // by some ancestor and stays silent), plus whether any root exists at all.
+    // Present in the boundary-gated diagnose modes ("consumers", "cross-module"):
+    // the throw origins that reach a call-graph root uncaught (so a call whose
+    // origins are all absent is handled by some ancestor and stays silent), plus
+    // whether any root exists at all.
     readonly unhandled?: {
         readonly origins: ReadonlySet<string>;
         readonly active: boolean;
@@ -83,7 +84,7 @@ type Env  = {
 
 function createExceptionsChannel(): Channel<ExceptionsValue> {
     // Origins that escape to a call-graph root uncaught — computed once per run,
-    // only when "cross-module" mode needs it.
+    // when a boundary-gated mode ("consumers", "cross-module") needs it.
     let unhandledCache:
         | { origins: ReadonlySet<string>; active: boolean }
         | undefined;
@@ -147,14 +148,17 @@ function createExceptionsChannel(): Channel<ExceptionsValue> {
                 ctx.resolveCall,
                 typeAt,
             );
+            // "all" reports every uncaught call outright; the boundary-gated modes
+            // ("consumers", "cross-module") also require the throw to reach a root
+            // uncaught, so they need the up-stack origin set.
             const env: Env =
-                reportMode(ctx) === 'cross-module'
-                    ? {
+                reportMode(ctx) === 'all'
+                    ? { ...base, escapeCache: new Map() }
+                    : {
                         ...base,
                         escapeCache: new Map(),
                         unhandled: computeUnhandled(ctx),
-                    }
-                    : { ...base, escapeCache: new Map() };
+                    };
             const body = bodyOf(ctx.fn.node);
 
             // @throws under-declaration: emit on any reached function whose inferred
@@ -621,12 +625,15 @@ function applySink(v: ExceptionsValue, sink: SinkConfig): ExceptionsValue {
 // Anchor each escape at the statement where it actually leaves the function.
 // `binding`/`remainder` describe the enclosing catch: a bare rethrow of `binding`
 // carries `remainder` (the un-discharged try set) and is reported at the rethrow.
-// Channel `report` mode (default "all"):
-//  - "all":          throws AND uncaught calls.
-//  - "consumers":    uncaught calls only (not the `throw`s themselves) — the site
-//                    where a caller should be careful, not where errors originate.
-//  - "cross-module": like "consumers", but only when the throwing callee lives in
-//                    a DIFFERENT module (package) — internal calls are yours to see.
+// Channel `report` mode (default "consumers"):
+//  - "all":          throws AND every uncaught call.
+//  - "consumers":    uncaught calls only, and only when the throwing callee lives
+//                    in a DIFFERENT package — an exception thrown within this
+//                    package is its own contract, seen only where an external
+//                    consumer calls in.
+//  - "cross-module": like "consumers", but the boundary is the FILE — a callee
+//                    authored in the caller's own file stays silent; a call from
+//                    another file reports.
 function reportMode(ctx: DiagnoseContext<ExceptionsValue>): string {
     const cc = ctx.channelConfig;
     if (typeof cc === 'object' && cc !== null) {
@@ -696,7 +703,7 @@ function checkErrorCause(node: ts.Node, out: Diagnostic[]): void {
     ts.forEachChild(node, visit);
 }
 
-// Nearest ancestor directory containing a package.json — a file's "module".
+// Nearest ancestor directory containing a package.json — a file's package.
 const packageRootCache = new Map<string, string>();
 function packageRootOf(fileName: string): string {
     let dir = fileName.replace(/\\/g, '/');
@@ -728,10 +735,11 @@ function packageRootOf(fileName: string): string {
     return root;
 }
 
-// A call worth reporting under "cross-module": it reaches an external/overlay
+// A call worth reporting under "consumers": it reaches an external/overlay
 // thrower, or an app function in a different package than the caller. When every
-// resolved target is in the caller's own package, the throw is internal — skip.
-function crossesModuleBoundary(
+// resolved target is in the caller's own package, the throw is first-party — the
+// package's own contract, seen only by external consumers — so skip.
+function crossesPackageBoundary(
     env: Env,
     ctx: DiagnoseContext<ExceptionsValue>,
     call: ts.CallExpression | ts.NewExpression,
@@ -740,6 +748,21 @@ function crossesModuleBoundary(
     if (res.targets.length === 0) return true; // overlay / external / unresolved
     const home = packageRootOf(ctx.fn.fileName);
     return res.targets.some((t) => packageRootOf(t.fileName) !== home);
+}
+
+// A call worth reporting under "cross-module": it reaches an external/overlay
+// thrower, or a function authored in a DIFFERENT file than the caller. A callee
+// defined in the caller's own file is that file's own contract — an exception it
+// creates and throws itself is intentional, handled by whoever imports it — skip.
+function crossesFileBoundary(
+    env: Env,
+    ctx: DiagnoseContext<ExceptionsValue>,
+    call: ts.CallExpression | ts.NewExpression,
+): boolean {
+    const res = env.resolveCall(call);
+    if (res.targets.length === 0) return true; // overlay / external / unresolved
+    const home = ctx.fn.fileName.replace(/\\/g, '/');
+    return res.targets.some((t) => t.fileName.replace(/\\/g, '/') !== home);
 }
 
 // Up-stack filter: true unless every throw behind `rem` is caught before reaching
@@ -792,12 +815,18 @@ function walkDiagnostics(
         }
         if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
             const rem = callEscape(env, n);
-            // In "cross-module" mode a call is reported only when its throwing callee is
-            // in another package (the author can't see it) AND the throw isn't caught by
-            // some ancestor up the stack.
+            // "consumers" reports a call only when its throwing callee is in another
+            // package; "cross-module" narrows the boundary to the file, so a call whose
+            // callee is authored in the same file stays silent. Both additionally require
+            // the throw to reach a call-graph root uncaught (no ancestor catches it).
+            const mode = reportMode(ctx);
             const report =
-                reportMode(ctx) !== 'cross-module' ||
-                (crossesModuleBoundary(env, ctx, n) && reachesTop(env, rem));
+                mode === 'all'
+                    ? true
+                    : mode === 'cross-module'
+                      ? crossesFileBoundary(env, ctx, n) && reachesTop(env, rem)
+                      : crossesPackageBoundary(env, ctx, n) &&
+                        reachesTop(env, rem);
             if (!isEmpty(rem) && report)
                 out.push(callDiagnostic(env, ctx, n, rem));
             ts.forEachChild(n, visit);
