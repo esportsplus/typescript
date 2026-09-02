@@ -288,13 +288,3 @@ export function loadConfigFromTsconfig(tsconfigPath: string): AnalyzeConfig | un
   return { ...configFromObject(entry, NodePath.dirname(resolved)), tsconfigPath: resolved };
 }
 
-// Load and validate analyze.config.jsonc found at or above `startDir`.
-export function loadConfig(configPath: string): AnalyzeConfig {
-  if (!NodeFS.existsSync(configPath)) {
-    fail(`no config file at ${configPath}`);
-  }
-  const text = NodeFS.readFileSync(configPath, "utf8");
-  return parseConfig(text, NodePath.dirname(configPath));
-}
-
-export const KNOWN_CHANNELS = CHANNEL_NAMES;

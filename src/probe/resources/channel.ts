@@ -16,7 +16,7 @@ import type {
 import { overlayThrows } from "../exceptions/channel";
 import { isEmpty, type ExceptionsValue } from "../exceptions/value";
 import { isFunctionLike, locationOf } from "../kernel/ids";
-import { bottom, equals, fromParams, join, widen, type ResourcesValue } from "./value";
+import { bottom, equals, fromParams, widen, type ResourcesValue } from "./value";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1144,10 +1144,8 @@ export const createResourcesChannel = (
 ): Channel<ResourcesValue> => {
     return {
         name: "resources",
-        version: "1",
         dependsOn: ["exceptions"],
         bottom,
-        join,
         equals,
         widen,
         transfer(ctx: TransferContext<ResourcesValue>): Summary<ResourcesValue> {

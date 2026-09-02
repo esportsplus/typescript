@@ -22,7 +22,7 @@ export interface ExceptionsValue {
 
 // Reserved key/display for `any`/`unknown` thrown values, which collapse to TOP.
 export const TOP_KEY = "\u0000top";
-export const TOP_DISPLAY = "an unknown error";
+const TOP_DISPLAY = "an unknown error";
 
 // Cap on distinct types before a set widens to TOP (termination + noise control).
 const WIDEN_CAP = 8;

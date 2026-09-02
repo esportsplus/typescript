@@ -1,6 +1,6 @@
 import * as ts from "~/probe/adapter";
 
-import { channelFor, implementedChannels } from "../channels";
+import { channelFor } from "../channels";
 import { buildCallGraph } from "./graph";
 import { buildProgram } from "./program";
 import { runChannel } from "./fixpoint";
@@ -11,23 +11,12 @@ import type {
   Channel,
   ChannelConfig,
   Diagnostic,
-  FunctionInfo,
   SummaryStore,
   AnalyzeConfig,
 } from "./types";
 
 export interface AnalyzeResult {
   readonly diagnostics: ReadonlyArray<Diagnostic>;
-  readonly reachedFunctions: ReadonlyArray<FunctionInfo>;
-  // Non-error, one-time messages (e.g. the non-strict guarantee-floor notice).
-  readonly notices: ReadonlyArray<string>;
-  // Channels requested in config that have no landed implementation yet.
-  readonly skippedChannels: ReadonlyArray<string>;
-}
-
-// Whether a program's options prove the null-safety floor the notice keys off.
-function isStrict(options: ts.CompilerOptions): boolean {
-  return options.strict === true || options.strictNullChecks === true;
 }
 
 // Analyze an already-built Program — the path the language-service plugin takes,
@@ -37,7 +26,6 @@ export function analyzeProgram(
   checker: ts.TypeChecker,
   config: AnalyzeConfig,
 ): AnalyzeResult {
-  const strict = isStrict(program.getCompilerOptions());
   const overlays = loadOverlays(config);
 
   // Preset handler boundaries are kernel config; fold them in before the graph
@@ -59,24 +47,11 @@ export function analyzeProgram(
     graph,
   };
 
-  const notices: string[] = [];
-  if (!strict) {
-    notices.push(
-      "analyze: tsconfig is not strict — the guarantee floor is whatever your tsconfig proves.",
-    );
-  }
-
   const diagnostics: Diagnostic[] = [];
-  const skippedChannels: string[] = [];
-  const implemented = new Set(implementedChannels());
 
   const runnable = new Map<string, { config: ChannelConfig; channel: Channel<unknown> }>();
   for (const [name, channelConfig] of Object.entries(effectiveConfig.channels)) {
     if (!channelConfig.enabled) {
-      continue;
-    }
-    if (!implemented.has(name)) {
-      skippedChannels.push(name);
       continue;
     }
     runnable.set(name, { config: channelConfig, channel: channelFor(name)! });
@@ -109,12 +84,7 @@ export function analyzeProgram(
     diagnostics.push(...result.diagnostics);
   }
 
-  return {
-    diagnostics,
-    reachedFunctions: graph.reachedFunctions(),
-    notices,
-    skippedChannels,
-  };
+  return { diagnostics };
 }
 
 // Build a Program from the config's tsconfig, then analyze it — the CLI path.

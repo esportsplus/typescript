@@ -20,9 +20,6 @@ interface CallCore {
   // Callee cannot be pinned to a declaration: `any`, an untracked function
   // value (a parameter/variable holding a function), or an abstract method.
   readonly unresolved: boolean;
-  // A real declaration exists but has no analyzable body — overlay/worklist
-  // material. Its display name, else undefined.
-  readonly bodylessLeafName: string | undefined;
 }
 
 // A parsed handler-boundary selector. `module` is the package the callee must
@@ -140,17 +137,6 @@ export function buildCallGraph(
     return mods?.some((m) => m.kind === ts.SyntaxKind.AbstractKeyword) ?? false;
   }
 
-  function displayName(
-    call: ts.CallExpression | ts.NewExpression,
-    sym: ts.Symbol | undefined,
-  ): string {
-    const name = sym?.name;
-    if (name && name !== "__type" && name !== "__function") {
-      return name;
-    }
-    return call.expression.getText(call.expression.getSourceFile());
-  }
-
   function argExpressions(
     call: ts.CallExpression | ts.NewExpression,
   ): ReadonlyArray<ts.Expression> {
@@ -171,7 +157,7 @@ export function buildCallGraph(
 
     if (!sym) {
       // No symbol: the callee flows through `any` or an untracked value.
-      return { symbol: undefined, targets: [], functionArgs, unresolved: true, bodylessLeafName: undefined };
+      return { symbol: undefined, targets: [], functionArgs, unresolved: true };
     }
 
     const fns = functionLikesFromSymbol(sym, isNew);
@@ -186,25 +172,19 @@ export function buildCallGraph(
     }
 
     if (targets.length > 0) {
-      return { symbol: sym, targets, functionArgs, unresolved: false, bodylessLeafName: undefined };
+      return { symbol: sym, targets, functionArgs, unresolved: false };
     }
     if (fns.length === 0) {
       // Symbol resolves to a non-function (parameter/variable holding a
       // function) — an untracked function value.
-      return { symbol: sym, targets: [], functionArgs, unresolved: true, bodylessLeafName: undefined };
+      return { symbol: sym, targets: [], functionArgs, unresolved: true };
     }
     if (fns.some(isAbstract)) {
       // Abstract/overridable with no single implementation.
-      return { symbol: sym, targets: [], functionArgs, unresolved: true, bodylessLeafName: undefined };
+      return { symbol: sym, targets: [], functionArgs, unresolved: true };
     }
     // Real declaration, no analyzable body: an external/lib leaf.
-    return {
-      symbol: sym,
-      targets: [],
-      functionArgs,
-      unresolved: false,
-      bodylessLeafName: displayName(call, sym),
-    };
+    return { symbol: sym, targets: [], functionArgs, unresolved: false };
   }
 
   function getCore(call: ts.CallExpression | ts.NewExpression): CallCore {
@@ -535,11 +515,10 @@ export function buildCallGraph(
         overlay: undefined,
         functionArgs: core.functionArgs,
         unresolved: false,
-        unmodeledLeaf: undefined,
       };
     }
     const overlay = core.symbol
-      ? overlays.lookup(core.symbol, checker, channel)
+      ? overlays.lookup(core.symbol, channel)
       : undefined;
     if (overlay) {
       return {
@@ -547,24 +526,13 @@ export function buildCallGraph(
         overlay,
         functionArgs: core.functionArgs,
         unresolved: false,
-        unmodeledLeaf: undefined,
-      };
-    }
-    if (core.unresolved) {
-      return {
-        targets: [],
-        overlay: undefined,
-        functionArgs: core.functionArgs,
-        unresolved: true,
-        unmodeledLeaf: undefined,
       };
     }
     return {
       targets: [],
       overlay: undefined,
       functionArgs: core.functionArgs,
-      unresolved: false,
-      unmodeledLeaf: core.bodylessLeafName ?? displayName(call, core.symbol),
+      unresolved: core.unresolved,
     };
   }
 
@@ -595,9 +563,6 @@ export function buildCallGraph(
       return boundaryIds;
     },
     calleesOf,
-    functionAt(node: FunctionLike) {
-      return reached.get(node);
-    },
     resolveCall,
     resolveFunctionValue,
   };

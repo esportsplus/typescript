@@ -62,9 +62,6 @@ export interface CalleeResolution {
   // value, or an abstract/overridable method). The channel degrades by the
   // dispatch knob when this is set and there is no overlay.
   readonly unresolved: boolean;
-  // The unmodeled bodyless leaf's display name, when there is one and it is
-  // neither resolved nor overlaid — the channel logs it as worklist material.
-  readonly unmodeledLeaf: string | undefined;
 }
 
 // A per-channel overlay entry for one modeled symbol. `entry` is the raw
@@ -83,7 +80,6 @@ export interface OverlayLookup {
 // services; all lattice semantics stay in the channel.
 export interface TransferContext<V> {
   readonly checker: ts.TypeChecker;
-  readonly program: ts.Program;
   readonly fn: FunctionInfo;
   readonly dispatch: Dispatch;
   readonly channelConfig: unknown;
@@ -95,20 +91,15 @@ export interface TransferContext<V> {
   // Resolve a call against a named peer channel's overlay section — targets are
   // channel-independent; only the overlay layer differs.
   resolveCallFor(channel: string, call: ts.CallExpression | ts.NewExpression): CalleeResolution;
-  // Resolve an expression used as a function value to the functions it may be.
-  resolveFunctionValue(expr: ts.Expression): ReadonlyArray<FunctionInfo>;
   // Converged summary value of a peer channel for a function id, or undefined
   // when that peer channel did not run (peer dependencies are optional).
   peerSummaryValue(channel: string, fnId: string): unknown;
-  // Record an unmodeled bodyless leaf for the growth worklist.
-  logUnmodeledLeaf(name: string): void;
 }
 
 // Context handed to `diagnose` after the fixpoint has converged. Same structural
 // services, plus final summaries and the boundary chain for escape reporting.
 export interface DiagnoseContext<V> {
   readonly checker: ts.TypeChecker;
-  readonly program: ts.Program;
   readonly fn: FunctionInfo;
   readonly dispatch: Dispatch;
   readonly channelConfig: unknown;
@@ -119,7 +110,6 @@ export interface DiagnoseContext<V> {
   summaryOf(fn: FunctionInfo): Summary<V>;
   resolveCall(call: ts.CallExpression | ts.NewExpression): CalleeResolution;
   resolveCallFor(channel: string, call: ts.CallExpression | ts.NewExpression): CalleeResolution;
-  resolveFunctionValue(expr: ts.Expression): ReadonlyArray<FunctionInfo>;
   peerSummaryValue(channel: string, fnId: string): unknown;
   // A path of functions from `fn` out to the nearest reaching boundary, for the
   // diagnostic's related-information chain.
@@ -133,12 +123,10 @@ export interface DiagnoseContext<V> {
 // A channel is a plugin over the shared kernel. `V` is its lattice value type.
 export interface Channel<V> {
   readonly name: string;
-  readonly version: string;
   // Peer channels whose summaries this channel reads; the kernel runs them first
   // when they are enabled. Optional — a disabled peer is absent, not an error.
   readonly dependsOn?: ReadonlyArray<string>;
   bottom(): V;
-  join(a: V, b: V): V;
   // Convergence test for the fixpoint; `true` when `next` adds nothing to `prev`.
   equals(a: V, b: V): boolean;
   // Termination guard: fold `next` toward top after repeated growth. `round` is
@@ -241,7 +229,7 @@ export interface AnalyzeConfig {
 // collisions across libraries never alias.
 export interface OverlaySet {
   // The modeled entry for a symbol, if any, scoped to one channel section.
-  lookup(symbol: ts.Symbol, checker: ts.TypeChecker, channel: string): OverlayLookup | undefined;
+  lookup(symbol: ts.Symbol, channel: string): OverlayLookup | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -255,8 +243,6 @@ export interface CallGraph {
   boundaries(): ReadonlySet<string>;
   // App-function callees of `fn` (call-graph edges; excludes overlay leaves).
   calleesOf(fn: FunctionInfo): ReadonlyArray<FunctionInfo>;
-  // Look up a reached function by node identity, if it is in the graph.
-  functionAt(node: FunctionLike): FunctionInfo | undefined;
   // Structural resolution of one call site (targets, function args, overlay).
   resolveCall(
     call: ts.CallExpression | ts.NewExpression,

@@ -13,7 +13,7 @@ import type {
     TransferContext,
 } from "../kernel/types";
 import { isFunctionLike, locationOf } from "../kernel/ids";
-import { bottom, equals, join, promise, widen, type AsyncValue } from "./value";
+import { bottom, equals, promise, widen, type AsyncValue } from "./value";
 
 // The async aggregators whose input decides fan-out width, and whose result is a
 // promise ownership moves into.
@@ -661,9 +661,7 @@ function bodyOf(node: FunctionLike): ts.Node | undefined {
 export function createAsyncChannel(): Channel<AsyncValue> {
     return {
         name: "async",
-        version: "1",
         bottom,
-        join,
         equals,
         widen,
         transfer(ctx: TransferContext<AsyncValue>): Summary<AsyncValue> {

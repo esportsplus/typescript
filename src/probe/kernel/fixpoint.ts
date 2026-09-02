@@ -125,13 +125,8 @@ export function runChannel<V>(
   const summaryOf = (fn: FunctionInfo): Summary<V> =>
     summaries.get(fn.id) ?? bottomSummary();
 
-  // Dedup log of unmodeled bodyless leaves (name -> reach count). Collected for
-  // the growth worklist; not otherwise surfaced in v1.
-  const unmodeledLeaves = new Map<string, number>();
-
   const makeTransferContext = (fn: FunctionInfo): TransferContext<V> => ({
     checker: analysis.checker,
-    program: analysis.program,
     fn,
     dispatch,
     channelConfig,
@@ -139,11 +134,7 @@ export function runChannel<V>(
     summaryOf,
     resolveCall: (call) => graph.resolveCall(call, channel.name),
     resolveCallFor: (peerChannel, call) => graph.resolveCall(call, peerChannel),
-    resolveFunctionValue: (expr) => graph.resolveFunctionValue(expr),
     peerSummaryValue: (peerChannel, fnId) => peers.get(peerChannel)?.get(fnId).value,
-    logUnmodeledLeaf: (name) => {
-      unmodeledLeaves.set(name, (unmodeledLeaves.get(name) ?? 0) + 1);
-    },
   });
 
   // Reverse-topological order: callees before callers.
@@ -246,7 +237,6 @@ export function runChannel<V>(
   for (const fn of reached) {
     const ctx: DiagnoseContext<V> = {
       checker: analysis.checker,
-      program: analysis.program,
       fn,
       dispatch,
       channelConfig,
@@ -255,7 +245,6 @@ export function runChannel<V>(
       summaryOf,
       resolveCall: (call) => graph.resolveCall(call, channel.name),
       resolveCallFor: (peerChannel, call) => graph.resolveCall(call, peerChannel),
-      resolveFunctionValue: (expr) => graph.resolveFunctionValue(expr),
       peerSummaryValue: (peerChannel, fnId) => peers.get(peerChannel)?.get(fnId).value,
       pathToBoundary,
       roots: () => roots,

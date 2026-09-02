@@ -333,7 +333,7 @@ export function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
     boundariesFromPresets() {
       return merged.boundaries;
     },
-    lookup(symbol, _checker, channel) {
+    lookup(symbol, channel) {
       const table = merged.channels.get(channel);
       if (!table) {
         return undefined;

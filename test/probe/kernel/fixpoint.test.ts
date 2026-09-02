@@ -22,9 +22,7 @@ afterEach(() => {
 function orderRecorder(order: string[]): Channel<Growable> {
     return {
         name: "recorder",
-        version: "1",
         bottom: () => ({ count: 0, top: false }),
-        join: (a, b) => ({ count: Math.max(a.count, b.count), top: a.top || b.top }),
         equals: (a, b) => (a.top || b.top ? a.top === b.top : a.count === b.count),
         widen: (_prev, next) => next,
         transfer(ctx) {
@@ -40,9 +38,7 @@ function orderRecorder(order: string[]): Channel<Growable> {
 function everGrowing(): Channel<Growable> {
     return {
         name: "grower",
-        version: "1",
         bottom: () => ({ count: 0, top: false }),
-        join: (a, b) => (a.top || b.top ? { count: 0, top: true } : { count: Math.max(a.count, b.count), top: false }),
         equals: (a, b) => (a.top || b.top ? a.top === b.top : a.count === b.count),
         widen: (prev, next, round) => {
             if (next.top) {

@@ -64,7 +64,6 @@ interface Env {
   readonly fn: FunctionInfo;
   readonly summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>;
   readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
-  readonly logLeaf: (name: string) => void;
   readonly typeTable: Map<string, ts.Type>;
   readonly paramSymbols: Map<ts.Symbol, number>;
   readonly fromCallbacks: Set<number>;
@@ -92,13 +91,11 @@ export function createExceptionsChannel(): Channel<ExceptionsValue> {
   };
   return {
     name: "exceptions",
-    version: "1",
     bottom,
-    join,
     equals,
     widen,
     transfer(ctx: TransferContext<ExceptionsValue>): Summary<ExceptionsValue> {
-      const env = makeEnv(ctx.checker, ctx.dispatch, ctx.sinks, ctx.fn, ctx.summaryOf, ctx.resolveCall, ctx.logUnmodeledLeaf);
+      const env = makeEnv(ctx.checker, ctx.dispatch, ctx.sinks, ctx.fn, ctx.summaryOf, ctx.resolveCall);
       const body = bodyOf(ctx.fn.node);
       let value = body ? escapeOf(env, body, undefined) : bottom();
       // A `@throws` declaration is taken as the checked summary; inference beyond
@@ -109,7 +106,7 @@ export function createExceptionsChannel(): Channel<ExceptionsValue> {
     },
     diagnose(ctx: DiagnoseContext<ExceptionsValue>): ReadonlyArray<Diagnostic> {
       const out: Diagnostic[] = [];
-      const base = makeEnv(ctx.checker, ctx.dispatch, ctx.sinks, ctx.fn, ctx.summaryOf, ctx.resolveCall, () => {});
+      const base = makeEnv(ctx.checker, ctx.dispatch, ctx.sinks, ctx.fn, ctx.summaryOf, ctx.resolveCall);
       const env: Env =
         reportMode(ctx) === "cross-module" ? { ...base, unhandled: computeUnhandled(ctx) } : base;
       const body = bodyOf(ctx.fn.node);
@@ -149,7 +146,6 @@ function makeEnv(
   fn: FunctionInfo,
   summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>,
   resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution,
-  logLeaf: (name: string) => void,
 ): Env {
   const paramSymbols = new Map<ts.Symbol, number>();
   const params = (fn.node as { parameters?: ts.NodeArray<ts.ParameterDeclaration> }).parameters;
@@ -168,7 +164,6 @@ function makeEnv(
     fn,
     summaryOf,
     resolveCall,
-    logLeaf,
     typeTable: new Map(),
     paramSymbols,
     fromCallbacks: new Set(),
@@ -427,7 +422,6 @@ function callEscape(env: Env, call: ts.CallExpression | ts.NewExpression): Excep
   if (res.overlay) v = join(v, overlayValue(env, res, call));
   // Unresolved callee with no model: degrade by dispatch.
   if (res.unresolved && !res.overlay && env.dispatch === "pessimist") v = join(v, top());
-  if (res.unmodeledLeaf) env.logLeaf(res.unmodeledLeaf);
   const sink = matchSink(env, call);
   if (sink) v = applySink(v, sink);
   return v;
