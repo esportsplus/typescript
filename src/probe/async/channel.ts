@@ -46,6 +46,7 @@ interface Env {
     readonly resolveCall: (
         call: ts.CallExpression | ts.NewExpression,
     ) => CalleeResolution;
+    readonly heldSignalNames: (fn: FunctionInfo) => ReadonlySet<string>;
     // Names bound to an AbortSignal the current function holds (A3).
     readonly held: ReadonlySet<string>;
 }
@@ -518,7 +519,7 @@ function callRequiresSignal(env: Env, call: ts.CallExpression): boolean {
     }
     return env
         .resolveCall(call)
-        .targets.some((t) => heldSignalNames(env.checker, t.node).size > 0);
+        .targets.some((t) => env.heldSignalNames(t).size > 0);
 }
 
 // Whether `call`'s result is directly awaited (through parens/casts).
@@ -759,7 +760,20 @@ function walk(env: Env, body: ts.Node, out: Diagnostic[]): void {
     ts.forEachChild(body, visit);
 }
 
-export function createAsyncChannel(): Channel<AsyncValue> {
+export function createAsyncChannel(channelConfig: unknown): Channel<AsyncValue> {
+    const options = parseOptions(channelConfig);
+    const heldByFunction = new Map<FunctionInfo, ReadonlySet<string>>();
+    const getHeldSignalNames = (
+        checker: ts.TypeChecker,
+        fn: FunctionInfo,
+    ): ReadonlySet<string> => {
+        let held = heldByFunction.get(fn);
+        if (!held) {
+            held = heldSignalNames(checker, fn.node);
+            heldByFunction.set(fn, held);
+        }
+        return held;
+    };
     return {
         name: 'async',
         bottom,
@@ -779,10 +793,11 @@ export function createAsyncChannel(): Channel<AsyncValue> {
             const env: Env = {
                 checker: ctx.checker,
                 dispatch: ctx.dispatch,
-                options: parseOptions(ctx.channelConfig),
+                options,
                 summaryOf: ctx.summaryOf,
                 resolveCall: ctx.resolveCall,
-                held: heldSignalNames(ctx.checker, ctx.fn.node),
+                heldSignalNames: (fn) => getHeldSignalNames(ctx.checker, fn),
+                held: getHeldSignalNames(ctx.checker, ctx.fn),
             };
             const out: Diagnostic[] = [];
             walk(env, body, out);

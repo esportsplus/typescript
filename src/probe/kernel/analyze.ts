@@ -61,7 +61,7 @@ export function analyzeProgram(
         }
         runnable.set(name, {
             config: channelConfig,
-            channel: channelFor(name)!,
+            channel: channelFor(name, channelConfig.options)!,
         });
     }
 

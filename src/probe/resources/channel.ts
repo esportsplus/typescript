@@ -1358,10 +1358,12 @@ function diagnoseClassFields(
 // degrade to non-throwing and only overlay-modeled throwers (e.g. JSON.parse) and,
 // under pessimist, unresolved callees still count as bypass paths.
 export const createResourcesChannel = (
+    channelConfig: unknown,
     // Silent by default: degradation is surfaced as a pessimist-mode diagnostic.
     // Callers that want to measure the v1 tracking noise floor inject a logger.
     onDegrade: (message: string) => void = () => {},
 ): Channel<ResourcesValue> => {
+    const ownership = parseOwnership(channelConfig);
     return {
         name: 'resources',
         dependsOn: ['exceptions'],
@@ -1371,7 +1373,6 @@ export const createResourcesChannel = (
         transfer(
             ctx: TransferContext<ResourcesValue>,
         ): Summary<ResourcesValue> {
-            const ownership = parseOwnership(ctx.channelConfig);
             const env = makeEnv(
                 ctx.checker,
                 ctx.dispatch,
@@ -1392,7 +1393,6 @@ export const createResourcesChannel = (
         diagnose(
             ctx: DiagnoseContext<ResourcesValue>,
         ): ReadonlyArray<Diagnostic> {
-            const ownership = parseOwnership(ctx.channelConfig);
             const env = makeEnv(
                 ctx.checker,
                 ctx.dispatch,
