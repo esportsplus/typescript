@@ -23,10 +23,7 @@ import {
     widen,
     type ResourcesValue,
 } from './value';
-
-// ---------------------------------------------------------------------------
 // Types
-// ---------------------------------------------------------------------------
 
 // The raw per-symbol overlay entry for this channel (see overlay/base/resources.jsonc).
 //   acquires:     resource label, e.g. "Interval" — presence marks an acquire site.
@@ -36,31 +33,31 @@ import {
 //   pairKey:      argument indices that must match between acquire and release for
 //                 receiver-keyed resources (addEventListener/removeEventListener).
 //   informational: modeled but not obligation-bearing (e.g. AbortController).
-interface ResourceEntry {
+type ResourceEntry  = {
     acquires?: unknown;
     releasedBy?: unknown;
     pairKey?: unknown;
     ownsParams?: unknown;
     informational?: unknown;
-}
+};
 
 // A classified acquire site.
-interface Acquire {
+type Acquire  = {
     readonly kind: 'handle' | 'pair';
     readonly releasedBy: string | undefined;
     readonly pairKey: ReadonlyArray<number> | undefined;
     readonly label: string;
-}
+};
 
 // A configured ownership-taking call: passing a tracked resource to `params` of
 // `callee` transfers the obligation to that callee.
-interface Ownership {
+type Ownership  = {
     readonly callee: string;
     readonly params: ReadonlyArray<number>;
-}
+};
 
 // Per-analysis working state shared by every helper.
-interface Env {
+type Env  = {
     readonly checker: ts.TypeChecker;
     readonly dispatch: Dispatch;
     readonly fn: FunctionInfo;
@@ -75,13 +72,10 @@ interface Env {
     readonly peerThrows: (fnId: string) => boolean;
     readonly logDegrade: (message: string) => void;
     readonly paramSymbols: Map<ts.Symbol, number>;
-}
+};
 
 type Outcome = 'safe' | 'leak' | 'degrade';
-
-// ---------------------------------------------------------------------------
 // Constants
-// ---------------------------------------------------------------------------
 
 // Free functions that release a handle passed as their first argument.
 const FREE_RELEASERS = new Set([
@@ -109,10 +103,7 @@ const OPAQUE_METHODS = new Set([
     'set',
     'unshift',
 ]);
-
-// ---------------------------------------------------------------------------
 // Internal functions
-// ---------------------------------------------------------------------------
 
 function refsSym(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean {
     const e = unwrap(expr, { assertions: true, awaits: true });
@@ -894,10 +885,7 @@ function classFieldAcquires(
 
     return out;
 }
-
-// ---------------------------------------------------------------------------
 // Diagnostics
-// ---------------------------------------------------------------------------
 
 function relatedPath(
     ctx: DiagnoseContext<ResourcesValue>,
@@ -1079,10 +1067,7 @@ function leakDiagnostic(
         fixes,
     };
 }
-
-// ---------------------------------------------------------------------------
 // Options
-// ---------------------------------------------------------------------------
 
 function parseOwnership(channelConfig: unknown): ReadonlyArray<Ownership> {
     if (typeof channelConfig !== 'object' || channelConfig === null) {
@@ -1129,10 +1114,7 @@ function parseOwnership(channelConfig: unknown): ReadonlyArray<Ownership> {
         };
     });
 }
-
-// ---------------------------------------------------------------------------
 // Environment
-// ---------------------------------------------------------------------------
 
 function makeEnv(
     checker: ts.TypeChecker,
@@ -1345,10 +1327,7 @@ function diagnoseClassFields(
         });
     }
 }
-
-// ---------------------------------------------------------------------------
 // Channel
-// ---------------------------------------------------------------------------
 
 // Leak-on-throwing-path consults the `exceptions` channel via the kernel peer API
 // (this channel declares `dependsOn: ["exceptions"]`): a call between an acquire
@@ -1357,7 +1336,7 @@ function diagnoseClassFields(
 // When the exceptions channel is disabled its summaries are absent, so app calls
 // degrade to non-throwing and only overlay-modeled throwers (e.g. JSON.parse) and,
 // under pessimist, unresolved callees still count as bypass paths.
-export const createResourcesChannel = (
+const createResourcesChannel = (
     channelConfig: unknown,
     // Silent by default: degradation is surfaced as a pessimist-mode diagnostic.
     // Callers that want to measure the v1 tracking noise floor inject a logger.
@@ -1434,3 +1413,6 @@ export const createResourcesChannel = (
         },
     };
 };
+
+
+export { createResourcesChannel };
