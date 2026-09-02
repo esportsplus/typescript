@@ -4,6 +4,7 @@ import * as ts from '~/probe/adapter';
 
 import { analyzeProgram } from '~/probe/kernel/analyze';
 import { loadConfigFromTsconfig } from '~/probe/kernel/config';
+import { open } from '~/compiler/language-service';
 
 import type { AnalyzeResult } from '~/probe/kernel/analyze';
 import type { AnalyzeConfig } from '~/probe/kernel/types';
@@ -24,11 +25,13 @@ class AnalyzeWorkspace {
 
     constructor(tsconfigPath: string) {
         this.configPath = NodePath.resolve(tsconfigPath);
-        this.api = new ts.API({ cwd: NodePath.dirname(this.configPath) });
         this.config = loadConfigFromTsconfig(this.configPath);
         // Open the project once — opens are ref-counted and persist across snapshots,
         // so later refreshes only report the files that changed.
-        this.snapshot = this.api.updateSnapshot({ openProjects: [this.configPath] });
+        let opened = open(this.configPath);
+
+        this.api = opened.api;
+        this.snapshot = opened.snapshot;
     }
 
     // Re-read the tsconfig plugin entry after the config file itself changes on disk.

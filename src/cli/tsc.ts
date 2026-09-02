@@ -43,11 +43,12 @@ let require = createRequire(import.meta.url),
 
 
 async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API, noEmit = false): Promise<void> {
-    let root = path.dirname(path.resolve(tsconfig)),
+    let opened = instance === undefined ? languageService.open(tsconfig) : undefined,
+        root = path.dirname(path.resolve(tsconfig)),
         owned = instance === undefined,
-        api = instance ?? new API({ cwd: root }),
-        snapshot = api.updateSnapshot({ openProjects: [tsconfig] }),
-        project = snapshot.getProject(tsconfig);
+        api = opened?.api ?? instance!,
+        snapshot = opened?.snapshot ?? api.updateSnapshot({ openProjects: [tsconfig] }),
+        project = opened?.project ?? snapshot.getProject(tsconfig);
 
     if (!project) {
         teardown(snapshot, api, root, owned);

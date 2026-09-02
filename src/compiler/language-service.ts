@@ -38,6 +38,13 @@ type UpdateResult = {
     program: Program;
 };
 
+type OpenProject = {
+    api: API;
+    dispose: () => void;
+    project: Project;
+    snapshot: Snapshot;
+};
+
 
 const backslashes = /\\/g;
 
@@ -91,9 +98,8 @@ function createEntry(root: string): Entry {
     }
 
     let contents = new Map<string, string>(),
-        api = new API({ cwd: root, fs: overlayFileSystem(contents) }),
-        snapshot = api.updateSnapshot({ openProjects: [configFileName] }),
-        project = resolveProject(snapshot, configFileName);
+        opened = open(configFileName, overlayFileSystem(contents)),
+        { api, project, snapshot } = opened;
 
     for (let diagnostic of project.program.getConfigFileParsingDiagnostics()) {
         if (diagnostic.category === DiagnosticCategory.Error) {
@@ -149,6 +155,26 @@ function getEntry(root: string): Entry {
 
 function normalize(fileName: string): string {
     return fileName.replace(backslashes, '/');
+}
+
+function open(configPath: string, overlay?: FileSystem): OpenProject {
+    let configFileName = normalize(path.resolve(configPath)),
+        api = new API({ cwd: path.dirname(configFileName), fs: overlay }),
+        snapshot = api.updateSnapshot({ openProjects: [configFileName] }),
+        project = resolveProject(snapshot, configFileName);
+
+    return {
+        api,
+        dispose: () => {
+            if (!snapshot.isDisposed()) {
+                snapshot.dispose();
+            }
+
+            api.close();
+        },
+        project,
+        snapshot,
+    };
 }
 
 function overlayFileSystem(contents: Map<string, string>): FileSystem {
@@ -367,6 +393,6 @@ const update = (root: string, fileName: string, content: string): UpdateResult =
 };
 
 
-export default { dispose, findConfig, invalidate, parse, scratch, update };
-export { dispose, findConfig, invalidate, parse, scratch, update };
+export default { dispose, findConfig, invalidate, open, parse, scratch, update };
+export { dispose, findConfig, invalidate, open, parse, scratch, update };
 export type { ScratchResult, UpdateResult };
