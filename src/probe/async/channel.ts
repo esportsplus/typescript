@@ -1,4 +1,4 @@
-import * as ts from "~/probe/adapter";
+import * as ts from '~/probe/adapter';
 
 import type {
     CalleeResolution,
@@ -11,28 +11,28 @@ import type {
     FunctionLike,
     Summary,
     TransferContext,
-} from "../kernel/types";
-import { bodyOf, calleeSelectors, unwrap } from "../kernel/ast";
-import { isFunctionLike, locationOf } from "../kernel/ids";
-import { bottom, equals, promise, widen, type AsyncValue } from "./value";
+} from '../kernel/types';
+import { bodyOf, calleeSelectors, unwrap } from '../kernel/ast';
+import { isFunctionLike, locationOf } from '../kernel/ids';
+import { bottom, equals, promise, widen, type AsyncValue } from './value';
 
 // The async aggregators whose input decides fan-out width, and whose result is a
 // promise ownership moves into.
-const AGGREGATORS = new Set(["all", "allSettled", "race", "any"]);
+const AGGREGATORS = new Set(['all', 'allSettled', 'race', 'any']);
 // Promise combinators that move ownership onto their result (the chain top).
-const CHAIN_METHODS = new Set(["catch", "finally", "then"]);
+const CHAIN_METHODS = new Set(['catch', 'finally', 'then']);
 // Collection mutators a promise flows into opaquely (no longer a tracked binding).
-const OPAQUE_SINKS = new Set(["add", "push", "set", "unshift"]);
+const OPAQUE_SINKS = new Set(['add', 'push', 'set', 'unshift']);
 // Tuple element flags that make a tuple's length unbounded (Rest | Variadic).
 const UNBOUNDED_TUPLE_FLAGS = 12;
 
 // How a created promise is accounted for at the point it is produced.
-type Ownership = "opaque" | "orphan" | "owned";
+type Ownership = 'opaque' | 'orphan' | 'owned';
 
 // Validated channel options. `fanOut` gates the bounded-fan-out check; promise
 // ownership is always checked when the channel is enabled.
 interface AsyncOptions {
-    readonly fanOut: "error" | "off" | "warn";
+    readonly fanOut: 'error' | 'off' | 'warn';
     readonly fanOutAllowLiteralUpTo: number;
     readonly poolFunctions: ReadonlyArray<string>;
 }
@@ -43,7 +43,9 @@ interface Env {
     readonly dispatch: Dispatch;
     readonly options: AsyncOptions;
     readonly summaryOf: (fn: FunctionInfo) => Summary<AsyncValue>;
-    readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
+    readonly resolveCall: (
+        call: ts.CallExpression | ts.NewExpression,
+    ) => CalleeResolution;
     // Names bound to an AbortSignal the current function holds (A3).
     readonly held: ReadonlySet<string>;
 }
@@ -53,26 +55,33 @@ function fail(message: string): never {
 }
 
 function parseOptions(raw: unknown): AsyncOptions {
-    const obj = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
-    let fanOut: AsyncOptions["fanOut"] = "warn";
-    if (obj["fanOut"] !== undefined) {
-        if (obj["fanOut"] !== "off" && obj["fanOut"] !== "warn" && obj["fanOut"] !== "error") {
+    const obj =
+        typeof raw === 'object' && raw !== null
+            ? (raw as Record<string, unknown>)
+            : {};
+    let fanOut: AsyncOptions['fanOut'] = 'warn';
+    if (obj['fanOut'] !== undefined) {
+        if (
+            obj['fanOut'] !== 'off' &&
+            obj['fanOut'] !== 'warn' &&
+            obj['fanOut'] !== 'error'
+        ) {
             fail(`"fanOut" must be "off", "warn", or "error"`);
         }
-        fanOut = obj["fanOut"];
+        fanOut = obj['fanOut'];
     }
     let allow = 16;
-    if (obj["fanOutAllowLiteralUpTo"] !== undefined) {
-        const n = obj["fanOutAllowLiteralUpTo"];
-        if (typeof n !== "number" || !Number.isInteger(n) || n < 0) {
+    if (obj['fanOutAllowLiteralUpTo'] !== undefined) {
+        const n = obj['fanOutAllowLiteralUpTo'];
+        if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) {
             fail(`"fanOutAllowLiteralUpTo" must be a non-negative integer`);
         }
         allow = n;
     }
     let poolFunctions: ReadonlyArray<string> = [];
-    if (obj["poolFunctions"] !== undefined) {
-        const p = obj["poolFunctions"];
-        if (!Array.isArray(p) || p.some((v) => typeof v !== "string")) {
+    if (obj['poolFunctions'] !== undefined) {
+        const p = obj['poolFunctions'];
+        if (!Array.isArray(p) || p.some((v) => typeof v !== 'string')) {
             fail(`"poolFunctions" must be an array of strings`);
         }
         poolFunctions = p as ReadonlyArray<string>;
@@ -88,17 +97,20 @@ function constituents(type: ts.Type): ReadonlyArray<ts.Type> {
     return ts.unionTypes(type) ?? [type];
 }
 
-function isPromiseType(checker: ts.TypeChecker, type: ts.Type | undefined): boolean {
+function isPromiseType(
+    checker: ts.TypeChecker,
+    type: ts.Type | undefined,
+): boolean {
     if (!type) {
         return false;
     }
     for (const c of constituents(type)) {
         const sym = c.getSymbol() ?? c.getAliasSymbol();
-        if (sym && sym.name === "Promise") {
+        if (sym && sym.name === 'Promise') {
             return true;
         }
         const apparent = checker.getApparentType(c) ?? c;
-        if (checker.getPropertyOfType(apparent, "then")) {
+        if (checker.getPropertyOfType(apparent, 'then')) {
             return true;
         }
     }
@@ -106,7 +118,9 @@ function isPromiseType(checker: ts.TypeChecker, type: ts.Type | undefined): bool
 }
 
 function hasAsyncModifier(node: FunctionLike): boolean {
-    const mods = (node as { modifiers?: ReadonlyArray<{ kind: ts.SyntaxKind }> }).modifiers;
+    const mods = (
+        node as { modifiers?: ReadonlyArray<{ kind: ts.SyntaxKind }> }
+    ).modifiers;
     return mods?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ?? false;
 }
 
@@ -143,7 +157,10 @@ function returnsPromise(checker: ts.TypeChecker, node: FunctionLike): boolean {
 // A call produces an owned-relevant promise. App targets answer from their
 // converged summary (call-graph aware); overlay/lib/unresolved leaves fall back
 // to the checker's type at the call site.
-function producesPromise(env: Env, call: ts.CallExpression | ts.NewExpression): boolean {
+function producesPromise(
+    env: Env,
+    call: ts.CallExpression | ts.NewExpression,
+): boolean {
     const res = env.resolveCall(call);
     if (res.targets.length > 0) {
         return res.targets.some((t) => env.summaryOf(t).value.returnsPromise);
@@ -158,10 +175,16 @@ function producesPromise(env: Env, call: ts.CallExpression | ts.NewExpression): 
 // The aggregator member (all/allSettled/race/any) of a `Promise.<m>(…)` call.
 function aggregatorOf(call: ts.CallExpression): string | undefined {
     const callee = call.expression;
-    if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.expression)) {
+    if (
+        !ts.isPropertyAccessExpression(callee) ||
+        !ts.isIdentifier(callee.expression)
+    ) {
         return undefined;
     }
-    if (callee.expression.text !== "Promise" || !AGGREGATORS.has(callee.name.text)) {
+    if (
+        callee.expression.text !== 'Promise' ||
+        !AGGREGATORS.has(callee.name.text)
+    ) {
         return undefined;
     }
     return callee.name.text;
@@ -173,9 +196,14 @@ function isAggregatorCall(node: ts.Node): boolean {
 
 // Descend a `.then/.catch/.finally` chain to the call that seeded it, so a
 // dropped chain is named after its promise source rather than the combinator.
-function chainRoot(call: ts.CallExpression | ts.NewExpression): ts.CallExpression | ts.NewExpression {
+function chainRoot(
+    call: ts.CallExpression | ts.NewExpression,
+): ts.CallExpression | ts.NewExpression {
     let cur: ts.CallExpression | ts.NewExpression = call;
-    while (ts.isPropertyAccessExpression(cur.expression) && CHAIN_METHODS.has(cur.expression.name.text)) {
+    while (
+        ts.isPropertyAccessExpression(cur.expression) &&
+        CHAIN_METHODS.has(cur.expression.name.text)
+    ) {
         const receiver = cur.expression.expression;
         if (!ts.isCallExpression(receiver) && !ts.isNewExpression(receiver)) {
             break;
@@ -204,25 +232,40 @@ function calleeText(node: ts.CallExpression | ts.NewExpression): string {
 // A call is a promise-chain continuation when its result feeds a `.then/.catch/
 // .finally` call — ownership is decided at the chain top, so the inner call is
 // skipped to avoid double-reporting.
-function isChainContinuation(call: ts.CallExpression | ts.NewExpression): boolean {
+function isChainContinuation(
+    call: ts.CallExpression | ts.NewExpression,
+): boolean {
     const parent = call.parent;
-    if (!parent || !ts.isPropertyAccessExpression(parent) || parent.expression !== call) {
+    if (
+        !parent ||
+        !ts.isPropertyAccessExpression(parent) ||
+        parent.expression !== call
+    ) {
         return false;
     }
-    return CHAIN_METHODS.has(parent.name.text) && ts.isCallExpression(parent.parent) && parent.parent.expression === parent;
+    return (
+        CHAIN_METHODS.has(parent.name.text) &&
+        ts.isCallExpression(parent.parent) &&
+        parent.parent.expression === parent
+    );
 }
 
 // A promise chain that installs a rejection handler (`.catch(fn)` or a two-arg
 // `.then(onFulfilled, onRejected)`) anywhere along its length: its rejections are
 // observed, so a dropped chain top is not an unhandled-rejection orphan.
-function chainHandlesRejection(call: ts.CallExpression | ts.NewExpression): boolean {
+function chainHandlesRejection(
+    call: ts.CallExpression | ts.NewExpression,
+): boolean {
     let cur: ts.Expression = call;
-    while (ts.isCallExpression(cur) && ts.isPropertyAccessExpression(cur.expression)) {
+    while (
+        ts.isCallExpression(cur) &&
+        ts.isPropertyAccessExpression(cur.expression)
+    ) {
         const member = cur.expression.name.text;
-        if (member === "catch" && cur.arguments.length >= 1) {
+        if (member === 'catch' && cur.arguments.length >= 1) {
             return true;
         }
-        if (member === "then" && cur.arguments.length >= 2) {
+        if (member === 'then' && cur.arguments.length >= 2) {
             return true;
         }
         cur = cur.expression.expression;
@@ -262,51 +305,54 @@ function classifyOwnership(node: ts.Node): Ownership {
         parent = parent.parent;
     }
     if (!parent) {
-        return "opaque";
+        return 'opaque';
     }
     if (ts.isAwaitExpression(parent) || ts.isVoidExpression(parent)) {
-        return "owned";
+        return 'owned';
     }
     if (ts.isReturnStatement(parent) || ts.isYieldExpression(parent)) {
-        return "owned";
+        return 'owned';
     }
     if (ts.isArrowFunction(parent) && parent.body === child) {
-        return "owned";
+        return 'owned';
     }
     if (ts.isVariableDeclaration(parent) && parent.initializer === child) {
-        return "owned";
+        return 'owned';
     }
     if (ts.isPropertyDeclaration(parent) && parent.initializer === child) {
-        return "owned";
+        return 'owned';
     }
     if (
         ts.isBinaryExpression(parent) &&
         parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
         parent.right === child
     ) {
-        return "owned";
+        return 'owned';
     }
     if (ts.isExpressionStatement(parent)) {
-        return "orphan";
+        return 'orphan';
     }
     if (ts.isCallExpression(parent) || ts.isNewExpression(parent)) {
         if (isAggregatorCall(parent)) {
-            return "owned";
+            return 'owned';
         }
         const callee = parent.expression;
-        if (ts.isPropertyAccessExpression(callee) && OPAQUE_SINKS.has(callee.name.text)) {
-            return "opaque";
+        if (
+            ts.isPropertyAccessExpression(callee) &&
+            OPAQUE_SINKS.has(callee.name.text)
+        ) {
+            return 'opaque';
         }
-        return "owned";
+        return 'owned';
     }
     if (ts.isArrayLiteralExpression(parent)) {
         const gp = parent.parent;
         if (gp && isAggregatorCall(gp)) {
-            return "owned";
+            return 'owned';
         }
-        return "opaque";
+        return 'opaque';
     }
-    return "opaque";
+    return 'opaque';
 }
 
 // ---------------------------------------------------------------------------
@@ -325,17 +371,25 @@ function isBoundedInput(env: Env, arg: ts.Expression): boolean {
     }
     const type = env.checker.getTypeAtLocation(e);
     if (type && type.isTupleType()) {
-        const flags = (type as { elementFlags?: ReadonlyArray<number> }).elementFlags ?? [];
+        const flags =
+            (type as { elementFlags?: ReadonlyArray<number> }).elementFlags ??
+            [];
         if (flags.some((f) => (f & UNBOUNDED_TUPLE_FLAGS) !== 0)) {
             return false;
         }
         const len = (type as { fixedLength?: number }).fixedLength;
-        return typeof len === "number" && len <= env.options.fanOutAllowLiteralUpTo;
+        return (
+            typeof len === 'number' && len <= env.options.fanOutAllowLiteralUpTo
+        );
     }
     return false;
 }
 
-function moduleMatches(env: Env, call: ts.CallExpression, pkg: string): boolean {
+function moduleMatches(
+    env: Env,
+    call: ts.CallExpression,
+    pkg: string,
+): boolean {
     let sym = env.checker.getSymbolAtLocation(call.expression);
     if (sym && sym.flags & ts.SymbolFlags.Alias) {
         sym = env.checker.getAliasedSymbol(sym);
@@ -344,7 +398,7 @@ function moduleMatches(env: Env, call: ts.CallExpression, pkg: string): boolean 
         return false;
     }
     for (const decl of ts.symbolDeclarations(sym)) {
-        const path = decl.getSourceFile().fileName.replace(/\\/g, "/");
+        const path = decl.getSourceFile().fileName.replace(/\\/g, '/');
         if (path.includes(`node_modules/${pkg}/`)) {
             return true;
         }
@@ -355,11 +409,15 @@ function moduleMatches(env: Env, call: ts.CallExpression, pkg: string): boolean 
 function poolMatches(env: Env, call: ts.CallExpression): boolean {
     const names = calleeSelectors(call.expression);
     for (const sel of env.options.poolFunctions) {
-        const hash = sel.indexOf("#");
+        const hash = sel.indexOf('#');
         if (hash >= 0) {
             const obj = sel.slice(0, hash);
             const method = sel.slice(hash + 1);
-            if (names.has(method) || names.has(`${obj}.${method}`) || names.has(`${obj}#${method}`)) {
+            if (
+                names.has(method) ||
+                names.has(`${obj}.${method}`) ||
+                names.has(`${obj}#${method}`)
+            ) {
                 return true;
             }
             continue;
@@ -399,7 +457,7 @@ function isAbortSignalType(type: ts.Type | undefined): boolean {
     }
     for (const c of constituents(type)) {
         const sym = c.getSymbol() ?? c.getAliasSymbol();
-        if (sym && sym.name === "AbortSignal") {
+        if (sym && sym.name === 'AbortSignal') {
             return true;
         }
     }
@@ -409,7 +467,11 @@ function isAbortSignalType(type: ts.Type | undefined): boolean {
 // The binding names a parameter carries that are typed `AbortSignal`, including
 // destructured option properties (`{ signal }: { signal: AbortSignal }`).
 // Name-based: a forwarded signal is passed by its binding name at the call site.
-function collectSignalNames(checker: ts.TypeChecker, name: ts.BindingName, out: Set<string>): void {
+function collectSignalNames(
+    checker: ts.TypeChecker,
+    name: ts.BindingName,
+    out: Set<string>,
+): void {
     if (ts.isIdentifier(name)) {
         if (isAbortSignalType(checker.getTypeAtLocation(name))) {
             out.add(name.text);
@@ -425,9 +487,14 @@ function collectSignalNames(checker: ts.TypeChecker, name: ts.BindingName, out: 
     }
 }
 
-function heldSignalNames(checker: ts.TypeChecker, node: FunctionLike): Set<string> {
+function heldSignalNames(
+    checker: ts.TypeChecker,
+    node: FunctionLike,
+): Set<string> {
     const out = new Set<string>();
-    const params = (node as { parameters?: ReadonlyArray<ts.ParameterDeclaration> }).parameters ?? [];
+    const params =
+        (node as { parameters?: ReadonlyArray<ts.ParameterDeclaration> })
+            .parameters ?? [];
     for (const p of params) {
         collectSignalNames(checker, p.name, out);
     }
@@ -435,7 +502,9 @@ function heldSignalNames(checker: ts.TypeChecker, node: FunctionLike): Set<strin
 }
 
 function overlayCancellable(env: Env, call: ts.CallExpression): boolean {
-    const entry = env.resolveCall(call).overlay?.entry as { cancellable?: unknown } | undefined;
+    const entry = env.resolveCall(call).overlay?.entry as
+        | { cancellable?: unknown }
+        | undefined;
     return entry?.cancellable === true;
 }
 
@@ -447,7 +516,9 @@ function callRequiresSignal(env: Env, call: ts.CallExpression): boolean {
     if (overlayCancellable(env, call)) {
         return true;
     }
-    return env.resolveCall(call).targets.some((t) => heldSignalNames(env.checker, t.node).size > 0);
+    return env
+        .resolveCall(call)
+        .targets.some((t) => heldSignalNames(env.checker, t.node).size > 0);
 }
 
 // Whether `call`'s result is directly awaited (through parens/casts).
@@ -456,7 +527,9 @@ function isAwaited(call: ts.CallExpression): boolean {
     let parent = call.parent;
     while (
         parent &&
-        (ts.isParenthesizedExpression(parent) || ts.isAsExpression(parent) || ts.isNonNullExpression(parent)) &&
+        (ts.isParenthesizedExpression(parent) ||
+            ts.isAsExpression(parent) ||
+            ts.isNonNullExpression(parent)) &&
         (parent as { expression?: ts.Node }).expression === child
     ) {
         child = parent;
@@ -467,7 +540,10 @@ function isAwaited(call: ts.CallExpression): boolean {
 
 // Whether any argument subtree passes a held signal by name (positional
 // `fn(signal)`, shorthand `{ signal }`, or `{ signal: signal }`).
-function forwardsSignal(call: ts.CallExpression, held: ReadonlySet<string>): boolean {
+function forwardsSignal(
+    call: ts.CallExpression,
+    held: ReadonlySet<string>,
+): boolean {
     let found = false;
     const visit = (n: ts.Node): void => {
         if (found) {
@@ -490,21 +566,33 @@ function forwardsSignal(call: ts.CallExpression, held: ReadonlySet<string>): boo
 // ---------------------------------------------------------------------------
 
 // `void <expr>` is always valid; `await <expr>` only inside an async function.
-function orphanFixes(call: ts.CallExpression | ts.NewExpression): ReadonlyArray<DiagnosticFix> {
+function orphanFixes(
+    call: ts.CallExpression | ts.NewExpression,
+): ReadonlyArray<DiagnosticFix> {
     const sf = call.getSourceFile();
     const pos = call.getStart(sf);
     const fixes: DiagnosticFix[] = [
-        { title: "Ignore the result with `void`", edits: [{ fileName: sf.fileName, pos, end: pos, newText: "void " }] },
+        {
+            title: 'Ignore the result with `void`',
+            edits: [{ fileName: sf.fileName, pos, end: pos, newText: 'void ' }],
+        },
     ];
     if (enclosingAsync(call)) {
-        fixes.push({ title: "Await the promise", edits: [{ fileName: sf.fileName, pos, end: pos, newText: "await " }] });
+        fixes.push({
+            title: 'Await the promise',
+            edits: [
+                { fileName: sf.fileName, pos, end: pos, newText: 'await ' },
+            ],
+        });
     }
     return fixes;
 }
 
-function orphanDiagnostic(call: ts.CallExpression | ts.NewExpression): Diagnostic {
+function orphanDiagnostic(
+    call: ts.CallExpression | ts.NewExpression,
+): Diagnostic {
     return {
-        channel: "async",
+        channel: 'async',
         message: `result of \`${calleeText(call)}()\` is neither awaited nor voided — rejections will be unhandled`,
         location: locationOf(call, call.getSourceFile()),
         related: [],
@@ -512,18 +600,23 @@ function orphanDiagnostic(call: ts.CallExpression | ts.NewExpression): Diagnosti
     };
 }
 
-function degradedDiagnostic(call: ts.CallExpression | ts.NewExpression): Diagnostic {
+function degradedDiagnostic(
+    call: ts.CallExpression | ts.NewExpression,
+): Diagnostic {
     return {
-        channel: "async",
+        channel: 'async',
         message: `result of \`${calleeText(call)}()\` flows into an untracked structure — ownership cannot be verified`,
         location: locationOf(call, call.getSourceFile()),
         related: [],
     };
 }
 
-function fanOutDiagnostic(call: ts.CallExpression, aggregator: string): Diagnostic {
+function fanOutDiagnostic(
+    call: ts.CallExpression,
+    aggregator: string,
+): Diagnostic {
     return {
-        channel: "async",
+        channel: 'async',
         message: `unbounded fan-out: \`Promise.${aggregator}\` over a dynamically-sized input — cap concurrency with a pool or bound the input`,
         location: locationOf(call, call.getSourceFile()),
         related: [],
@@ -533,7 +626,10 @@ function fanOutDiagnostic(call: ts.CallExpression, aggregator: string): Diagnost
 // "Forward the signal" is only a safe generic edit for an overlay-cancellable
 // call, whose signal rides an options object (`fetch(url, { signal })`). An app
 // callee takes the signal positionally, so no generic edit is offered there.
-function signalFix(env: Env, call: ts.CallExpression): ReadonlyArray<DiagnosticFix> | undefined {
+function signalFix(
+    env: Env,
+    call: ts.CallExpression,
+): ReadonlyArray<DiagnosticFix> | undefined {
     if (!overlayCancellable(env, call)) {
         return undefined;
     }
@@ -545,25 +641,41 @@ function signalFix(env: Env, call: ts.CallExpression): ReadonlyArray<DiagnosticF
     }
 
     const sf = call.getSourceFile();
-    const prop = name === "signal" ? "signal" : `signal: ${name}`;
-    const last = call.arguments.length > 0 ? call.arguments[call.arguments.length - 1] : undefined;
+    const prop = name === 'signal' ? 'signal' : `signal: ${name}`;
+    const last =
+        call.arguments.length > 0
+            ? call.arguments[call.arguments.length - 1]
+            : undefined;
 
     if (last && ts.isObjectLiteralExpression(last)) {
         const at = last.getStart(sf) + 1;
         const newText = last.properties.length > 0 ? ` ${prop},` : ` ${prop} `;
 
-        return [{ title: "Forward the AbortSignal", edits: [{ fileName: sf.fileName, pos: at, end: at, newText }] }];
+        return [
+            {
+                title: 'Forward the AbortSignal',
+                edits: [{ fileName: sf.fileName, pos: at, end: at, newText }],
+            },
+        ];
     }
 
     const close = call.getEnd() - 1;
     const newText = call.arguments.length > 0 ? `, { ${prop} }` : `{ ${prop} }`;
 
-    return [{ title: "Forward the AbortSignal", edits: [{ fileName: sf.fileName, pos: close, end: close, newText }] }];
+    return [
+        {
+            title: 'Forward the AbortSignal',
+            edits: [{ fileName: sf.fileName, pos: close, end: close, newText }],
+        },
+    ];
 }
 
-function cancellationDiagnostic(call: ts.CallExpression, fixes: ReadonlyArray<DiagnosticFix> | undefined): Diagnostic {
+function cancellationDiagnostic(
+    call: ts.CallExpression,
+    fixes: ReadonlyArray<DiagnosticFix> | undefined,
+): Diagnostic {
     return {
-        channel: "async",
+        channel: 'async',
         message: `\`${calleeText(call)}()\` is awaited without the AbortSignal this function holds — the work cannot be cancelled`,
         location: locationOf(call, call.getSourceFile()),
         related: [],
@@ -571,8 +683,12 @@ function cancellationDiagnostic(call: ts.CallExpression, fixes: ReadonlyArray<Di
     };
 }
 
-function checkFanOut(env: Env, call: ts.CallExpression, out: Diagnostic[]): void {
-    if (env.options.fanOut === "off") {
+function checkFanOut(
+    env: Env,
+    call: ts.CallExpression,
+    out: Diagnostic[],
+): void {
+    if (env.options.fanOut === 'off') {
         return;
     }
     const aggregator = aggregatorOf(call);
@@ -586,24 +702,36 @@ function checkFanOut(env: Env, call: ts.CallExpression, out: Diagnostic[]): void
     out.push(fanOutDiagnostic(call, aggregator));
 }
 
-function checkOwnership(env: Env, call: ts.CallExpression | ts.NewExpression, out: Diagnostic[]): void {
+function checkOwnership(
+    env: Env,
+    call: ts.CallExpression | ts.NewExpression,
+    out: Diagnostic[],
+): void {
     if (isChainContinuation(call) || !producesPromise(env, call)) {
         return;
     }
     const ownership = classifyOwnership(call);
-    if (ownership === "orphan") {
+    if (ownership === 'orphan') {
         if (!chainHandlesRejection(call)) {
             out.push(orphanDiagnostic(call));
         }
-    } else if (ownership === "opaque" && env.dispatch === "pessimist") {
+    } else if (ownership === 'opaque' && env.dispatch === 'pessimist') {
         out.push(degradedDiagnostic(call));
     }
 }
 
 // A cancellable callee awaited without forwarding a signal the function holds
 // leaves uncancellable work; a function holding no signal is never flagged.
-function checkCancellation(env: Env, call: ts.CallExpression, out: Diagnostic[]): void {
-    if (env.held.size === 0 || !callRequiresSignal(env, call) || !isAwaited(call)) {
+function checkCancellation(
+    env: Env,
+    call: ts.CallExpression,
+    out: Diagnostic[],
+): void {
+    if (
+        env.held.size === 0 ||
+        !callRequiresSignal(env, call) ||
+        !isAwaited(call)
+    ) {
         return;
     }
     if (!forwardsSignal(call, env.held)) {
@@ -633,12 +761,14 @@ function walk(env: Env, body: ts.Node, out: Diagnostic[]): void {
 
 export function createAsyncChannel(): Channel<AsyncValue> {
     return {
-        name: "async",
+        name: 'async',
         bottom,
         equals,
         widen,
         transfer(ctx: TransferContext<AsyncValue>): Summary<AsyncValue> {
-            const value = returnsPromise(ctx.checker, ctx.fn.node) ? promise() : bottom();
+            const value = returnsPromise(ctx.checker, ctx.fn.node)
+                ? promise()
+                : bottom();
             return { value, fromCallbacks: new Set() };
         },
         diagnose(ctx: DiagnoseContext<AsyncValue>): ReadonlyArray<Diagnostic> {

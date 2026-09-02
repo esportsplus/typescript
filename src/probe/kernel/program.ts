@@ -1,5 +1,5 @@
-import * as ts from "~/probe/adapter";
-import { open } from "~/compiler/language-service";
+import * as ts from '~/probe/adapter';
+import { open } from '~/compiler/language-service';
 
 export type BuiltProgram = {
     program: ts.Program;

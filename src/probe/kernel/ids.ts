@@ -1,80 +1,91 @@
-import * as ts from "~/probe/adapter";
+import * as ts from '~/probe/adapter';
 
-import type { FunctionInfo, FunctionLike, SourceLocation } from "./types";
+import type { FunctionInfo, FunctionLike, SourceLocation } from './types';
 
 const FUNCTION_LIKE_KINDS = new Set<ts.SyntaxKind>([
-  ts.SyntaxKind.FunctionDeclaration,
-  ts.SyntaxKind.FunctionExpression,
-  ts.SyntaxKind.ArrowFunction,
-  ts.SyntaxKind.MethodDeclaration,
-  ts.SyntaxKind.GetAccessor,
-  ts.SyntaxKind.SetAccessor,
-  ts.SyntaxKind.Constructor,
+    ts.SyntaxKind.FunctionDeclaration,
+    ts.SyntaxKind.FunctionExpression,
+    ts.SyntaxKind.ArrowFunction,
+    ts.SyntaxKind.MethodDeclaration,
+    ts.SyntaxKind.GetAccessor,
+    ts.SyntaxKind.SetAccessor,
+    ts.SyntaxKind.Constructor,
 ]);
 
 // Narrow any node to the FunctionLike union the kernel treats as a graph node.
 export function isFunctionLike(node: ts.Node): node is FunctionLike {
-  return FUNCTION_LIKE_KINDS.has(node.kind);
+    return FUNCTION_LIKE_KINDS.has(node.kind);
 }
 
 // Best-effort display name for a function-like node.
 export function functionName(node: FunctionLike): string {
-  if (ts.isConstructorDeclaration(node)) {
-    const cls = node.parent as { name?: ts.Identifier };
-    const clsName = ts.isClassLike(node.parent) && cls.name ? cls.name.text : "<anonymous>";
-    return `${clsName}.constructor`;
-  }
-  const named = node as { name?: ts.Node };
-  if (named.name && ts.isIdentifier(named.name)) {
-    return named.name.text;
-  }
-  if (
-    (ts.isFunctionExpression(node) || ts.isArrowFunction(node)) &&
-    ts.isVariableDeclaration(node.parent) &&
-    ts.isIdentifier(node.parent.name)
-  ) {
-    return node.parent.name.text;
-  }
-  if (
-    (ts.isFunctionExpression(node) || ts.isArrowFunction(node)) &&
-    ts.isPropertyAssignment(node.parent) &&
-    ts.isIdentifier(node.parent.name)
-  ) {
-    return node.parent.name.text;
-  }
-  return "<anonymous>";
+    if (ts.isConstructorDeclaration(node)) {
+        const cls = node.parent as { name?: ts.Identifier };
+        const clsName =
+            ts.isClassLike(node.parent) && cls.name
+                ? cls.name.text
+                : '<anonymous>';
+        return `${clsName}.constructor`;
+    }
+    const named = node as { name?: ts.Node };
+    if (named.name && ts.isIdentifier(named.name)) {
+        return named.name.text;
+    }
+    if (
+        (ts.isFunctionExpression(node) || ts.isArrowFunction(node)) &&
+        ts.isVariableDeclaration(node.parent) &&
+        ts.isIdentifier(node.parent.name)
+    ) {
+        return node.parent.name.text;
+    }
+    if (
+        (ts.isFunctionExpression(node) || ts.isArrowFunction(node)) &&
+        ts.isPropertyAssignment(node.parent) &&
+        ts.isIdentifier(node.parent.name)
+    ) {
+        return node.parent.name.text;
+    }
+    return '<anonymous>';
 }
 
 // Stable per-run identity: file path + node start. Two runs over the same tree
 // produce the same id, and no two nodes in a file share a start position.
-export function functionId(node: FunctionLike, sourceFile: ts.SourceFile): string {
-  return `${sourceFile.fileName}:${node.getStart(sourceFile)}`;
+export function functionId(
+    node: FunctionLike,
+    sourceFile: ts.SourceFile,
+): string {
+    return `${sourceFile.fileName}:${node.getStart(sourceFile)}`;
 }
 
 export function makeFunctionInfo(
-  node: FunctionLike,
-  sourceFile: ts.SourceFile,
+    node: FunctionLike,
+    sourceFile: ts.SourceFile,
 ): FunctionInfo {
-  const nameNode = (node as { name?: ts.Node }).name;
-  const pos = nameNode ? nameNode.getStart(sourceFile) : node.getStart(sourceFile);
-  return {
-    id: functionId(node, sourceFile),
-    node,
-    sourceFile,
-    name: functionName(node),
-    fileName: sourceFile.fileName,
-    pos,
-  };
+    const nameNode = (node as { name?: ts.Node }).name;
+    const pos = nameNode
+        ? nameNode.getStart(sourceFile)
+        : node.getStart(sourceFile);
+    return {
+        id: functionId(node, sourceFile),
+        node,
+        sourceFile,
+        name: functionName(node),
+        fileName: sourceFile.fileName,
+        pos,
+    };
 }
 
-export function locationOf(node: ts.Node, sourceFile: ts.SourceFile): SourceLocation {
-  const start = node.getStart(sourceFile);
-  const { line, character } = sourceFile.getLineAndCharacterOfPosition(start);
-  return {
-    fileName: sourceFile.fileName,
-    line: line + 1,
-    column: character + 1,
-    pos: start,
-    end: node.getEnd(),
-  };
+export function locationOf(
+    node: ts.Node,
+    sourceFile: ts.SourceFile,
+): SourceLocation {
+    const start = node.getStart(sourceFile);
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(start);
+    return {
+        fileName: sourceFile.fileName,
+        line: line + 1,
+        column: character + 1,
+        pos: start,
+        end: node.getEnd(),
+    };
 }

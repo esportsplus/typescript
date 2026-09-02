@@ -26,6 +26,10 @@ export function equals(a: AsyncValue, b: AsyncValue): boolean {
 
 // A two-point lattice has no infinite ascending chain, so widening never fires:
 // `next` is already the fixpoint after a single pass.
-export function widen(_prev: AsyncValue, next: AsyncValue, _round: number): AsyncValue {
+export function widen(
+    _prev: AsyncValue,
+    next: AsyncValue,
+    _round: number,
+): AsyncValue {
     return next;
 }

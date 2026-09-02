@@ -53,6 +53,10 @@ export function equals(a: ResourcesValue, b: ResourcesValue): boolean {
 
 // The ownership set is bounded by the (finite) parameter count, so it ascends to
 // a fixed point on its own; widening is the identity.
-export function widen(_prev: ResourcesValue, next: ResourcesValue, _round: number): ResourcesValue {
+export function widen(
+    _prev: ResourcesValue,
+    next: ResourcesValue,
+    _round: number,
+): ResourcesValue {
     return next;
 }

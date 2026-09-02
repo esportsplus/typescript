@@ -10,7 +10,8 @@ type UnwrapOptions = {
 function shouldUnwrap(expr: ts.Expression, options: UnwrapOptions): boolean {
     return (
         ts.isParenthesizedExpression(expr) ||
-        (options.assertions === true && (ts.isAsExpression(expr) || ts.isNonNullExpression(expr))) ||
+        (options.assertions === true &&
+            (ts.isAsExpression(expr) || ts.isNonNullExpression(expr))) ||
         (options.awaits === true && ts.isAwaitExpression(expr))
     );
 }
@@ -24,8 +25,7 @@ const calleeSelectors = (callee: ts.Expression): Set<string> => {
 
     if (ts.isIdentifier(callee)) {
         selectors.add(callee.text);
-    }
-    else if (ts.isPropertyAccessExpression(callee)) {
+    } else if (ts.isPropertyAccessExpression(callee)) {
         let member = callee.name.text;
 
         selectors.add(member);
@@ -39,9 +39,13 @@ const calleeSelectors = (callee: ts.Expression): Set<string> => {
     return selectors;
 };
 
-const paramSymbols = (checker: ts.TypeChecker, fn: FunctionLike): Map<ts.Symbol, number> => {
+const paramSymbols = (
+    checker: ts.TypeChecker,
+    fn: FunctionLike,
+): Map<ts.Symbol, number> => {
     let symbols = new Map<ts.Symbol, number>();
-    let params = (fn as { parameters?: ts.NodeArray<ts.ParameterDeclaration> }).parameters;
+    let params = (fn as { parameters?: ts.NodeArray<ts.ParameterDeclaration> })
+        .parameters;
 
     if (params) {
         params.forEach((param, index) => {
@@ -58,11 +62,20 @@ const paramSymbols = (checker: ts.TypeChecker, fn: FunctionLike): Map<ts.Symbol,
     return symbols;
 };
 
-const unwrap = (expr: ts.Expression, options: UnwrapOptions = {}): ts.Expression => {
+const unwrap = (
+    expr: ts.Expression,
+    options: UnwrapOptions = {},
+): ts.Expression => {
     let unwrapped = expr;
 
     while (shouldUnwrap(unwrapped, options)) {
-        unwrapped = (unwrapped as ts.AsExpression | ts.AwaitExpression | ts.NonNullExpression | ts.ParenthesizedExpression).expression;
+        unwrapped = (
+            unwrapped as
+                | ts.AsExpression
+                | ts.AwaitExpression
+                | ts.NonNullExpression
+                | ts.ParenthesizedExpression
+        ).expression;
     }
 
     return unwrapped;

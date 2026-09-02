@@ -1,4 +1,4 @@
-import * as ts from "~/probe/adapter";
+import * as ts from '~/probe/adapter';
 
 import type {
     CalleeResolution,
@@ -11,12 +11,18 @@ import type {
     FunctionInfo,
     Summary,
     TransferContext,
-} from "../kernel/types";
-import { overlayThrows } from "../exceptions/channel";
-import { bodyOf, calleeSelectors, paramSymbols, unwrap } from "../kernel/ast";
-import { isEmpty, type ExceptionsValue } from "../exceptions/value";
-import { isFunctionLike, locationOf } from "../kernel/ids";
-import { bottom, equals, fromParams, widen, type ResourcesValue } from "./value";
+} from '../kernel/types';
+import { overlayThrows } from '../exceptions/channel';
+import { bodyOf, calleeSelectors, paramSymbols, unwrap } from '../kernel/ast';
+import { isEmpty, type ExceptionsValue } from '../exceptions/value';
+import { isFunctionLike, locationOf } from '../kernel/ids';
+import {
+    bottom,
+    equals,
+    fromParams,
+    widen,
+    type ResourcesValue,
+} from './value';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,7 +46,7 @@ interface ResourceEntry {
 
 // A classified acquire site.
 interface Acquire {
-    readonly kind: "handle" | "pair";
+    readonly kind: 'handle' | 'pair';
     readonly releasedBy: string | undefined;
     readonly pairKey: ReadonlyArray<number> | undefined;
     readonly label: string;
@@ -60,27 +66,49 @@ interface Env {
     readonly fn: FunctionInfo;
     readonly ownership: ReadonlyArray<Ownership>;
     readonly summaryOf: (fn: FunctionInfo) => Summary<ResourcesValue>;
-    readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
-    readonly resolveExceptions: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
+    readonly resolveCall: (
+        call: ts.CallExpression | ts.NewExpression,
+    ) => CalleeResolution;
+    readonly resolveExceptions: (
+        call: ts.CallExpression | ts.NewExpression,
+    ) => CalleeResolution;
     readonly peerThrows: (fnId: string) => boolean;
     readonly logDegrade: (message: string) => void;
     readonly paramSymbols: Map<ts.Symbol, number>;
 }
 
-type Outcome = "safe" | "leak" | "degrade";
+type Outcome = 'safe' | 'leak' | 'degrade';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 // Free functions that release a handle passed as their first argument.
-const FREE_RELEASERS = new Set(["clearImmediate", "clearInterval", "clearTimeout"]);
+const FREE_RELEASERS = new Set([
+    'clearImmediate',
+    'clearInterval',
+    'clearTimeout',
+]);
 
 // Instance methods that discharge the resource they are called on.
-const DISPOSE_METHODS = new Set(["close", "destroy", "disconnect", "dispose", "release", "unsubscribe"]);
+const DISPOSE_METHODS = new Set([
+    'close',
+    'destroy',
+    'disconnect',
+    'dispose',
+    'release',
+    'unsubscribe',
+]);
 
 // Container/escape methods that make a tracked value opaque (v1 stops tracking).
-const OPAQUE_METHODS = new Set(["add", "append", "enqueue", "push", "set", "unshift"]);
+const OPAQUE_METHODS = new Set([
+    'add',
+    'append',
+    'enqueue',
+    'push',
+    'set',
+    'unshift',
+]);
 
 // ---------------------------------------------------------------------------
 // Internal functions
@@ -140,7 +168,10 @@ function isCallLike(n: ts.Node): boolean {
 // overlay-modeled thrower, an app callee whose exceptions summary is non-empty,
 // or — under pessimist — an unresolved callee. A throwing call between an acquire
 // and its release is a path on which the release is skipped, so the resource leaks.
-function callCanThrow(env: Env, call: ts.CallExpression | ts.NewExpression): boolean {
+function callCanThrow(
+    env: Env,
+    call: ts.CallExpression | ts.NewExpression,
+): boolean {
     const res = env.resolveExceptions(call);
 
     if (res.overlay) {
@@ -151,7 +182,7 @@ function callCanThrow(env: Env, call: ts.CallExpression | ts.NewExpression): boo
         return res.targets.some((t) => env.peerThrows(t.id));
     }
 
-    return res.unresolved && env.dispatch === "pessimist";
+    return res.unresolved && env.dispatch === 'pessimist';
 }
 
 // Climb to the statement whose parent is the enclosing block.
@@ -177,7 +208,10 @@ function isDisposableType(env: Env, type: ts.Type | undefined): boolean {
     }
 
     for (const prop of env.checker.getPropertiesOfType(type)) {
-        if (prop.name.startsWith("__@dispose") || prop.name.startsWith("__@asyncDispose")) {
+        if (
+            prop.name.startsWith('__@dispose') ||
+            prop.name.startsWith('__@asyncDispose')
+        ) {
             return true;
         }
     }
@@ -193,7 +227,7 @@ function hasSyncDispose(env: Env, type: ts.Type | undefined): boolean {
     }
 
     for (const prop of env.checker.getPropertiesOfType(type)) {
-        if (prop.name.startsWith("__@dispose")) {
+        if (prop.name.startsWith('__@dispose')) {
             return true;
         }
     }
@@ -209,7 +243,7 @@ function parsePairKey(raw: unknown): ReadonlyArray<number> | undefined {
     const out: number[] = [];
 
     for (const v of raw) {
-        if (typeof v === "number" && Number.isInteger(v)) {
+        if (typeof v === 'number' && Number.isInteger(v)) {
             out.push(v);
         }
     }
@@ -217,7 +251,10 @@ function parsePairKey(raw: unknown): ReadonlyArray<number> | undefined {
     return out.length > 0 ? out : undefined;
 }
 
-function acquireAt(env: Env, call: ts.CallExpression | ts.NewExpression): Acquire | undefined {
+function acquireAt(
+    env: Env,
+    call: ts.CallExpression | ts.NewExpression,
+): Acquire | undefined {
     const res = env.resolveCall(call);
 
     if (res.overlay) {
@@ -227,12 +264,15 @@ function acquireAt(env: Env, call: ts.CallExpression | ts.NewExpression): Acquir
             return undefined;
         }
 
-        if (typeof entry.acquires === "string") {
-            const releasedBy = typeof entry.releasedBy === "string" ? entry.releasedBy : undefined;
+        if (typeof entry.acquires === 'string') {
+            const releasedBy =
+                typeof entry.releasedBy === 'string'
+                    ? entry.releasedBy
+                    : undefined;
             const pairKey = parsePairKey(entry.pairKey);
 
             return {
-                kind: pairKey ? "pair" : "handle",
+                kind: pairKey ? 'pair' : 'handle',
                 releasedBy,
                 pairKey,
                 label: entry.acquires,
@@ -242,7 +282,12 @@ function acquireAt(env: Env, call: ts.CallExpression | ts.NewExpression): Acquir
 
     // A value typed Disposable/AsyncDisposable is a resource regardless of overlay.
     if (isDisposableType(env, env.checker.getTypeAtLocation(call))) {
-        return { kind: "handle", releasedBy: undefined, pairKey: undefined, label: "Disposable" };
+        return {
+            kind: 'handle',
+            releasedBy: undefined,
+            pairKey: undefined,
+            label: 'Disposable',
+        };
     }
 
     return undefined;
@@ -268,7 +313,11 @@ function handleBinding(
 
     const decl = p.parent;
 
-    if (!decl || !ts.isVariableDeclaration(decl) || !ts.isIdentifier(decl.name)) {
+    if (
+        !decl ||
+        !ts.isVariableDeclaration(decl) ||
+        !ts.isIdentifier(decl.name)
+    ) {
         return undefined;
     }
 
@@ -277,7 +326,11 @@ function handleBinding(
     // `NodeFlags.AwaitUsing` (6) is `Using` (4) | an extra bit, and `Const` (2)
     // shares that extra bit — so the `Using` bit alone distinguishes a `using` /
     // `await using` binding from a plain `const`/`let`.
-    if (list && ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Using) !== 0) {
+    if (
+        list &&
+        ts.isVariableDeclarationList(list) &&
+        (list.flags & ts.NodeFlags.Using) !== 0
+    ) {
         return { using: true };
     }
 
@@ -286,7 +339,12 @@ function handleBinding(
     return sym ? { using: false, sym } : undefined;
 }
 
-function isDischargeOf(env: Env, expr: ts.Expression, sym: ts.Symbol, acq: Acquire | undefined): boolean {
+function isDischargeOf(
+    env: Env,
+    expr: ts.Expression,
+    sym: ts.Symbol,
+    acq: Acquire | undefined,
+): boolean {
     if (!ts.isCallExpression(expr)) {
         return false;
     }
@@ -295,8 +353,11 @@ function isDischargeOf(env: Env, expr: ts.Expression, sym: ts.Symbol, acq: Acqui
 
     if (ts.isIdentifier(callee)) {
         const freeName =
-            acq?.releasedBy !== undefined && !acq.releasedBy.startsWith("#") ? acq.releasedBy : undefined;
-        const isFree = FREE_RELEASERS.has(callee.text) || callee.text === freeName;
+            acq?.releasedBy !== undefined && !acq.releasedBy.startsWith('#')
+                ? acq.releasedBy
+                : undefined;
+        const isFree =
+            FREE_RELEASERS.has(callee.text) || callee.text === freeName;
 
         if (!isFree) {
             return false;
@@ -318,7 +379,11 @@ function isDischargeOf(env: Env, expr: ts.Expression, sym: ts.Symbol, acq: Acqui
             return true;
         }
 
-        return acq?.releasedBy !== undefined && acq.releasedBy.startsWith("#") && acq.releasedBy.slice(1) === method;
+        return (
+            acq?.releasedBy !== undefined &&
+            acq.releasedBy.startsWith('#') &&
+            acq.releasedBy.slice(1) === method
+        );
     }
 
     if (ts.isElementAccessExpression(callee)) {
@@ -331,7 +396,7 @@ function isDischargeOf(env: Env, expr: ts.Expression, sym: ts.Symbol, acq: Acqui
         return (
             argx !== undefined &&
             ts.isPropertyAccessExpression(argx) &&
-            (argx.name.text === "dispose" || argx.name.text === "asyncDispose")
+            (argx.name.text === 'dispose' || argx.name.text === 'asyncDispose')
         );
     }
 
@@ -339,7 +404,11 @@ function isDischargeOf(env: Env, expr: ts.Expression, sym: ts.Symbol, acq: Acqui
 }
 
 // A call whose argument at an ownership-taking index refers to `sym`.
-function callOwnsArg(env: Env, call: ts.CallExpression | ts.NewExpression, sym: ts.Symbol): boolean {
+function callOwnsArg(
+    env: Env,
+    call: ts.CallExpression | ts.NewExpression,
+    sym: ts.Symbol,
+): boolean {
     const args = call.arguments ? Array.from(call.arguments) : [];
     const indices: number[] = [];
 
@@ -356,17 +425,22 @@ function callOwnsArg(env: Env, call: ts.CallExpression | ts.NewExpression, sym: 
     const selectors = calleeSelectors(call.expression);
 
     for (const own of env.ownership) {
-        if (selectors.has(own.callee) && own.params.some((p) => indices.includes(p))) {
+        if (
+            selectors.has(own.callee) &&
+            own.params.some((p) => indices.includes(p))
+        ) {
             return true;
         }
     }
 
     const res = env.resolveCall(call);
-    const entry = (res.overlay?.entry ?? undefined) as ResourceEntry | undefined;
+    const entry = (res.overlay?.entry ?? undefined) as
+        | ResourceEntry
+        | undefined;
 
     if (entry && Array.isArray(entry.ownsParams)) {
         for (const p of entry.ownsParams) {
-            if (typeof p === "number" && indices.includes(p)) {
+            if (typeof p === 'number' && indices.includes(p)) {
                 return true;
             }
         }
@@ -387,12 +461,20 @@ function callOwnsArg(env: Env, call: ts.CallExpression | ts.NewExpression, sym: 
 
 // Ownership leaves the function: returned, stored on this/an object that outlives
 // the call, or handed to an ownership-taking parameter.
-function isTransferExpr(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean {
-    if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+function isTransferExpr(
+    env: Env,
+    expr: ts.Expression,
+    sym: ts.Symbol,
+): boolean {
+    if (
+        ts.isBinaryExpression(expr) &&
+        expr.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
         const target = expr.left;
 
         if (
-            (ts.isPropertyAccessExpression(target) || ts.isElementAccessExpression(target)) &&
+            (ts.isPropertyAccessExpression(target) ||
+                ts.isElementAccessExpression(target)) &&
             refsSym(env, expr.right, sym)
         ) {
             return true;
@@ -406,17 +488,28 @@ function isTransferExpr(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean 
     return false;
 }
 
-function statementDischargesOrTransfers(env: Env, s: ts.Statement, sym: ts.Symbol, acq: Acquire | undefined): boolean {
+function statementDischargesOrTransfers(
+    env: Env,
+    s: ts.Statement,
+    sym: ts.Symbol,
+    acq: Acquire | undefined,
+): boolean {
     if (ts.isReturnStatement(s)) {
         if (!s.expression) {
             return false;
         }
 
-        return refsSym(env, s.expression, sym) || isTransferExpr(env, s.expression, sym);
+        return (
+            refsSym(env, s.expression, sym) ||
+            isTransferExpr(env, s.expression, sym)
+        );
     }
 
     if (ts.isExpressionStatement(s)) {
-        return isDischargeOf(env, s.expression, sym, acq) || isTransferExpr(env, s.expression, sym);
+        return (
+            isDischargeOf(env, s.expression, sym, acq) ||
+            isTransferExpr(env, s.expression, sym)
+        );
     }
 
     return false;
@@ -424,7 +517,13 @@ function statementDischargesOrTransfers(env: Env, s: ts.Statement, sym: ts.Symbo
 
 // A discharge in a `finally` guarding the acquire — runs on every path, including
 // throwing ones. Approximated by lexical position (acquire before the finally).
-function finallyDischarges(env: Env, sym: ts.Symbol, acq: Acquire | undefined, declStmt: ts.Node, body: ts.Node): boolean {
+function finallyDischarges(
+    env: Env,
+    sym: ts.Symbol,
+    acq: Acquire | undefined,
+    declStmt: ts.Node,
+    body: ts.Node,
+): boolean {
     let found = false;
 
     const rec = (n: ts.Node): void => {
@@ -436,10 +535,16 @@ function finallyDischarges(env: Env, sym: ts.Symbol, acq: Acquire | undefined, d
             return;
         }
 
-        if (ts.isTryStatement(n) && n.finallyBlock && declStmt.getStart() < n.finallyBlock.getStart()) {
+        if (
+            ts.isTryStatement(n) &&
+            n.finallyBlock &&
+            declStmt.getStart() < n.finallyBlock.getStart()
+        ) {
             const discharged = containsMatch(
                 n.finallyBlock,
-                (m) => (ts.isCallExpression(m) || ts.isNewExpression(m)) && isDischargeOf(env, m as ts.Expression, sym, acq),
+                (m) =>
+                    (ts.isCallExpression(m) || ts.isNewExpression(m)) &&
+                    isDischargeOf(env, m as ts.Expression, sym, acq),
             );
 
             if (discharged) {
@@ -460,7 +565,13 @@ function finallyDischarges(env: Env, sym: ts.Symbol, acq: Acquire | undefined, d
 // the acquire, reached with no intervening early exit and no intervening call that
 // can throw. A throwing call between acquire and release is a bypass path on which
 // the release never runs (see `callCanThrow`), so the release is not guaranteed.
-function firstGuaranteed(env: Env, sym: ts.Symbol, acq: Acquire | undefined, declStmt: ts.Node, block: ts.Block): boolean {
+function firstGuaranteed(
+    env: Env,
+    sym: ts.Symbol,
+    acq: Acquire | undefined,
+    declStmt: ts.Node,
+    block: ts.Block,
+): boolean {
     const stmts = block.statements;
     const idx = stmts.findIndex((s) => s === declStmt);
 
@@ -479,7 +590,17 @@ function firstGuaranteed(env: Env, sym: ts.Symbol, acq: Acquire | undefined, dec
             return false;
         }
 
-        if (containsMatch(s, (n) => isCallLike(n) && callCanThrow(env, n as ts.CallExpression | ts.NewExpression))) {
+        if (
+            containsMatch(
+                s,
+                (n) =>
+                    isCallLike(n) &&
+                    callCanThrow(
+                        env,
+                        n as ts.CallExpression | ts.NewExpression,
+                    ),
+            )
+        ) {
             return false;
         }
     }
@@ -489,7 +610,11 @@ function firstGuaranteed(env: Env, sym: ts.Symbol, acq: Acquire | undefined, dec
 
 // A tracked value flowing somewhere v1 cannot follow: pushed into a container or
 // aliased to another binding.
-function opaqueUseOf(env: Env, sym: ts.Symbol, body: ts.Node): ts.Node | undefined {
+function opaqueUseOf(
+    env: Env,
+    sym: ts.Symbol,
+    body: ts.Node,
+): ts.Node | undefined {
     let hit: ts.Node | undefined;
 
     const rec = (n: ts.Node): void => {
@@ -501,7 +626,11 @@ function opaqueUseOf(env: Env, sym: ts.Symbol, body: ts.Node): ts.Node | undefin
             return;
         }
 
-        if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && OPAQUE_METHODS.has(n.expression.name.text)) {
+        if (
+            ts.isCallExpression(n) &&
+            ts.isPropertyAccessExpression(n.expression) &&
+            OPAQUE_METHODS.has(n.expression.name.text)
+        ) {
             for (const arg of n.arguments ?? []) {
                 if (refsSym(env, arg, sym)) {
                     hit = n;
@@ -510,12 +639,21 @@ function opaqueUseOf(env: Env, sym: ts.Symbol, body: ts.Node): ts.Node | undefin
             }
         }
 
-        if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left) && refsSym(env, n.right, sym)) {
+        if (
+            ts.isBinaryExpression(n) &&
+            n.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+            ts.isIdentifier(n.left) &&
+            refsSym(env, n.right, sym)
+        ) {
             hit = n;
             return;
         }
 
-        if (ts.isVariableDeclaration(n) && n.initializer && refsSym(env, n.initializer, sym)) {
+        if (
+            ts.isVariableDeclaration(n) &&
+            n.initializer &&
+            refsSym(env, n.initializer, sym)
+        ) {
             hit = n;
             return;
         }
@@ -528,23 +666,34 @@ function opaqueUseOf(env: Env, sym: ts.Symbol, body: ts.Node): ts.Node | undefin
     return hit;
 }
 
-function handleOutcome(env: Env, acq: Acquire, sym: ts.Symbol, declStmt: ts.Node, block: ts.Block, body: ts.Node): Outcome {
+function handleOutcome(
+    env: Env,
+    acq: Acquire,
+    sym: ts.Symbol,
+    declStmt: ts.Node,
+    block: ts.Block,
+    body: ts.Node,
+): Outcome {
     if (finallyDischarges(env, sym, acq, declStmt, body)) {
-        return "safe";
+        return 'safe';
     }
 
     if (firstGuaranteed(env, sym, acq, declStmt, block)) {
-        return "safe";
+        return 'safe';
     }
 
     if (opaqueUseOf(env, sym, body)) {
-        return "degrade";
+        return 'degrade';
     }
 
-    return "leak";
+    return 'leak';
 }
 
-function isReleaseCallForPair(node: ts.Node, acq: Acquire, acquireCall: ts.CallExpression | ts.NewExpression): boolean {
+function isReleaseCallForPair(
+    node: ts.Node,
+    acq: Acquire,
+    acquireCall: ts.CallExpression | ts.NewExpression,
+): boolean {
     if (!ts.isCallExpression(node) || acq.releasedBy === undefined) {
         return false;
     }
@@ -552,7 +701,10 @@ function isReleaseCallForPair(node: ts.Node, acq: Acquire, acquireCall: ts.CallE
     const callee = node.expression;
     const acqCallee = acquireCall.expression;
 
-    if (!ts.isPropertyAccessExpression(callee) || !ts.isPropertyAccessExpression(acqCallee)) {
+    if (
+        !ts.isPropertyAccessExpression(callee) ||
+        !ts.isPropertyAccessExpression(acqCallee)
+    ) {
         return false;
     }
 
@@ -576,25 +728,39 @@ function isReleaseCallForPair(node: ts.Node, acq: Acquire, acquireCall: ts.CallE
     return true;
 }
 
-function hasMatchingRelease(env: Env, acquireCall: ts.CallExpression | ts.NewExpression, acq: Acquire): boolean {
+function hasMatchingRelease(
+    env: Env,
+    acquireCall: ts.CallExpression | ts.NewExpression,
+    acq: Acquire,
+): boolean {
     const body = bodyOf(env.fn.node);
 
     if (!body) {
         return false;
     }
 
-    return containsMatch(body, (n) => isReleaseCallForPair(n, acq, acquireCall));
+    return containsMatch(body, (n) =>
+        isReleaseCallForPair(n, acq, acquireCall),
+    );
 }
 
 // True when a class member discharges `this.<field>` anywhere (its dispose method,
 // a teardown method, the constructor's error path, ...).
-function classDischargesField(cls: ts.Node, field: string, acq: Acquire | undefined): boolean {
+function classDischargesField(
+    cls: ts.Node,
+    field: string,
+    acq: Acquire | undefined,
+): boolean {
     const members = (cls as { members?: ReadonlyArray<ts.Node> }).members ?? [];
 
     const refsThisField = (expr: ts.Expression): boolean => {
         const e = unwrap(expr, { assertions: true, awaits: true });
 
-        return ts.isPropertyAccessExpression(e) && e.expression.kind === ts.SyntaxKind.ThisKeyword && e.name.text === field;
+        return (
+            ts.isPropertyAccessExpression(e) &&
+            e.expression.kind === ts.SyntaxKind.ThisKeyword &&
+            e.name.text === field
+        );
     };
 
     const dischargesHere = (n: ts.Node): boolean => {
@@ -605,7 +771,10 @@ function classDischargesField(cls: ts.Node, field: string, acq: Acquire | undefi
         const callee = n.expression;
 
         if (ts.isIdentifier(callee)) {
-            const freeName = acq?.releasedBy !== undefined && !acq.releasedBy.startsWith("#") ? acq.releasedBy : undefined;
+            const freeName =
+                acq?.releasedBy !== undefined && !acq.releasedBy.startsWith('#')
+                    ? acq.releasedBy
+                    : undefined;
 
             if (!FREE_RELEASERS.has(callee.text) && callee.text !== freeName) {
                 return false;
@@ -616,16 +785,32 @@ function classDischargesField(cls: ts.Node, field: string, acq: Acquire | undefi
             return arg ? refsThisField(arg) : false;
         }
 
-        if (ts.isPropertyAccessExpression(callee) && refsThisField(callee.expression)) {
+        if (
+            ts.isPropertyAccessExpression(callee) &&
+            refsThisField(callee.expression)
+        ) {
             const method = callee.name.text;
 
-            return DISPOSE_METHODS.has(method) || (acq?.releasedBy !== undefined && acq.releasedBy.startsWith("#") && acq.releasedBy.slice(1) === method);
+            return (
+                DISPOSE_METHODS.has(method) ||
+                (acq?.releasedBy !== undefined &&
+                    acq.releasedBy.startsWith('#') &&
+                    acq.releasedBy.slice(1) === method)
+            );
         }
 
-        if (ts.isElementAccessExpression(callee) && refsThisField(callee.expression)) {
+        if (
+            ts.isElementAccessExpression(callee) &&
+            refsThisField(callee.expression)
+        ) {
             const argx = callee.argumentExpression;
 
-            return argx !== undefined && ts.isPropertyAccessExpression(argx) && (argx.name.text === "dispose" || argx.name.text === "asyncDispose");
+            return (
+                argx !== undefined &&
+                ts.isPropertyAccessExpression(argx) &&
+                (argx.name.text === 'dispose' ||
+                    argx.name.text === 'asyncDispose')
+            );
         }
 
         return false;
@@ -645,7 +830,7 @@ function classDischargesField(cls: ts.Node, field: string, acq: Acquire | undefi
 function className(cls: ts.Node): string {
     const name = (cls as { name?: ts.Identifier }).name;
 
-    return name && ts.isIdentifier(name) ? name.text : "<anonymous>";
+    return name && ts.isIdentifier(name) ? name.text : '<anonymous>';
 }
 
 // Resources stored on `this` in the constructor body or class field initializers.
@@ -658,13 +843,20 @@ function classFieldAcquires(
     const members = (cls as { members?: ReadonlyArray<ts.Node> }).members ?? [];
 
     for (const member of members) {
-        if (ts.isPropertyDeclaration(member) && member.initializer && ts.isIdentifier(member.name)) {
-            const init = unwrap(member.initializer, { assertions: true, awaits: true });
+        if (
+            ts.isPropertyDeclaration(member) &&
+            member.initializer &&
+            ts.isIdentifier(member.name)
+        ) {
+            const init = unwrap(member.initializer, {
+                assertions: true,
+                awaits: true,
+            });
 
             if (ts.isCallExpression(init) || ts.isNewExpression(init)) {
                 const acq = acquireAt(env, init);
 
-                if (acq && acq.kind === "handle") {
+                if (acq && acq.kind === 'handle') {
                     out.push({ field: member.name.text, node: member, acq });
                 }
             }
@@ -688,7 +880,7 @@ function classFieldAcquires(
                 if (ts.isCallExpression(rhs) || ts.isNewExpression(rhs)) {
                     const acq = acquireAt(env, rhs);
 
-                    if (acq && acq.kind === "handle") {
+                    if (acq && acq.kind === 'handle') {
                         out.push({ field: n.left.name.text, node: n, acq });
                     }
                 }
@@ -707,11 +899,16 @@ function classFieldAcquires(
 // Diagnostics
 // ---------------------------------------------------------------------------
 
-function relatedPath(ctx: DiagnoseContext<ResourcesValue>): DiagnosticRelated[] {
+function relatedPath(
+    ctx: DiagnoseContext<ResourcesValue>,
+): DiagnosticRelated[] {
     const related: DiagnosticRelated[] = [];
 
     for (const f of ctx.pathToBoundary(ctx.fn)) {
-        related.push({ message: `on the path to boundary via ${f.name}`, location: locationOf(f.node, f.sourceFile) });
+        related.push({
+            message: `on the path to boundary via ${f.name}`,
+            location: locationOf(f.node, f.sourceFile),
+        });
     }
 
     return related;
@@ -719,7 +916,10 @@ function relatedPath(ctx: DiagnoseContext<ResourcesValue>): DiagnosticRelated[] 
 
 // Replace a `const`/`let` keyword with `using` for a sync-Disposable acquire. The
 // source-text check guards against a flag/source mismatch (no fix offered then).
-function usingFix(env: Env, call: ts.CallExpression | ts.NewExpression): DiagnosticFix | undefined {
+function usingFix(
+    env: Env,
+    call: ts.CallExpression | ts.NewExpression,
+): DiagnosticFix | undefined {
     if (!hasSyncDispose(env, env.checker.getTypeAtLocation(call))) {
         return undefined;
     }
@@ -744,28 +944,53 @@ function usingFix(env: Env, call: ts.CallExpression | ts.NewExpression): Diagnos
 
     const list = decl.parent;
 
-    if (!list || !ts.isVariableDeclarationList(list) || (list.flags & ts.NodeFlags.Using) !== 0) {
+    if (
+        !list ||
+        !ts.isVariableDeclarationList(list) ||
+        (list.flags & ts.NodeFlags.Using) !== 0
+    ) {
         return undefined;
     }
 
     const sf = call.getSourceFile();
     const start = list.getStart(sf);
     const keyword =
-        (list.flags & ts.NodeFlags.Let) !== 0 ? "let" : (list.flags & ts.NodeFlags.Const) !== 0 ? "const" : undefined;
+        (list.flags & ts.NodeFlags.Let) !== 0
+            ? 'let'
+            : (list.flags & ts.NodeFlags.Const) !== 0
+              ? 'const'
+              : undefined;
 
     if (!keyword || sf.text.slice(start, start + keyword.length) !== keyword) {
         return undefined;
     }
 
-    return { title: "Convert to `using`", edits: [{ fileName: sf.fileName, pos: start, end: start + keyword.length, newText: "using" }] };
+    return {
+        title: 'Convert to `using`',
+        edits: [
+            {
+                fileName: sf.fileName,
+                pos: start,
+                end: start + keyword.length,
+                newText: 'using',
+            },
+        ],
+    };
 }
 
 // The release call to synthesize for a leaked handle: a free releaser takes the
 // binding as its argument, a `#method` releaser is called on it, and a bare sync
 // Disposable is disposed. Unknown/async release yields no text (no fix).
-function releaseText(env: Env, acq: Acquire, name: string, call: ts.CallExpression | ts.NewExpression): string | undefined {
+function releaseText(
+    env: Env,
+    acq: Acquire,
+    name: string,
+    call: ts.CallExpression | ts.NewExpression,
+): string | undefined {
     if (acq.releasedBy) {
-        return acq.releasedBy.startsWith("#") ? `${name}.${acq.releasedBy.slice(1)}()` : `${acq.releasedBy}(${name})`;
+        return acq.releasedBy.startsWith('#')
+            ? `${name}.${acq.releasedBy.slice(1)}()`
+            : `${acq.releasedBy}(${name})`;
     }
 
     if (hasSyncDispose(env, env.checker.getTypeAtLocation(call))) {
@@ -808,25 +1033,35 @@ function tryFinallyFix(
     let lineStart = first.getStart(sf);
     let declLineStart = declStart;
 
-    while (lineStart > 0 && text[lineStart - 1] !== "\n") {
+    while (lineStart > 0 && text[lineStart - 1] !== '\n') {
         lineStart -= 1;
     }
 
-    while (declLineStart > 0 && text[declLineStart - 1] !== "\n") {
+    while (declLineStart > 0 && text[declLineStart - 1] !== '\n') {
         declLineStart -= 1;
     }
 
     const base = text.slice(declLineStart, declStart);
-    const unit = "    ";
+    const unit = '    ';
     const regionEnd = last.getEnd();
     const region = text
         .slice(lineStart, regionEnd)
-        .split("\n")
+        .split('\n')
         .map((line) => (line.length > 0 ? unit + line : line))
-        .join("\n");
+        .join('\n');
     const replacement = `${base}try {\n${region}\n${base}}\n${base}finally {\n${base}${unit}${release};\n${base}}`;
 
-    return { title: "Wrap in try/finally", edits: [{ fileName: sf.fileName, pos: lineStart, end: regionEnd, newText: replacement }] };
+    return {
+        title: 'Wrap in try/finally',
+        edits: [
+            {
+                fileName: sf.fileName,
+                pos: lineStart,
+                end: regionEnd,
+                newText: replacement,
+            },
+        ],
+    };
 }
 
 function leakDiagnostic(
@@ -837,7 +1072,7 @@ function leakDiagnostic(
     fixes?: ReadonlyArray<DiagnosticFix>,
 ): Diagnostic {
     return {
-        channel: "resources",
+        channel: 'resources',
         message: `\`${acq.label}\` resource can leak — ${why}`,
         location: locationOf(node, node.getSourceFile()),
         related: relatedPath(ctx),
@@ -850,38 +1085,48 @@ function leakDiagnostic(
 // ---------------------------------------------------------------------------
 
 function parseOwnership(channelConfig: unknown): ReadonlyArray<Ownership> {
-    if (typeof channelConfig !== "object" || channelConfig === null) {
+    if (typeof channelConfig !== 'object' || channelConfig === null) {
         return [];
     }
 
-    const raw = (channelConfig as Record<string, unknown>)["ownership"];
+    const raw = (channelConfig as Record<string, unknown>)['ownership'];
 
     if (raw === undefined) {
         return [];
     }
 
     if (!Array.isArray(raw)) {
-        throw new Error("resources: \"ownership\" must be an array");
+        throw new Error('resources: "ownership" must be an array');
     }
 
     return raw.map((item, index) => {
-        if (typeof item !== "object" || item === null) {
+        if (typeof item !== 'object' || item === null) {
             throw new Error(`resources: ownership[${index}] must be an object`);
         }
 
         const obj = item as Record<string, unknown>;
 
-        if (typeof obj["callee"] !== "string") {
-            throw new Error(`resources: ownership[${index}].callee must be a string`);
+        if (typeof obj['callee'] !== 'string') {
+            throw new Error(
+                `resources: ownership[${index}].callee must be a string`,
+            );
         }
 
-        const params = obj["params"];
+        const params = obj['params'];
 
-        if (!Array.isArray(params) || params.some((v) => typeof v !== "number" || !Number.isInteger(v))) {
-            throw new Error(`resources: ownership[${index}].params must be an array of integers`);
+        if (
+            !Array.isArray(params) ||
+            params.some((v) => typeof v !== 'number' || !Number.isInteger(v))
+        ) {
+            throw new Error(
+                `resources: ownership[${index}].params must be an array of integers`,
+            );
         }
 
-        return { callee: obj["callee"] as string, params: params as ReadonlyArray<number> };
+        return {
+            callee: obj['callee'] as string,
+            params: params as ReadonlyArray<number>,
+        };
     });
 }
 
@@ -895,17 +1140,23 @@ function makeEnv(
     fn: FunctionInfo,
     ownership: ReadonlyArray<Ownership>,
     summaryOf: (fn: FunctionInfo) => Summary<ResourcesValue>,
-    resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution,
-    resolveCallFor: (channel: string, call: ts.CallExpression | ts.NewExpression) => CalleeResolution,
+    resolveCall: (
+        call: ts.CallExpression | ts.NewExpression,
+    ) => CalleeResolution,
+    resolveCallFor: (
+        channel: string,
+        call: ts.CallExpression | ts.NewExpression,
+    ) => CalleeResolution,
     peerSummaryValue: (channel: string, fnId: string) => unknown,
     logDegrade: (message: string) => void,
 ): Env {
     const symbols = paramSymbols(checker, fn.node);
 
-    const resolveExceptions = (call: ts.CallExpression | ts.NewExpression): CalleeResolution =>
-        resolveCallFor("exceptions", call);
+    const resolveExceptions = (
+        call: ts.CallExpression | ts.NewExpression,
+    ): CalleeResolution => resolveCallFor('exceptions', call);
     const peerThrows = (fnId: string): boolean => {
-        const value = peerSummaryValue("exceptions", fnId);
+        const value = peerSummaryValue('exceptions', fnId);
 
         return value !== undefined && !isEmpty(value as ExceptionsValue);
     };
@@ -933,7 +1184,10 @@ function ownsParam(env: Env, sym: ts.Symbol, body: ts.Node): boolean {
     // caller, who is still accountable — so it is deliberately excluded here.
     return containsMatch(body, (n) => {
         if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
-            if (ts.isCallExpression(n) && isDischargeOf(env, n, sym, undefined)) {
+            if (
+                ts.isCallExpression(n) &&
+                isDischargeOf(env, n, sym, undefined)
+            ) {
                 return true;
             }
 
@@ -973,9 +1227,16 @@ function diagnoseAcquire(
     acq: Acquire,
     out: Diagnostic[],
 ): void {
-    if (acq.kind === "pair") {
+    if (acq.kind === 'pair') {
         if (!hasMatchingRelease(env, call, acq)) {
-            out.push(leakDiagnostic(ctx, call, acq, `no matching \`${acq.releasedBy ?? "release"}\` on every path`));
+            out.push(
+                leakDiagnostic(
+                    ctx,
+                    call,
+                    acq,
+                    `no matching \`${acq.releasedBy ?? 'release'}\` on every path`,
+                ),
+            );
         }
 
         return;
@@ -996,12 +1257,26 @@ function diagnoseAcquire(
             return;
         }
 
-        const outcome = handleOutcome(env, acq, binding.sym, declStmt, block, body);
+        const outcome = handleOutcome(
+            env,
+            acq,
+            binding.sym,
+            declStmt,
+            block,
+            body,
+        );
 
-        if (outcome === "leak") {
+        if (outcome === 'leak') {
             const fixes: DiagnosticFix[] = [];
             const asUsing = usingFix(env, call);
-            const wrapped = tryFinallyFix(env, acq, binding.sym, declStmt, block, call);
+            const wrapped = tryFinallyFix(
+                env,
+                acq,
+                binding.sym,
+                declStmt,
+                block,
+                call,
+            );
 
             if (asUsing) {
                 fixes.push(asUsing);
@@ -1011,14 +1286,23 @@ function diagnoseAcquire(
                 fixes.push(wrapped);
             }
 
-            out.push(leakDiagnostic(ctx, call, acq, "no release, transfer, or `using` on every path", fixes.length > 0 ? fixes : undefined));
-        }
-        else if (outcome === "degrade") {
-            env.logDegrade(`${acq.label} at ${env.fn.fileName}:${call.getStart()} flows to an opaque sink`);
+            out.push(
+                leakDiagnostic(
+                    ctx,
+                    call,
+                    acq,
+                    'no release, transfer, or `using` on every path',
+                    fixes.length > 0 ? fixes : undefined,
+                ),
+            );
+        } else if (outcome === 'degrade') {
+            env.logDegrade(
+                `${acq.label} at ${env.fn.fileName}:${call.getStart()} flows to an opaque sink`,
+            );
 
-            if (env.dispatch === "pessimist") {
+            if (env.dispatch === 'pessimist') {
                 out.push({
-                    channel: "resources",
+                    channel: 'resources',
                     message: `\`${acq.label}\` resource becomes untrackable — it flows to an opaque sink and release cannot be verified`,
                     location: locationOf(call, call.getSourceFile()),
                     related: relatedPath(ctx),
@@ -1028,11 +1312,14 @@ function diagnoseAcquire(
 
         return;
     }
-
 }
 
 // A constructor also carries its class's field/`this`-stored obligations.
-function diagnoseClassFields(env: Env, ctx: DiagnoseContext<ResourcesValue>, out: Diagnostic[]): void {
+function diagnoseClassFields(
+    env: Env,
+    ctx: DiagnoseContext<ResourcesValue>,
+    out: Diagnostic[],
+): void {
     if (!ts.isConstructorDeclaration(env.fn.node)) {
         return;
     }
@@ -1051,7 +1338,7 @@ function diagnoseClassFields(env: Env, ctx: DiagnoseContext<ResourcesValue>, out
         }
 
         out.push({
-            channel: "resources",
+            channel: 'resources',
             message: `\`${stored.acq.label}\` stored on \`this.${stored.field}\` can leak — class \`${className(cls)}\` has no release method that discharges it`,
             location: locationOf(stored.node, stored.node.getSourceFile()),
             related: relatedPath(ctx),
@@ -1076,20 +1363,47 @@ export const createResourcesChannel = (
     onDegrade: (message: string) => void = () => {},
 ): Channel<ResourcesValue> => {
     return {
-        name: "resources",
-        dependsOn: ["exceptions"],
+        name: 'resources',
+        dependsOn: ['exceptions'],
         bottom,
         equals,
         widen,
-        transfer(ctx: TransferContext<ResourcesValue>): Summary<ResourcesValue> {
+        transfer(
+            ctx: TransferContext<ResourcesValue>,
+        ): Summary<ResourcesValue> {
             const ownership = parseOwnership(ctx.channelConfig);
-            const env = makeEnv(ctx.checker, ctx.dispatch, ctx.fn, ownership, ctx.summaryOf, ctx.resolveCall, ctx.resolveCallFor, ctx.peerSummaryValue, onDegrade);
+            const env = makeEnv(
+                ctx.checker,
+                ctx.dispatch,
+                ctx.fn,
+                ownership,
+                ctx.summaryOf,
+                ctx.resolveCall,
+                ctx.resolveCallFor,
+                ctx.peerSummaryValue,
+                onDegrade,
+            );
 
-            return { value: fromParams(computeOwnership(env)), fromCallbacks: new Set() };
+            return {
+                value: fromParams(computeOwnership(env)),
+                fromCallbacks: new Set(),
+            };
         },
-        diagnose(ctx: DiagnoseContext<ResourcesValue>): ReadonlyArray<Diagnostic> {
+        diagnose(
+            ctx: DiagnoseContext<ResourcesValue>,
+        ): ReadonlyArray<Diagnostic> {
             const ownership = parseOwnership(ctx.channelConfig);
-            const env = makeEnv(ctx.checker, ctx.dispatch, ctx.fn, ownership, ctx.summaryOf, ctx.resolveCall, ctx.resolveCallFor, ctx.peerSummaryValue, onDegrade);
+            const env = makeEnv(
+                ctx.checker,
+                ctx.dispatch,
+                ctx.fn,
+                ownership,
+                ctx.summaryOf,
+                ctx.resolveCall,
+                ctx.resolveCallFor,
+                ctx.peerSummaryValue,
+                onDegrade,
+            );
             const out: Diagnostic[] = [];
 
             diagnoseClassFields(env, ctx, out);
