@@ -39,7 +39,8 @@ export function buildCallGraph(
     config: AnalyzeConfig,
     overlays: OverlaySet,
 ): CallGraph {
-    const programFiles = new Set(ts.getSourceFiles(program));
+    const sourceFiles = ts.getSourceFiles(program);
+    const programFiles = new Set(sourceFiles);
     const reached = new Map<FunctionLike, FunctionInfo>();
     const byId = new Map<string, FunctionInfo>();
     const boundaryIds = new Set<string>();
@@ -508,9 +509,7 @@ export function buildCallGraph(
         if (wholeProject) {
             // Every in-project, non-declaration source file: the native Program does not
             // expose the tsconfig root set, so filter its files to the project tree.
-            return ts
-                .getSourceFiles(program)
-                .filter(
+            return sourceFiles.filter(
                     (sf) =>
                         !sf.isDeclarationFile &&
                         !sf.fileName.includes('/node_modules/'),
@@ -523,7 +522,7 @@ export function buildCallGraph(
             return globToRegExp(absolute);
         });
         const files: ts.SourceFile[] = [];
-        for (const sf of ts.getSourceFiles(program)) {
+        for (const sf of sourceFiles) {
             if (sf.isDeclarationFile) {
                 continue;
             }

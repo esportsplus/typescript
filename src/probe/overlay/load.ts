@@ -29,6 +29,8 @@ const KNOWN_NAMESPACES = new Set([
 // A section's symbol->entry table, and a channel's section tables.
 type SectionTable = Map<string, unknown>;
 type ChannelTable = Map<string, SectionTable>;
+type OverlayFile = { name: string; root: Record<string, unknown> };
+type UserOverlayCacheEntry = { mtimeMs: number; file: OverlayFile };
 
 export interface MergedOverlay {
     // channel -> section -> overlayKey -> raw entry
@@ -189,6 +191,15 @@ function readBoundaries(name: string, raw: unknown): HandlerBoundary[] {
 export function mergeOverlayData(
     files: ReadonlyArray<{ name: string; text: string }>,
 ): MergedOverlay {
+    return mergeParsedOverlayData(
+        files.map((file) => ({
+            name: file.name,
+            root: parseJsonc(file.name, file.text),
+        })),
+    );
+}
+
+function mergeParsedOverlayData(files: ReadonlyArray<OverlayFile>): MergedOverlay {
     const channels = new Map<string, ChannelTable>();
     const boundaries: HandlerBoundary[] = [];
 
@@ -202,7 +213,7 @@ export function mergeOverlayData(
     };
 
     for (const file of files) {
-        const root = parseJsonc(file.name, file.text);
+        const root = file.root;
         const isBundle = 'overlay' in root || 'handlerBoundaries' in root;
         if (isBundle) {
             boundaries.push(
@@ -345,16 +356,40 @@ function findInSections(
 // ---------------------------------------------------------------------------
 
 const HERE = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+const shippedOverlayCache = new Map<string, OverlayFile>();
+const userOverlayCache = new Map<string, UserOverlayCacheEntry>();
 
-function readFile(file: string): { name: string; text: string } {
-    return { name: file, text: NodeFS.readFileSync(file, 'utf8') };
+function readShippedOverlay(file: string): OverlayFile {
+    let cached = shippedOverlayCache.get(file);
+    if (!cached) {
+        cached = {
+            name: file,
+            root: parseJsonc(file, NodeFS.readFileSync(file, 'utf8')),
+        };
+        shippedOverlayCache.set(file, cached);
+    }
+    return cached;
+}
+
+function readUserOverlay(file: string): OverlayFile {
+    const mtimeMs = NodeFS.statSync(file).mtimeMs;
+    const cached = userOverlayCache.get(file);
+    if (!cached || cached.mtimeMs !== mtimeMs) {
+        const fresh = {
+            name: file,
+            root: parseJsonc(file, NodeFS.readFileSync(file, 'utf8')),
+        };
+        userOverlayCache.set(file, { mtimeMs, file: fresh });
+        return fresh;
+    }
+    return cached.file;
 }
 
 export function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
-    const files: Array<{ name: string; text: string }> = [];
-    files.push(readFile(NodePath.join(HERE, 'base', 'async.jsonc')));
-    files.push(readFile(NodePath.join(HERE, 'base', 'exceptions.jsonc')));
-    files.push(readFile(NodePath.join(HERE, 'base', 'resources.jsonc')));
+    const files: OverlayFile[] = [];
+    files.push(readShippedOverlay(NodePath.join(HERE, 'base', 'async.jsonc')));
+    files.push(readShippedOverlay(NodePath.join(HERE, 'base', 'exceptions.jsonc')));
+    files.push(readShippedOverlay(NodePath.join(HERE, 'base', 'resources.jsonc')));
     for (const preset of config.presets) {
         const presetPath = NodePath.join(HERE, 'presets', `${preset}.jsonc`);
         if (!NodeFS.existsSync(presetPath)) {
@@ -362,7 +397,7 @@ export function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
                 `analyze overlay: unknown preset "${preset}" (no file at ${presetPath})`,
             );
         }
-        files.push(readFile(presetPath));
+        files.push(readShippedOverlay(presetPath));
     }
     for (const overlay of config.overlays) {
         if (!NodeFS.existsSync(overlay)) {
@@ -370,10 +405,10 @@ export function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
                 `analyze overlay: overlay file not found: ${overlay}`,
             );
         }
-        files.push(readFile(overlay));
+        files.push(readUserOverlay(overlay));
     }
 
-    const merged = mergeOverlayData(files);
+    const merged = mergeParsedOverlayData(files);
 
     return {
         boundariesFromPresets() {
