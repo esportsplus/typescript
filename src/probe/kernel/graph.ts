@@ -49,6 +49,7 @@ export function buildCallGraph(
     const wholeProject = config.entryPoints.length === 0;
 
     const coreCache = new Map<ts.CallExpression | ts.NewExpression, CallCore>();
+    const resolutionCache = new Map<ts.CallExpression | ts.NewExpression, Map<string, CalleeResolution>>();
     const callsCache = new Map<
         string,
         ReadonlyArray<ts.CallExpression | ts.NewExpression>
@@ -563,32 +564,51 @@ export function buildCallGraph(
         call: ts.CallExpression | ts.NewExpression,
         channel: string,
     ): CalleeResolution {
+        let cached = resolutionCache.get(call)?.get(channel);
+
+        if (cached) {
+            return cached;
+        }
+
         const core = getCore(call);
+        let result: CalleeResolution;
+
         if (core.targets.length > 0) {
-            return {
+            result = {
                 targets: core.targets,
                 overlay: undefined,
                 get functionArgs() { return core.functionArgs(); },
                 unresolved: false,
             };
         }
-        const overlay = core.symbol
-            ? overlays.lookup(core.symbol, channel)
-            : undefined;
-        if (overlay) {
-            return {
+        else {
+            const overlay = core.symbol
+                ? overlays.lookup(core.symbol, channel)
+                : undefined;
+
+            result = overlay ? {
                 targets: [],
                 overlay,
                 get functionArgs() { return core.functionArgs(); },
                 unresolved: false,
+            } : {
+                targets: [],
+                overlay: undefined,
+                get functionArgs() { return core.functionArgs(); },
+                unresolved: core.unresolved,
             };
         }
-        return {
-            targets: [],
-            overlay: undefined,
-            get functionArgs() { return core.functionArgs(); },
-            unresolved: core.unresolved,
-        };
+
+        let resolutions = resolutionCache.get(call);
+
+        if (!resolutions) {
+            resolutions = new Map();
+            resolutionCache.set(call, resolutions);
+        }
+
+        resolutions.set(channel, result);
+
+        return result;
     }
 
     function calleesOf(fn: FunctionInfo): ReadonlyArray<FunctionInfo> {
