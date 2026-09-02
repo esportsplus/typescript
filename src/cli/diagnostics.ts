@@ -23,6 +23,7 @@ const BACKSLASH_REGEX = /\\/g;
 
 const TRAILING_NEWLINE_REGEX = /\r?\n$/;
 
+type SourceInfo = { lineStarts: readonly number[]; text: string | undefined };
 
 function categoryColor(category: DiagnosticCategory): string {
     switch (category) {
@@ -56,7 +57,7 @@ function categoryLabel(category: DiagnosticCategory): string {
     }
 }
 
-function formatOne(diagnostic: Diagnostic, root: string, transformed?: Map<string, { code: string; mapping: PositionMapping }>): string {
+function formatOne(diagnostic: Diagnostic, root: string, sources: Map<string, SourceInfo>, transformed?: Map<string, { code: string; mapping: PositionMapping }>): string {
     let category = categoryLabel(diagnostic.category),
         code = `${ANSI_GREY}TS${diagnostic.code}${ANSI_RESET}`,
         color = categoryColor(diagnostic.category),
@@ -70,13 +71,16 @@ function formatOne(diagnostic: Diagnostic, root: string, transformed?: Map<strin
         entry = transformed?.get(diagnostic.fileName.replace(BACKSLASH_REGEX, '/')),
         end = entry ? resolveOffset(entry.mapping, diagnostic.end) : diagnostic.end,
         pos = entry ? resolveOffset(entry.mapping, diagnostic.pos) : diagnostic.pos,
-        text = readSource(diagnostic.fileName);
+        sourceInfo = sources.get(diagnostic.fileName) ?? readSourceInfo(diagnostic.fileName);
+
+    sources.set(diagnostic.fileName, sourceInfo);
+    const text = sourceInfo.text;
 
     if (text === undefined) {
         return `${location} - ${color}${category}${ANSI_RESET} ${code}: ${message}`;
     }
 
-    let lineStarts = computeLineStarts(text),
+    let lineStarts = sourceInfo.lineStarts,
         line = lineOfPosition(lineStarts, pos),
         character = pos - lineStarts[line],
         lineEnd = line + 1 < lineStarts.length ? lineStarts[line + 1] : text.length,
@@ -106,12 +110,13 @@ function lineOfPosition(lineStarts: readonly number[], position: number): number
     return high < 0 ? 0 : high;
 }
 
-function readSource(fileName: string): string | undefined {
+function readSourceInfo(fileName: string): SourceInfo {
     try {
-        return readFileSync(fileName, 'utf8');
+        const text = readFileSync(fileName, 'utf8');
+        return { lineStarts: computeLineStarts(text), text };
     }
     catch {
-        return undefined;
+        return { lineStarts: [], text: undefined };
     }
 }
 
@@ -136,9 +141,10 @@ const flatten = (diagnostic: Diagnostic, indent: number = 0): string => {
 
 const format = (diagnostics: readonly Diagnostic[], root: string, transformed?: Map<string, { code: string; mapping: PositionMapping }>): string => {
     let parts: string[] = [];
+    const sources = new Map<string, SourceInfo>();
 
     for (let i = 0, n = diagnostics.length; i < n; i++) {
-        parts.push(formatOne(diagnostics[i], root, transformed));
+        parts.push(formatOne(diagnostics[i], root, sources, transformed));
     }
 
     return parts.join('\n\n');
