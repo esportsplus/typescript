@@ -9,11 +9,11 @@ import type {
     DiagnoseContext,
     Dispatch,
     FunctionInfo,
-    FunctionLike,
     Summary,
     TransferContext,
 } from "../kernel/types";
 import { overlayThrows } from "../exceptions/channel";
+import { bodyOf, calleeSelectors, paramSymbols, unwrap } from "../kernel/ast";
 import { isEmpty, type ExceptionsValue } from "../exceptions/value";
 import { isFunctionLike, locationOf } from "../kernel/ids";
 import { bottom, equals, fromParams, widen, type ResourcesValue } from "./value";
@@ -86,27 +86,8 @@ const OPAQUE_METHODS = new Set(["add", "append", "enqueue", "push", "set", "unsh
 // Internal functions
 // ---------------------------------------------------------------------------
 
-function bodyOf(node: FunctionLike): ts.Node | undefined {
-    return (node as { body?: ts.Node }).body;
-}
-
-function unwrap(expr: ts.Expression): ts.Expression {
-    let e = expr;
-
-    while (
-        ts.isParenthesizedExpression(e) ||
-        ts.isNonNullExpression(e) ||
-        ts.isAsExpression(e) ||
-        ts.isAwaitExpression(e)
-    ) {
-        e = e.expression;
-    }
-
-    return e;
-}
-
 function refsSym(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean {
-    const e = unwrap(expr);
+    const e = unwrap(expr, { assertions: true, awaits: true });
 
     if (!ts.isIdentifier(e)) {
         return false;
@@ -563,28 +544,6 @@ function handleOutcome(env: Env, acq: Acquire, sym: ts.Symbol, declStmt: ts.Node
     return "leak";
 }
 
-function calleeSelectors(callee: ts.Expression): Set<string> {
-    const out = new Set<string>();
-
-    if (ts.isIdentifier(callee)) {
-        out.add(callee.text);
-    }
-    else if (ts.isPropertyAccessExpression(callee)) {
-        const member = callee.name.text;
-
-        out.add(member);
-
-        const obj = callee.expression;
-
-        if (ts.isIdentifier(obj)) {
-            out.add(`${obj.text}.${member}`);
-            out.add(`${obj.text}#${member}`);
-        }
-    }
-
-    return out;
-}
-
 function isReleaseCallForPair(node: ts.Node, acq: Acquire, acquireCall: ts.CallExpression | ts.NewExpression): boolean {
     if (!ts.isCallExpression(node) || acq.releasedBy === undefined) {
         return false;
@@ -633,7 +592,7 @@ function classDischargesField(cls: ts.Node, field: string, acq: Acquire | undefi
     const members = (cls as { members?: ReadonlyArray<ts.Node> }).members ?? [];
 
     const refsThisField = (expr: ts.Expression): boolean => {
-        const e = unwrap(expr);
+        const e = unwrap(expr, { assertions: true, awaits: true });
 
         return ts.isPropertyAccessExpression(e) && e.expression.kind === ts.SyntaxKind.ThisKeyword && e.name.text === field;
     };
@@ -700,7 +659,7 @@ function classFieldAcquires(
 
     for (const member of members) {
         if (ts.isPropertyDeclaration(member) && member.initializer && ts.isIdentifier(member.name)) {
-            const init = unwrap(member.initializer);
+            const init = unwrap(member.initializer, { assertions: true, awaits: true });
 
             if (ts.isCallExpression(init) || ts.isNewExpression(init)) {
                 const acq = acquireAt(env, init);
@@ -724,7 +683,7 @@ function classFieldAcquires(
                 ts.isPropertyAccessExpression(n.left) &&
                 n.left.expression.kind === ts.SyntaxKind.ThisKeyword
             ) {
-                const rhs = unwrap(n.right);
+                const rhs = unwrap(n.right, { assertions: true, awaits: true });
 
                 if (ts.isCallExpression(rhs) || ts.isNewExpression(rhs)) {
                     const acq = acquireAt(env, rhs);
@@ -941,20 +900,7 @@ function makeEnv(
     peerSummaryValue: (channel: string, fnId: string) => unknown,
     logDegrade: (message: string) => void,
 ): Env {
-    const paramSymbols = new Map<ts.Symbol, number>();
-    const params = (fn.node as { parameters?: ts.NodeArray<ts.ParameterDeclaration> }).parameters;
-
-    if (params) {
-        params.forEach((p, i) => {
-            if (ts.isIdentifier(p.name)) {
-                const s = checker.getSymbolAtLocation(p.name);
-
-                if (s) {
-                    paramSymbols.set(s, i);
-                }
-            }
-        });
-    }
+    const symbols = paramSymbols(checker, fn.node);
 
     const resolveExceptions = (call: ts.CallExpression | ts.NewExpression): CalleeResolution =>
         resolveCallFor("exceptions", call);
@@ -974,7 +920,7 @@ function makeEnv(
         resolveExceptions,
         peerThrows,
         logDegrade,
-        paramSymbols,
+        paramSymbols: symbols,
     };
 }
 

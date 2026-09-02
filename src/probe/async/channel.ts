@@ -12,6 +12,7 @@ import type {
     Summary,
     TransferContext,
 } from "../kernel/types";
+import { bodyOf, calleeSelectors, unwrap } from "../kernel/ast";
 import { isFunctionLike, locationOf } from "../kernel/ids";
 import { bottom, equals, promise, widen, type AsyncValue } from "./value";
 
@@ -153,22 +154,6 @@ function producesPromise(env: Env, call: ts.CallExpression | ts.NewExpression): 
 // ---------------------------------------------------------------------------
 // Callee identity
 // ---------------------------------------------------------------------------
-
-function calleeSelectors(callee: ts.Expression): Set<string> {
-    const out = new Set<string>();
-    if (ts.isIdentifier(callee)) {
-        out.add(callee.text);
-    } else if (ts.isPropertyAccessExpression(callee)) {
-        const member = callee.name.text;
-        out.add(member);
-        const obj = callee.expression;
-        if (ts.isIdentifier(obj)) {
-            out.add(`${obj.text}.${member}`);
-            out.add(`${obj.text}#${member}`);
-        }
-    }
-    return out;
-}
 
 // The aggregator member (all/allSettled/race/any) of a `Promise.<m>(…)` call.
 function aggregatorOf(call: ts.CallExpression): string | undefined {
@@ -327,14 +312,6 @@ function classifyOwnership(node: ts.Node): Ownership {
 // ---------------------------------------------------------------------------
 // Fan-out
 // ---------------------------------------------------------------------------
-
-function unwrap(expr: ts.Expression): ts.Expression {
-    let e = expr;
-    while (ts.isParenthesizedExpression(e)) {
-        e = e.expression;
-    }
-    return e;
-}
 
 // A statically small, fixed-size input: an array literal without spreads, or a
 // tuple type of bounded length. Everything else is treated as dynamic width.
@@ -652,10 +629,6 @@ function walk(env: Env, body: ts.Node, out: Diagnostic[]): void {
         ts.forEachChild(n, visit);
     };
     ts.forEachChild(body, visit);
-}
-
-function bodyOf(node: FunctionLike): ts.Node | undefined {
-    return (node as { body?: ts.Node }).body;
 }
 
 export function createAsyncChannel(): Channel<AsyncValue> {

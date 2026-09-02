@@ -10,11 +10,11 @@ import type {
   DiagnoseContext,
   Dispatch,
   FunctionInfo,
-  FunctionLike,
   SinkConfig,
   Summary,
   TransferContext,
 } from "../kernel/types";
+import { bodyOf, calleeSelectors, paramSymbols } from "../kernel/ast";
 import { isFunctionLike, locationOf } from "../kernel/ids";
 import { declaredExceptions } from "./jsdoc";
 import {
@@ -144,16 +144,7 @@ function makeEnv(
   summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>,
   resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution,
 ): Env {
-  const paramSymbols = new Map<ts.Symbol, number>();
-  const params = (fn.node as { parameters?: ts.NodeArray<ts.ParameterDeclaration> }).parameters;
-  if (params) {
-    params.forEach((p, i) => {
-      if (ts.isIdentifier(p.name)) {
-        const s = checker.getSymbolAtLocation(p.name);
-        if (s) paramSymbols.set(s, i);
-      }
-    });
-  }
+  const symbols = paramSymbols(checker, fn.node);
   return {
     checker,
     dispatch,
@@ -162,13 +153,9 @@ function makeEnv(
     summaryOf,
     resolveCall,
     typeTable: new Map(),
-    paramSymbols,
+    paramSymbols: symbols,
     fromCallbacks: new Set(),
   };
-}
-
-function bodyOf(node: FunctionLike): ts.Node | undefined {
-  return (node as { body?: ts.Node }).body;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,22 +452,6 @@ function matchSink(env: Env, call: ts.CallExpression | ts.NewExpression): SinkCo
   const names = calleeSelectors(call.expression);
   for (const s of env.sinks) if (names.has(s.callee)) return s;
   return undefined;
-}
-
-function calleeSelectors(callee: ts.Expression): Set<string> {
-  const out = new Set<string>();
-  if (ts.isIdentifier(callee)) {
-    out.add(callee.text);
-  } else if (ts.isPropertyAccessExpression(callee)) {
-    const member = callee.name.text;
-    out.add(member);
-    const obj = callee.expression;
-    if (ts.isIdentifier(obj)) {
-      out.add(`${obj.text}.${member}`);
-      out.add(`${obj.text}#${member}`);
-    }
-  }
-  return out;
 }
 
 // Absent `absorbs` swallows everything; otherwise only listed type displays are
