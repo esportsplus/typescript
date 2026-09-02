@@ -1,6 +1,6 @@
 import type { Plugin, SharedContext } from '~/compiler/types';
 import type { PositionMapping } from '~/compiler/sourcemap';
-import { API, DiagnosticCategory, type Snapshot } from 'typescript/unstable/sync';
+import { API, DiagnosticCategory, type Checker, type Program, type Snapshot } from 'typescript/unstable/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
 import { PACKAGE_NAME } from '~/constants';
@@ -12,7 +12,7 @@ import fs from 'fs';
 import languageService from '~/compiler/language-service';
 import path from 'path';
 import sourcemap from '~/compiler/sourcemap';
-import { analyze } from '~/probe/kernel/analyze';
+import { analyze, analyzeProgram } from '~/probe/kernel/analyze';
 import { formatDiagnostics } from '~/probe/kernel/format';
 import { loadConfigFromTsconfig } from '~/probe/kernel/config';
 import { stripJsonc } from '~/jsonc';
@@ -53,7 +53,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         project = opened?.project ?? snapshot.getProject(tsconfig);
 
     if (!project) {
-        teardown(snapshot, api, root, owned);
+        teardown(snapshot, tsconfig, owned);
 
         throw new Error(`${PACKAGE_NAME}: project not found for ${tsconfig}`);
     }
@@ -62,7 +62,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
 
     if (configDiagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
         console.error(format(configDiagnostics, root));
-        teardown(snapshot, api, root, owned);
+        teardown(snapshot, tsconfig, owned);
         process.exit(1);
     }
 
@@ -71,12 +71,14 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         shared: SharedContext = new Map(),
         transformedFiles = new Map<string, TransformedFile>();
 
+    runAnalyze(tsconfig, project.program, project.checker);
+
     try {
         plugins = await loadPlugins(pluginConfigs, root);
     }
     catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
-        teardown(snapshot, api, root, owned);
+        teardown(snapshot, tsconfig, owned);
         process.exit(1);
     }
 
@@ -122,18 +124,18 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     }
 
     if (diagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
-        teardown(snapshot, api, root, owned);
+        teardown(snapshot, tsconfig, owned);
         process.exit(1);
     }
 
     if (noEmit) {
-        teardown(snapshot, api, root, owned);
+        teardown(snapshot, tsconfig, owned);
         process.exit(0);
     }
 
     let code = await emit(tsconfig, fileNames, transformedFiles, root, options);
 
-    teardown(snapshot, api, root, owned);
+    teardown(snapshot, tsconfig, owned);
 
     if (code !== 0) {
         process.exit(code);
@@ -375,13 +377,13 @@ function main(): void {
     // Run analyze for any project whose tsconfig carries a `analyze` plugin entry,
     // on every real (non-informational, non-watch) tsc invocation. Findings are
     // printed but do not fail the build — the compiler's own result stands.
-    if (!flags.informational && !flags.watch) {
-        runAnalyze(tsconfig);
-    }
-
     let pluginConfigs = resolvePluginConfigs(tsconfig);
 
     if (pluginConfigs.length === 0) {
+        if (!flags.informational && !flags.watch) {
+            runAnalyze(tsconfig);
+        }
+
         return passthrough();
     }
 
@@ -430,7 +432,7 @@ function projectPath(args: string[]): string | null {
     return null;
 }
 
-function runAnalyze(tsconfig: string): void {
+function runAnalyze(tsconfig: string, program?: Program, checker?: Checker): void {
     let config;
 
     try {
@@ -447,7 +449,7 @@ function runAnalyze(tsconfig: string): void {
     }
 
     try {
-        let result = analyze(config);
+        let result = program && checker ? analyzeProgram(program, checker, config) : analyze(config);
 
         if (result.diagnostics.length > 0) {
             console.error(formatDiagnostics(result.diagnostics, config.projectRoot));
@@ -630,16 +632,16 @@ function legacyStripJsonc(text: string): string {
 
 void legacyStripJsonc;
 
-function teardown(snapshot: Snapshot, api: API, root: string, owned: boolean): void {
+function teardown(snapshot: Snapshot, configPath: string, owned: boolean): void {
+    if (owned) {
+        languageService.dispose(configPath);
+
+        return;
+    }
+
     if (!snapshot.isDisposed()) {
         snapshot.dispose();
     }
-
-    if (owned) {
-        api.close();
-    }
-
-    languageService.dispose(root);
 }
 
 

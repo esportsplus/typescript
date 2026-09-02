@@ -155,9 +155,19 @@ function normalize(fileName: string): string {
 
 function open(configPath: string, overlay?: FileSystem): OpenProject {
     let configFileName = normalize(path.resolve(configPath)),
-        api = new API({ cwd: path.dirname(configFileName), fs: overlay }),
-        snapshot = api.updateSnapshot({ openProjects: [configFileName] }),
-        project = resolveProject(snapshot, configFileName);
+        entry = overlay === undefined ? getEntry(configFileName) : undefined,
+        api = entry?.api ?? new API({ cwd: path.dirname(configFileName), fs: overlay }),
+        snapshot = entry?.snapshot ?? api.updateSnapshot({ openProjects: [configFileName] }),
+        project = entry?.project ?? resolveProject(snapshot, configFileName);
+
+    if (entry) {
+        return {
+            api,
+            dispose: () => dispose(configFileName),
+            project,
+            snapshot
+        };
+    }
 
     return {
         api,
