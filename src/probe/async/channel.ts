@@ -347,7 +347,7 @@ function isBoundedInput(env: Env, arg: ts.Expression): boolean {
         return e.elements.length <= env.options.fanOutAllowLiteralUpTo;
     }
     const type = env.checker.getTypeAtLocation(e);
-    if (type && type.isTupleType?.()) {
+    if (type && type.isTupleType()) {
         const flags = (type as { elementFlags?: ReadonlyArray<number> }).elementFlags ?? [];
         if (flags.some((f) => (f & UNBOUNDED_TUPLE_FLAGS) !== 0)) {
             return false;

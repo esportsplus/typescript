@@ -205,7 +205,7 @@ export function buildCallGraph(
         e = e.expression;
         continue;
       }
-      if (ts.isSatisfiesExpression?.(e)) {
+      if (ts.isSatisfiesExpression(e)) {
         e = e.expression;
         continue;
       }

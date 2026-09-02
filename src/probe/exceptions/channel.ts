@@ -399,7 +399,7 @@ function isSubclassOf(c: ts.Type, base: ts.Type, seen = new Set<ts.Type>()): boo
   if (cs && bs && cs === bs) return true;
   if (seen.has(c)) return false;
   seen.add(c);
-  const bases = (c as ts.InterfaceType).getBaseTypes?.() ?? [];
+  const bases = (c as ts.InterfaceType).getBaseTypes() ?? [];
   for (const b of bases) if (isSubclassOf(b, base, seen)) return true;
   return false;
 }
