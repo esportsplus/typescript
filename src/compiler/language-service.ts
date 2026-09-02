@@ -208,7 +208,7 @@ function overlayFileSystem(contents: Map<string, string>): FileSystem {
                 // directory is served entirely from the overlay when it is absent on disk
             }
 
-            return { directories, files: [...files, ...extra] };
+            return { directories, files: [...new Set([...files, ...extra])] };
         },
         readFile: (fileName) => {
             let content = contents.get(normalize(fileName));

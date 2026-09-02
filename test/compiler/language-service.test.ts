@@ -56,6 +56,15 @@ describe('language-service', () => {
             expect(sourceFile).toBeDefined();
             expect(sourceFile!.text).toBe(content);
         });
+
+        it('keeps an on-disk file listed once after overlaying it', () => {
+            let fileName = root + '/src/compiler/imports.ts',
+                content = fs.readFileSync(fileName, 'utf8'),
+                { program } = languageService.update(config, fileName, content),
+                matches = program.getSourceFileNames().filter(name => name.replace(/\\/g, '/') === fileName);
+
+            expect(matches).toHaveLength(1);
+        });
     });
 
     describe('invalidate', () => {
