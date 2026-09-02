@@ -4,3 +4,5 @@ allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
   - '@esportsplus/*'
+  - '@types/node@26.4.1'
+  - tsc-alias@1.9.4
