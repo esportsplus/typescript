@@ -13,14 +13,14 @@ import type {
 
 // Channel-independent facts about one call site, computed once and cached. The
 // per-channel overlay lookup is layered on top in `resolveCall`.
-interface CallCore {
+type CallCore  = {
     readonly symbol: ts.Symbol | undefined;
     readonly targets: ReadonlyArray<FunctionInfo>;
     readonly functionArgs: () => ReadonlyMap<number, ReadonlyArray<FunctionInfo>>;
     // Callee cannot be pinned to a declaration: `any`, an untracked function
     // value (a parameter/variable holding a function), or an abstract method.
     readonly unresolved: boolean;
-}
+};
 
 // A parsed handler-boundary selector. `module` is the package the callee must
 // come from (undefined for a bare name that carries no `.` segment); `names` is
@@ -28,12 +28,12 @@ interface CallCore {
 // { module: "express", names: ["Router", "get"] }, "pkg.fn" ->
 // { module: "pkg", names: ["fn"] }, and "onRequest" ->
 // { module: undefined, names: ["onRequest"] }.
-interface Selector {
+type Selector  = {
     readonly module: string | undefined;
     readonly names: ReadonlyArray<string>;
-}
+};
 
-export function buildCallGraph(
+function buildCallGraph(
     program: ts.Program,
     checker: ts.TypeChecker,
     config: AnalyzeConfig,
@@ -641,11 +641,8 @@ export function buildCallGraph(
         resolveFunctionValue,
     };
 }
-
-// ---------------------------------------------------------------------------
 // Glob matching (no external dep): `**` spans directories, `*` stays within a
 // path segment, `?` is a single non-separator char.
-// ---------------------------------------------------------------------------
 
 function normalizeSlashes(p: string): string {
     return p.replace(/\\/g, '/');
@@ -663,11 +660,13 @@ function globToRegExp(glob: string): RegExp {
                 if (glob[i + 2] === '/') {
                     re += '(?:[^/]*(?:/|$))*';
                     i += 3;
-                } else {
+                }
+                else {
                     re += '.*';
                     i += 2;
                 }
-            } else {
+            }
+            else {
                 re += '[^/]*';
                 i += 1;
             }
@@ -702,3 +701,6 @@ function parseSelector(selector: string): Selector {
     }
     return { module, names };
 }
+
+
+export { buildCallGraph };

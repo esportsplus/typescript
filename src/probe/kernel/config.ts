@@ -21,7 +21,7 @@ const DEFAULT_ENABLED: Readonly<Record<string, boolean>> = {
     async: false,
 };
 
-interface RawConfig {
+type RawConfig  = {
     entryPoints?: unknown;
     tsconfig?: unknown;
     handlerBoundaries?: unknown;
@@ -31,7 +31,7 @@ interface RawConfig {
     channels?: unknown;
     failOnFindings?: unknown;
     severity?: unknown;
-}
+};
 
 function fail(message: string): never {
     throw new Error(`analyze config: ${message}`);
@@ -242,7 +242,7 @@ function normalizeConfig(raw: RawConfig, projectRoot: string): AnalyzeConfig {
 }
 
 // Parse config text (JSONC) into a validated config anchored at `projectRoot`.
-export function parseConfig(text: string, projectRoot: string): AnalyzeConfig {
+function parseConfig(text: string, projectRoot: string): AnalyzeConfig {
     let parsed: RawConfig;
     try {
         parsed = JSON.parse(stripJsonc(text)) as RawConfig;
@@ -254,14 +254,14 @@ export function parseConfig(text: string, projectRoot: string): AnalyzeConfig {
 
 // Validate an already-parsed config object (e.g. the tsserver plugin entry in
 // tsconfig.json, minus its `name`) anchored at `projectRoot`.
-export function configFromObject(
+function configFromObject(
     raw: unknown,
     projectRoot: string,
 ): AnalyzeConfig {
     return normalizeConfig(raw as RawConfig, projectRoot);
 }
 
-export function loadConfigFromTsconfig(
+function loadConfigFromTsconfig(
     tsconfigPath: string,
 ): AnalyzeConfig | undefined {
     const resolved = NodePath.resolve(tsconfigPath);
@@ -277,3 +277,6 @@ export function loadConfigFromTsconfig(
         tsconfigPath: resolved,
     };
 }
+
+
+export { configFromObject, loadConfigFromTsconfig, parseConfig };

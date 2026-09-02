@@ -11,7 +11,7 @@ export type BuiltProgram = {
 // Build a host Program + Checker from a tsconfig via the native sync API. The
 // returned `dispose` must be called after all analysis is finished (the
 // program/checker are live handles into a server).
-export function buildProgram(tsconfigPath: string): BuiltProgram {
+function buildProgram(tsconfigPath: string): BuiltProgram {
     const opened = open(tsconfigPath);
     const { program, checker } = opened.project;
 
@@ -23,3 +23,6 @@ export function buildProgram(tsconfigPath: string): BuiltProgram {
         },
     };
 }
+
+
+export { buildProgram };

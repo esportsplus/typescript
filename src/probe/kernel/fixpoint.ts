@@ -42,11 +42,11 @@ function tarjanSccs(
     const sccs: FunctionInfo[][] = [];
     let counter = 0;
 
-    interface Frame {
+    type Frame  = {
         readonly node: FunctionInfo;
         readonly succ: ReadonlyArray<FunctionInfo>;
         i: number;
-    }
+    };
 
     const open = (node: FunctionInfo): Frame => {
         index.set(node.id, counter);
@@ -105,7 +105,7 @@ function tarjanSccs(
     return sccs;
 }
 
-export function runChannel<V>(
+function runChannel<V>(
     analysis: Analysis,
     channel: Channel<V>,
     dispatch: Dispatch,
@@ -194,7 +194,8 @@ export function runChannel<V>(
             const callers = reverse.get(callee.id);
             if (callers) {
                 callers.push(fn);
-            } else {
+            }
+            else {
                 reverse.set(callee.id, [fn]);
             }
         }
@@ -276,3 +277,6 @@ export function runChannel<V>(
     };
     return { store, diagnostics };
 }
+
+
+export { runChannel };

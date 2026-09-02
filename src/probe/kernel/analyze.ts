@@ -15,13 +15,13 @@ import type {
     AnalyzeConfig,
 } from './types';
 
-export interface AnalyzeResult {
+type AnalyzeResult  = {
     readonly diagnostics: ReadonlyArray<Diagnostic>;
-}
+};
 
 // Analyze an already-built Program — the path the language-service plugin takes,
 // reusing the editor's incrementally-updated program instead of building one.
-export function analyzeProgram(
+function analyzeProgram(
     program: ts.Program,
     checker: ts.TypeChecker,
     config: AnalyzeConfig,
@@ -102,7 +102,7 @@ export function analyzeProgram(
 }
 
 // Build a Program from the config's tsconfig, then analyze it — the CLI path.
-export function analyze(config: AnalyzeConfig): AnalyzeResult {
+function analyze(config: AnalyzeConfig): AnalyzeResult {
     const built = buildProgram(config.tsconfigPath);
     try {
         return analyzeProgram(built.program, built.checker, config);
@@ -110,3 +110,6 @@ export function analyze(config: AnalyzeConfig): AnalyzeResult {
         built.dispose();
     }
 }
+
+
+export { analyze, analyzeProgram, type AnalyzeResult };

@@ -7,11 +7,11 @@ import path from 'node:path';
 import { configFromObject, loadConfigFromTsconfig, parseConfig } from "~/probe/kernel/config";
 import { stripJsonc } from '~/jsonc';
 
-const ROOT = "/project";
+let ROOT = "/project";
 
 describe("kernel config — JSONC parsing", () => {
     it("strips line and block comments but preserves comment-like text inside strings", () => {
-        const text = `{
+        let text = `{
     // a line comment
     "tsconfig": "tsconfig.json", /* trailing block */
     "channels": {
@@ -19,23 +19,23 @@ describe("kernel config — JSONC parsing", () => {
     },
     "entryPoints": ["http://not-a-comment", "a/*still*/b"]
 }`;
-        const config = parseConfig(text, ROOT);
+        let config = parseConfig(text, ROOT);
         expect(config.entryPoints).toEqual(["http://not-a-comment", "a/*still*/b"]);
         expect(config.channels["exceptions"]!.enabled).toBe(true);
     });
 
     it("removes trailing commas before object and array closers", () => {
-        const text = `{
+        let text = `{
     "entryPoints": ["src/**/*.ts",],
     "channels": { "async": { "enabled": true, }, },
 }`;
-        const config = parseConfig(text, ROOT);
+        let config = parseConfig(text, ROOT);
         expect(config.entryPoints).toEqual(["src/**/*.ts"]);
         expect(config.channels["async"]!.enabled).toBe(true);
     });
 
     it('preserves comma-like text inside strings while stripping trailing commas', () => {
-        const config = JSON.parse(stripJsonc('{"a":"x,]","b":[1,],}'));
+        let config = JSON.parse(stripJsonc('{"a":"x,]","b":[1,],}'));
 
         expect(config).toEqual({ a: 'x,]', b: [1] });
     });
@@ -47,7 +47,7 @@ describe("kernel config — JSONC parsing", () => {
 
 describe("kernel config — validation and defaults", () => {
     it("defaults channel enablement: exceptions on, resources/async off", () => {
-        const config = configFromObject({}, ROOT);
+        let config = configFromObject({}, ROOT);
         expect(config.channels["exceptions"]!.enabled).toBe(true);
         expect(config.channels["resources"]!.enabled).toBe(false);
         expect(config.channels["async"]!.enabled).toBe(false);
@@ -69,17 +69,17 @@ describe("kernel config — validation and defaults", () => {
     });
 
     it("collects non-enabled/dispatch keys as opaque channel options", () => {
-        const config = configFromObject(
+        let config = configFromObject(
             { channels: { exceptions: { enabled: true, dispatch: "pessimist", report: "all", errorCause: true } } },
             ROOT,
         );
-        const exceptions = config.channels["exceptions"]!;
+        let exceptions = config.channels["exceptions"]!;
         expect(exceptions.dispatch).toBe("pessimist");
         expect(exceptions.options).toEqual({ report: "all", errorCause: true });
     });
 
     it("parses sinks and rejects a malformed sink", () => {
-        const config = configFromObject({ sinks: [{ callee: "guard", absorbs: ["TypeError"] }] }, ROOT);
+        let config = configFromObject({ sinks: [{ callee: "guard", absorbs: ["TypeError"] }] }, ROOT);
         expect(config.sinks).toEqual([{ callee: "guard", absorbs: ["TypeError"] }]);
         expect(() => configFromObject({ sinks: [{ absorbs: [] }] }, ROOT)).toThrow(/sinks\[0\].callee/);
     });

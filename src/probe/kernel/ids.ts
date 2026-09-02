@@ -13,12 +13,12 @@ const FUNCTION_LIKE_KINDS = new Set<ts.SyntaxKind>([
 ]);
 
 // Narrow any node to the FunctionLike union the kernel treats as a graph node.
-export function isFunctionLike(node: ts.Node): node is FunctionLike {
+function isFunctionLike(node: ts.Node): node is FunctionLike {
     return FUNCTION_LIKE_KINDS.has(node.kind);
 }
 
 // Best-effort display name for a function-like node.
-export function functionName(node: FunctionLike): string {
+function functionName(node: FunctionLike): string {
     if (ts.isConstructorDeclaration(node)) {
         const cls = node.parent as { name?: ts.Identifier };
         const clsName =
@@ -50,14 +50,14 @@ export function functionName(node: FunctionLike): string {
 
 // Stable per-run identity: file path + node start. Two runs over the same tree
 // produce the same id, and no two nodes in a file share a start position.
-export function functionId(
+function functionId(
     node: FunctionLike,
     sourceFile: ts.SourceFile,
 ): string {
     return `${sourceFile.fileName}:${node.getStart(sourceFile)}`;
 }
 
-export function makeFunctionInfo(
+function makeFunctionInfo(
     node: FunctionLike,
     sourceFile: ts.SourceFile,
 ): FunctionInfo {
@@ -75,7 +75,7 @@ export function makeFunctionInfo(
     };
 }
 
-export function locationOf(
+function locationOf(
     node: ts.Node,
     sourceFile: ts.SourceFile,
 ): SourceLocation {
@@ -89,3 +89,6 @@ export function locationOf(
         end: node.getEnd(),
     };
 }
+
+
+export { functionId, functionName, isFunctionLike, locationOf, makeFunctionInfo };

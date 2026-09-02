@@ -11,7 +11,7 @@ function rel(projectRoot: string, fileName: string): string {
 
 // One diagnostic as CLI text: the site, the message, then the escape chain as
 // indented related locations.
-export function formatDiagnostic(
+function formatDiagnostic(
     diagnostic: Diagnostic,
     projectRoot: string,
 ): string {
@@ -29,7 +29,7 @@ export function formatDiagnostic(
     return `${head}\n${chain}`;
 }
 
-export function formatDiagnostics(
+function formatDiagnostics(
     diagnostics: ReadonlyArray<Diagnostic>,
     projectRoot: string,
 ): string {
@@ -42,3 +42,6 @@ export function formatDiagnostics(
     const noun = diagnostics.length === 1 ? 'finding' : 'findings';
     return `${body}\n\nanalyze: ${diagnostics.length} ${noun}.`;
 }
+
+
+export { formatDiagnostic, formatDiagnostics };
