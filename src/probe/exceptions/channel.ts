@@ -64,7 +64,12 @@ interface Env {
     readonly resolveCall: (
         call: ts.CallExpression | ts.NewExpression,
     ) => CalleeResolution;
+    readonly escapeCache: Map<
+        ts.Node,
+        Map<ts.Symbol | undefined, ExceptionsValue>
+    > | undefined;
     readonly typeTable: Map<string, ts.Type>;
+    readonly typeAt: (node: ts.Node) => ts.Type | undefined;
     readonly paramSymbols: Map<ts.Symbol, number>;
     readonly fromCallbacks: Set<number>;
     // Present only in "cross-module" diagnose: the throw origins that reach a
@@ -82,6 +87,15 @@ export function createExceptionsChannel(): Channel<ExceptionsValue> {
     let unhandledCache:
         | { origins: ReadonlySet<string>; active: boolean }
         | undefined;
+    const typeCache = new Map<ts.Node, ts.Type | undefined>();
+    const typeAt = (checker: ts.TypeChecker, node: ts.Node): ts.Type | undefined => {
+        if (typeCache.has(node)) {
+            return typeCache.get(node);
+        }
+        const type = checker.getTypeAtLocation(node);
+        typeCache.set(node, type);
+        return type;
+    };
     const computeUnhandled = (
         ctx: DiagnoseContext<ExceptionsValue>,
     ): { origins: ReadonlySet<string>; active: boolean } => {
@@ -110,6 +124,7 @@ export function createExceptionsChannel(): Channel<ExceptionsValue> {
                 ctx.fn,
                 ctx.summaryOf,
                 ctx.resolveCall,
+                typeAt,
             );
             const body = bodyOf(ctx.fn.node);
             let value = body ? escapeOf(env, body, undefined) : bottom();
@@ -130,11 +145,16 @@ export function createExceptionsChannel(): Channel<ExceptionsValue> {
                 ctx.fn,
                 ctx.summaryOf,
                 ctx.resolveCall,
+                typeAt,
             );
             const env: Env =
                 reportMode(ctx) === 'cross-module'
-                    ? { ...base, unhandled: computeUnhandled(ctx) }
-                    : base;
+                    ? {
+                        ...base,
+                        escapeCache: new Map(),
+                        unhandled: computeUnhandled(ctx),
+                    }
+                    : { ...base, escapeCache: new Map() };
             const body = bodyOf(ctx.fn.node);
 
             // @throws under-declaration: emit on any reached function whose inferred
@@ -181,6 +201,7 @@ function makeEnv(
     resolveCall: (
         call: ts.CallExpression | ts.NewExpression,
     ) => CalleeResolution,
+    typeAt: (checker: ts.TypeChecker, node: ts.Node) => ts.Type | undefined,
 ): Env {
     const symbols = paramSymbols(checker, fn.node);
     return {
@@ -190,7 +211,9 @@ function makeEnv(
         fn,
         summaryOf,
         resolveCall,
+        escapeCache: undefined,
         typeTable: new Map(),
+        typeAt: (node) => typeAt(checker, node),
         paramSymbols: symbols,
         fromCallbacks: new Set(),
     };
@@ -208,6 +231,10 @@ function escapeOf(
     node: ts.Node,
     binding: ts.Symbol | undefined,
 ): ExceptionsValue {
+    const cached = env.escapeCache?.get(node)?.get(binding);
+    if (cached) {
+        return cached;
+    }
     let acc = bottom();
     const visit = (n: ts.Node): void => {
         if (isFunctionLike(n)) return;
@@ -219,7 +246,7 @@ function escapeOf(
             if (n.expression && !isBindingRef(env, n.expression, binding)) {
                 const thrown = valueOfType(
                     env,
-                    env.checker.getTypeAtLocation(n.expression),
+                    env.typeAt(n.expression),
                 );
                 acc = join(acc, withOrigin(thrown, originOf(n)));
             }
@@ -234,6 +261,14 @@ function escapeOf(
         ts.forEachChild(n, visit);
     };
     ts.forEachChild(node, visit);
+    if (env.escapeCache) {
+        let bindings = env.escapeCache.get(node);
+        if (!bindings) {
+            bindings = new Map();
+            env.escapeCache.set(node, bindings);
+        }
+        bindings.set(binding, acc);
+    }
     return acc;
 }
 
@@ -391,7 +426,7 @@ function parseInstanceof(
         expr.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword
     ) {
         if (!isBindingRef(env, expr.left, bindSym)) return undefined;
-        const rhsType = env.checker.getTypeAtLocation(expr.right);
+        const rhsType = env.typeAt(expr.right);
         if (!rhsType) return undefined;
         const ctorSig = env.checker.getSignaturesOfType(
             rhsType,
@@ -674,20 +709,30 @@ function packageRootOf(fileName: string): string {
     let dir = fileName.replace(/\\/g, '/');
     const slash = dir.lastIndexOf('/');
     dir = slash >= 0 ? dir.slice(0, slash) : dir;
+    const visited: string[] = [];
+    let root: string;
     for (let cur = dir; ; ) {
         const cached = packageRootCache.get(cur);
-        if (cached !== undefined) return cached;
+        if (cached !== undefined) {
+            root = cached;
+            break;
+        }
+        visited.push(cur);
         if (NodeFS.existsSync(`${cur}/package.json`)) {
-            packageRootCache.set(dir, cur);
-            return cur;
+            root = cur;
+            break;
         }
         const up = cur.lastIndexOf('/');
         if (up <= 0) {
-            packageRootCache.set(dir, dir);
-            return dir;
+            root = cur;
+            break;
         }
         cur = cur.slice(0, up);
     }
+    for (const visitedDir of visited) {
+        packageRootCache.set(visitedDir, root);
+    }
+    return root;
 }
 
 // A call worth reporting under "cross-module": it reaches an external/overlay
@@ -741,7 +786,7 @@ function walkDiagnostics(
                     } else {
                         const rem = valueOfType(
                             env,
-                            env.checker.getTypeAtLocation(n.expression),
+                            env.typeAt(n.expression),
                         );
                         if (!isEmpty(rem))
                             out.push(throwDiagnostic(ctx, n, rem));
