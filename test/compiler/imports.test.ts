@@ -93,19 +93,21 @@ describe('imports.all', () => {
         expect(result[0].end).toBeGreaterThan(0);
     });
 
-    it('handles default import (no named bindings)', () => {
+    it('records a default import', () => {
         let file = parse("import pkg from 'my-pkg';"),
             result = imports.all(file, 'my-pkg');
 
         expect(result).toHaveLength(1);
+        expect(result[0].defaultName).toBe('pkg');
         expect(result[0].specifiers.size).toBe(0);
     });
 
-    it('handles namespace import', () => {
+    it('records a namespace import', () => {
         let file = parse("import * as pkg from 'my-pkg';"),
             result = imports.all(file, 'my-pkg');
 
         expect(result).toHaveLength(1);
+        expect(result[0].namespace).toBe('pkg');
         expect(result[0].specifiers.size).toBe(0);
     });
 });

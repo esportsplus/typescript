@@ -1,12 +1,14 @@
 import type { Node, SourceFile } from 'typescript/unstable/ast';
 import { SyntaxKind } from 'typescript/unstable/ast';
-import { isIdentifier, isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/unstable/ast/is';
+import { isIdentifier, isImportDeclaration, isNamedImports, isNamespaceImport, isStringLiteral } from 'typescript/unstable/ast/is';
 import type { Checker } from 'typescript/unstable/sync';
 import { SymbolFlags } from 'typescript/unstable/sync';
 
 
 type ImportInfo = {
+    defaultName?: string;
     end: number;
+    namespace?: string;
     specifiers: Map<string, string>;
     // propertyName keys that were imported type-only, whether via a type-only clause
     // (`import type { A }`) or an inline specifier (`import { type A }`). Preserved so a rewrite
@@ -70,7 +72,14 @@ const all = (file: SourceFile, pkg: string): ImportInfo[] => {
             }
         }
 
-        imports.push({ end: stmt.end, specifiers, start: stmt.getStart(file), typeOnly });
+        imports.push({
+            defaultName: stmt.importClause?.name?.text,
+            end: stmt.end,
+            namespace: bindings && isNamespaceImport(bindings) ? bindings.name.text : undefined,
+            specifiers,
+            start: stmt.getStart(file),
+            typeOnly
+        });
     }
 
     return imports;

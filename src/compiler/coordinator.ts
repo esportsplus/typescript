@@ -134,6 +134,10 @@ function modify(code: string, file: SourceFile, pkg: string, options: ModifyOpti
         add = options.add ? new Set(options.add) : null,
         found = imports.all(file, pkg);
 
+    if (namespace && !add && !options.remove && found.some(info => info.namespace === namespace)) {
+        return { code, edits: [] };
+    }
+
     if (found.length === 0) {
         let statements: string[] = [];
 
@@ -155,7 +159,11 @@ function modify(code: string, file: SourceFile, pkg: string, options: ModifyOpti
     }
 
     let remove = options.remove ? new Set(options.remove) : null,
-        specifiers = new Set<string>();
+        specifiers = new Set<string>(),
+        nonNamespace = found.filter(info => !info.namespace),
+        existingNamespace = found.some(info => info.namespace === namespace),
+        defaultImport = nonNamespace.find(info => info.defaultName),
+        target = defaultImport ?? nonNamespace[0];
 
     for (let i = 0, n = found.length; i < n; i++) {
         for (let [name, alias] of found[i].specifiers) {
@@ -178,22 +186,43 @@ function modify(code: string, file: SourceFile, pkg: string, options: ModifyOpti
 
     let statements: string[] = [];
 
-    if (namespace) {
+    if (namespace && !existingNamespace) {
         statements.push(`import * as ${namespace} from '${pkg}';`);
     }
 
-    if (specifiers.size > 0) {
+    if (target) {
+        let named = specifiers.size > 0 ? `{ ${[...specifiers].sort().join(', ')} }` : '',
+            defaultName = target.defaultName,
+            clause = defaultName && named ? `${defaultName}, ${named}` : defaultName ?? named;
+
+        if (clause) {
+            statements.push(`import ${clause} from '${pkg}';`);
+        }
+    }
+    else if (specifiers.size > 0) {
         statements.push(`import { ${[...specifiers].sort().join(', ')} } from '${pkg}';`);
     }
 
     let replacements: Replacement[] = [];
 
     for (let i = 0, n = found.length; i < n; i++) {
+        let info = found[i];
+
+        if (info.namespace) {
+            continue;
+        }
+
         replacements.push({
-            end: found[i].end,
-            newText: i === 0 ? statements.join('\n') : '',
-            start: found[i].start
+            end: info.end,
+            newText: info === target ? statements.join('\n') : info.defaultName ? `import ${info.defaultName} from '${pkg}';` : '',
+            start: info.start
         });
+    }
+
+    if (!target && statements.length > 0) {
+        let first = found[0];
+
+        replacements.push({ end: first.start, newText: statements.join('\n') + '\n', start: first.start });
     }
 
     return { code: replaceReverse(code, replacements), edits: replacements };

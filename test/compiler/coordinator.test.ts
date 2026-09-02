@@ -379,6 +379,49 @@ describe('coordinator.transform', () => {
         expect(result.code).toMatch(/import\s*\{[^}]*a[^}]*b[^}]*c[^}]*\}\s*from\s*'pkg'/);
     });
 
+    it('preserves a default import when adding named imports', () => {
+        let code = "import React, { a } from 'pkg';\nlet x = 1;",
+            file = parse(code),
+            project = makeProject(file),
+            plugin = makePlugin(() => ({ imports: [{ add: ['b'], package: 'pkg' }] })),
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+        expect(result.code).toContain("import React, { a, b } from 'pkg';");
+    });
+
+    it('keeps a namespace import when adding named imports', () => {
+        let code = "import * as ns from 'pkg';\nlet x = 1;",
+            file = parse(code),
+            project = makeProject(file),
+            plugin = makePlugin(() => ({ imports: [{ add: ['a'], package: 'pkg' }] })),
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+        expect(result.code).toContain("import * as ns from 'pkg';");
+        expect(result.code).toContain("import { a } from 'pkg';");
+    });
+
+    it('does not duplicate a requested namespace import that already exists', () => {
+        let code = "import * as ns from 'pkg';\nlet x = 1;",
+            file = parse(code),
+            project = makeProject(file),
+            plugin = makePlugin(() => ({ imports: [{ namespace: 'ns', package: 'pkg' }] })),
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+        expect(result.changed).toBe(true);
+        expect(result.code).toBe(code);
+    });
+
+    it('rewrites a side-effect-only import when adding named imports', () => {
+        let code = "import 'pkg';\nlet x = 1;",
+            file = parse(code),
+            project = makeProject(file),
+            plugin = makePlugin(() => ({ imports: [{ add: ['a'], package: 'pkg' }] })),
+            result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+        expect(result.code).toContain("import { a } from 'pkg';");
+        expect(result.code).not.toContain("import 'pkg';");
+    });
+
     it('removes specifier from import keeping others', () => {
         let code = "import { a, b, reactive } from 'my-pkg';\nlet x = 1;",
             file = parse(code),
