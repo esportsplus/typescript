@@ -39,7 +39,7 @@ const WATCH_FLAGS = new Set(['--watch', '-w']);
 
 
 let require = createRequire(import.meta.url),
-    skipFlags = new Set(['--help', '--init', '--noEmit', '--showConfig', '--version', '-h', '-noEmit', '-v']);
+    skipFlags = new Set([...INFORMATIONAL_FLAGS, ...NO_EMIT_FLAGS]);
 
 
 async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API, noEmit = false): Promise<void> {
@@ -426,8 +426,6 @@ function main(): void {
     if (flags.watch) {
         console.error(`${PACKAGE_NAME}: --watch is not supported on the transformer plugin path; run a one-shot build or use real tsc directly`);
         process.exit(1);
-
-        return;
     }
 
     console.log(`${PACKAGE_NAME}: found ${pluginConfigs.length} transformer plugin(s), using coordinated build...`);
