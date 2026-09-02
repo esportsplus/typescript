@@ -31,14 +31,14 @@ type Ownership = 'opaque' | 'orphan' | 'owned';
 
 // Validated channel options. `fanOut` gates the bounded-fan-out check; promise
 // ownership is always checked when the channel is enabled.
-interface AsyncOptions {
+type AsyncOptions  = {
     readonly fanOut: 'error' | 'off' | 'warn';
     readonly fanOutAllowLiteralUpTo: number;
     readonly poolFunctions: ReadonlyArray<string>;
-}
+};
 
 // Per-diagnose working state shared by the ownership/fan-out walk.
-interface Env {
+type Env  = {
     readonly checker: ts.TypeChecker;
     readonly dispatch: Dispatch;
     readonly options: AsyncOptions;
@@ -49,7 +49,7 @@ interface Env {
     readonly heldSignalNames: (fn: FunctionInfo) => ReadonlySet<string>;
     // Names bound to an AbortSignal the current function holds (A3).
     readonly held: ReadonlySet<string>;
-}
+};
 
 function fail(message: string): never {
     throw new Error(`async: ${message}`);
@@ -89,10 +89,7 @@ function parseOptions(raw: unknown): AsyncOptions {
     }
     return { fanOut, fanOutAllowLiteralUpTo: allow, poolFunctions };
 }
-
-// ---------------------------------------------------------------------------
 // Promise typing
-// ---------------------------------------------------------------------------
 
 function constituents(type: ts.Type): ReadonlyArray<ts.Type> {
     return ts.unionTypes(type) ?? [type];
@@ -168,10 +165,7 @@ function producesPromise(
     }
     return isPromiseType(env.checker, env.checker.getTypeAtLocation(call));
 }
-
-// ---------------------------------------------------------------------------
 // Callee identity
-// ---------------------------------------------------------------------------
 
 // The aggregator member (all/allSettled/race/any) of a `Promise.<m>(…)` call.
 function aggregatorOf(call: ts.CallExpression): string | undefined {
@@ -225,10 +219,7 @@ function calleeText(node: ts.CallExpression | ts.NewExpression): string {
     }
     return callee.getText(callee.getSourceFile());
 }
-
-// ---------------------------------------------------------------------------
 // Ownership classification
-// ---------------------------------------------------------------------------
 
 // A call is a promise-chain continuation when its result feeds a `.then/.catch/
 // .finally` call — ownership is decided at the chain top, so the inner call is
@@ -355,10 +346,7 @@ function classifyOwnership(node: ts.Node): Ownership {
     }
     return 'opaque';
 }
-
-// ---------------------------------------------------------------------------
 // Fan-out
-// ---------------------------------------------------------------------------
 
 // A statically small, fixed-size input: an array literal without spreads, or a
 // tuple type of bounded length. Everything else is treated as dynamic width.
@@ -447,10 +435,7 @@ function routedThroughPool(env: Env, arg: ts.Expression): boolean {
     visit(arg);
     return found;
 }
-
-// ---------------------------------------------------------------------------
 // Cancellation (A3)
-// ---------------------------------------------------------------------------
 
 function isAbortSignalType(type: ts.Type | undefined): boolean {
     if (!type) {
@@ -561,10 +546,7 @@ function forwardsSignal(
     }
     return found;
 }
-
-// ---------------------------------------------------------------------------
 // Diagnostics
-// ---------------------------------------------------------------------------
 
 // `void <expr>` is always valid; `await <expr>` only inside an async function.
 function orphanFixes(
@@ -760,7 +742,7 @@ function walk(env: Env, body: ts.Node, out: Diagnostic[]): void {
     ts.forEachChild(body, visit);
 }
 
-export function createAsyncChannel(channelConfig: unknown): Channel<AsyncValue> {
+function createAsyncChannel(channelConfig: unknown): Channel<AsyncValue> {
     const options = parseOptions(channelConfig);
     const heldByFunction = new Map<FunctionInfo, ReadonlySet<string>>();
     const getHeldSignalNames = (
@@ -805,3 +787,6 @@ export function createAsyncChannel(channelConfig: unknown): Channel<AsyncValue> 
         },
     };
 }
+
+
+export { createAsyncChannel };
