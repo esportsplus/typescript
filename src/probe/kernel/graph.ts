@@ -16,7 +16,7 @@ import type {
 interface CallCore {
     readonly symbol: ts.Symbol | undefined;
     readonly targets: ReadonlyArray<FunctionInfo>;
-    readonly functionArgs: ReadonlyMap<number, ReadonlyArray<FunctionInfo>>;
+    readonly functionArgs: () => ReadonlyMap<number, ReadonlyArray<FunctionInfo>>;
     // Callee cannot be pinned to a declaration: `any`, an untracked function
     // value (a parameter/variable holding a function), or an abstract method.
     readonly unresolved: boolean;
@@ -156,21 +156,33 @@ export function buildCallGraph(
     function computeCore(call: ts.CallExpression | ts.NewExpression): CallCore {
         const isNew = ts.isNewExpression(call);
         const sym = calleeSymbol(call);
+        let functionArgs: Map<number, ReadonlyArray<FunctionInfo>> | undefined;
 
-        const functionArgs = new Map<number, ReadonlyArray<FunctionInfo>>();
-        argExpressions(call).forEach((arg, index) => {
-            const infos = resolveFunctionValue(arg);
-            if (infos.length > 0) {
-                functionArgs.set(index, infos);
+        const resolveFunctionArgs = (): ReadonlyMap<number, ReadonlyArray<FunctionInfo>> => {
+            if (functionArgs) {
+                return functionArgs;
             }
-        });
+
+            const resolved = new Map<number, ReadonlyArray<FunctionInfo>>();
+
+            functionArgs = resolved;
+            argExpressions(call).forEach((arg, index) => {
+                const infos = resolveFunctionValue(arg);
+
+                if (infos.length > 0) {
+                    resolved.set(index, infos);
+                }
+            });
+
+            return functionArgs;
+        };
 
         if (!sym) {
             // No symbol: the callee flows through `any` or an untracked value.
             return {
                 symbol: undefined,
                 targets: [],
-                functionArgs,
+                functionArgs: resolveFunctionArgs,
                 unresolved: true,
             };
         }
@@ -187,19 +199,19 @@ export function buildCallGraph(
         }
 
         if (targets.length > 0) {
-            return { symbol: sym, targets, functionArgs, unresolved: false };
+            return { symbol: sym, targets, functionArgs: resolveFunctionArgs, unresolved: false };
         }
         if (fns.length === 0) {
             // Symbol resolves to a non-function (parameter/variable holding a
             // function) — an untracked function value.
-            return { symbol: sym, targets: [], functionArgs, unresolved: true };
+            return { symbol: sym, targets: [], functionArgs: resolveFunctionArgs, unresolved: true };
         }
         if (fns.some(isAbstract)) {
             // Abstract/overridable with no single implementation.
-            return { symbol: sym, targets: [], functionArgs, unresolved: true };
+            return { symbol: sym, targets: [], functionArgs: resolveFunctionArgs, unresolved: true };
         }
         // Real declaration, no analyzable body: an external/lib leaf.
-        return { symbol: sym, targets: [], functionArgs, unresolved: false };
+        return { symbol: sym, targets: [], functionArgs: resolveFunctionArgs, unresolved: false };
     }
 
     function getCore(call: ts.CallExpression | ts.NewExpression): CallCore {
@@ -556,7 +568,7 @@ export function buildCallGraph(
             return {
                 targets: core.targets,
                 overlay: undefined,
-                functionArgs: core.functionArgs,
+                get functionArgs() { return core.functionArgs(); },
                 unresolved: false,
             };
         }
@@ -567,14 +579,14 @@ export function buildCallGraph(
             return {
                 targets: [],
                 overlay,
-                functionArgs: core.functionArgs,
+                get functionArgs() { return core.functionArgs(); },
                 unresolved: false,
             };
         }
         return {
             targets: [],
             overlay: undefined,
-            functionArgs: core.functionArgs,
+            get functionArgs() { return core.functionArgs(); },
             unresolved: core.unresolved,
         };
     }
