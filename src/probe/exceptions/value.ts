@@ -1,27 +1,27 @@
 import * as ts from '~/probe/adapter';
 
 // One `throw` site a type escaped from: enough to render and jump to it inline.
-export interface ExceptionOrigin {
+type ExceptionOrigin  = {
     readonly fileName: string;
     readonly pos: number;
     readonly end: number;
     readonly line: number; // 1-based
     readonly column: number; // 1-based
     readonly text: string; // the throw statement source, one line, truncated
-}
+};
 
 // The exceptions lattice: a set of error type references keyed by a stable canonical
 // identity, or TOP ("an unknown error") which absorbs everything. `origins` runs
 // in parallel with `types` (same keys) so each escaping type carries the throw
 // site(s) it came from, propagated across the call graph.
-export interface ExceptionsValue {
+type ExceptionsValue  = {
     readonly top: boolean;
     readonly types: ReadonlyMap<string, string>; // canonical key -> display name
     readonly origins: ReadonlyMap<string, ReadonlyArray<ExceptionOrigin>>; // key -> throw sites
-}
+};
 
 // Reserved key/display for `any`/`unknown` thrown values, which collapse to TOP.
-export const TOP_KEY = '\u0000top';
+const TOP_KEY = '\u0000top';
 const TOP_DISPLAY = 'an unknown error';
 
 // Cap on distinct types before a set widens to TOP (termination + noise control).
@@ -62,15 +62,15 @@ function mergeOrigins(
     return m;
 }
 
-export function bottom(): ExceptionsValue {
+function bottom(): ExceptionsValue {
     return { top: false, types: new Map(), origins: NO_ORIGINS };
 }
 
-export function top(): ExceptionsValue {
+function top(): ExceptionsValue {
     return { top: true, types: new Map(), origins: NO_ORIGINS };
 }
 
-export function single(key: string, display: string): ExceptionsValue {
+function single(key: string, display: string): ExceptionsValue {
     return {
         top: false,
         types: new Map([[key, display]]),
@@ -80,7 +80,7 @@ export function single(key: string, display: string): ExceptionsValue {
 
 // Attach a throw site to every type currently in `v` — used where a `throw`
 // statement produces `v`, so the site rides along as the value propagates.
-export function withOrigin(
+function withOrigin(
     v: ExceptionsValue,
     origin: ExceptionOrigin,
 ): ExceptionsValue {
@@ -95,7 +95,7 @@ export function withOrigin(
 }
 
 // Every distinct origin across all types, deduped — the diagnostic's throw list.
-export function originsOf(v: ExceptionsValue): ReadonlyArray<ExceptionOrigin> {
+function originsOf(v: ExceptionsValue): ReadonlyArray<ExceptionOrigin> {
     const out: ExceptionOrigin[] = [];
     const seen = new Set<string>();
     for (const list of v.origins.values()) {
@@ -109,7 +109,7 @@ export function originsOf(v: ExceptionsValue): ReadonlyArray<ExceptionOrigin> {
     return out;
 }
 
-export function join(a: ExceptionsValue, b: ExceptionsValue): ExceptionsValue {
+function join(a: ExceptionsValue, b: ExceptionsValue): ExceptionsValue {
     if (a.top || b.top) return top();
     const m = new Map(a.types);
     for (const [k, d] of b.types) if (!m.has(k)) m.set(k, d);
@@ -124,7 +124,7 @@ export function join(a: ExceptionsValue, b: ExceptionsValue): ExceptionsValue {
     };
 }
 
-export function equals(a: ExceptionsValue, b: ExceptionsValue): boolean {
+function equals(a: ExceptionsValue, b: ExceptionsValue): boolean {
     if (a.top || b.top) return a.top === b.top;
     if (a.types.size !== b.types.size) return false;
     for (const k of a.types.keys()) if (!b.types.has(k)) return false;
@@ -132,7 +132,7 @@ export function equals(a: ExceptionsValue, b: ExceptionsValue): boolean {
 }
 
 // Cap at WIDEN_CAP distinct types; on overflow or after 3 growing rounds, TOP.
-export function widen(
+function widen(
     prev: ExceptionsValue,
     next: ExceptionsValue,
     round: number,
@@ -146,7 +146,7 @@ export function widen(
 
 // Catch discharge: TOP minus anything stays TOP (an unknown error is never fully
 // handled by a finite catch); a finite set drops the discharged keys.
-export function subtract(
+function subtract(
     a: ExceptionsValue,
     keys: ReadonlySet<string>,
 ): ExceptionsValue {
@@ -162,18 +162,18 @@ export function subtract(
     return { top: false, types: m, origins };
 }
 
-export function isEmpty(v: ExceptionsValue): boolean {
+function isEmpty(v: ExceptionsValue): boolean {
     return !v.top && v.types.size === 0;
 }
 
 // Human-readable rendering for diagnostics/hovers.
-export function render(v: ExceptionsValue): string {
+function render(v: ExceptionsValue): string {
     if (v.top) return TOP_DISPLAY;
     return Array.from(v.types.values()).sort().join(' | ');
 }
 
 // A union type contributes each constituent; everything else is itself.
-export function constituentsOf(type: ts.Type): ReadonlyArray<ts.Type> {
+function constituentsOf(type: ts.Type): ReadonlyArray<ts.Type> {
     return ts.unionTypes(type) ?? [type];
 }
 
@@ -185,7 +185,7 @@ function basename(p: string): string {
 // Canonical identity for a single (non-union) type: `<decl-file-basename>:<qname>`
 // from its symbol (stable across runs and serializable), falling back to the
 // checker's textual rendering. `any`/`unknown` become TOP.
-export function refOfType(
+function refOfType(
     checker: ts.TypeChecker,
     t: ts.Type,
 ): { top: true } | { top: false; key: string; display: string } {
@@ -207,7 +207,7 @@ export function refOfType(
 }
 
 // Union-split reference list; `any`/`unknown` constituents surface the TOP marker.
-export function typeRef(
+function typeRef(
     checker: ts.TypeChecker,
     type: ts.Type,
 ): ReadonlyArray<{ key: string; display: string }> {
@@ -219,3 +219,6 @@ export function typeRef(
     }
     return out;
 }
+
+
+export { TOP_KEY, bottom, constituentsOf, equals, isEmpty, join, originsOf, refOfType, render, single, subtract, top, type ExceptionOrigin, type ExceptionsValue, typeRef, widen, withOrigin };

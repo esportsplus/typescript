@@ -15,7 +15,7 @@ import {
 // function, resolving each named type to a canonical key at the function's scope.
 // `declared` is true when at least one throws tag is present (opt-in checked
 // exceptions); `value` is the union of the declared types.
-export function declaredExceptions(
+function declaredExceptions(
     node: FunctionLike,
     checker: ts.TypeChecker,
 ): { value: ExceptionsValue; declared: boolean } {
@@ -53,3 +53,6 @@ function refsToValue(
         v = join(v, r.key === TOP_KEY ? top() : single(r.key, r.display));
     return v;
 }
+
+
+export { declaredExceptions };

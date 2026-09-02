@@ -36,15 +36,15 @@ import {
     type ExceptionsValue,
 } from './value';
 
-interface ExceptionsOverlayEntry {
+type ExceptionsOverlayEntry  = {
     exceptions?: unknown;
     exceptionsFromCallbacks?: unknown;
-}
+};
 
 // Whether a call to a symbol modeled by this channel's overlay can throw: it
 // either declares thrown types or inherits throws from a callback argument.
 // Exposed for peer channels (resources) that consult exception behavior.
-export function overlayThrows(entry: unknown): boolean {
+function overlayThrows(entry: unknown): boolean {
     const e = (entry ?? {}) as ExceptionsOverlayEntry;
     return (
         (Array.isArray(e.exceptions) && e.exceptions.length > 0) ||
@@ -55,7 +55,7 @@ export function overlayThrows(entry: unknown): boolean {
 
 // Per-analysis working state shared by every helper. `typeTable` retains the
 // concrete `ts.Type` behind each key so subtype-based catch discharge can run.
-interface Env {
+type Env  = {
     readonly checker: ts.TypeChecker;
     readonly dispatch: Dispatch;
     readonly sinks: ReadonlyArray<SinkConfig>;
@@ -79,9 +79,9 @@ interface Env {
         readonly origins: ReadonlySet<string>;
         readonly active: boolean;
     };
-}
+};
 
-export function createExceptionsChannel(): Channel<ExceptionsValue> {
+function createExceptionsChannel(): Channel<ExceptionsValue> {
     // Origins that escape to a call-graph root uncaught — computed once per run,
     // only when "cross-module" mode needs it.
     let unhandledCache:
@@ -218,10 +218,7 @@ function makeEnv(
         fromCallbacks: new Set(),
     };
 }
-
-// ---------------------------------------------------------------------------
 // Aggregate escape computation (summary + try scoping)
-// ---------------------------------------------------------------------------
 
 // Walk `node`, NOT descending into nested function bodies (their own graph
 // nodes). `binding`, when set, is the enclosing catch variable — a bare rethrow
@@ -291,7 +288,8 @@ function tryEscape(
         // subtracted from the try body.
         const catchEsc = escapeOf(env, node.catchClause.block, bindSym);
         result = join(subtract(tryEsc, discharge), catchEsc);
-    } else {
+    }
+    else {
         result = tryEsc;
     }
     // A finally is never a sink: its escapes are added unconditionally, replacing
@@ -380,7 +378,8 @@ function guardsFor(
             const info = parseInstanceof(env, parent.expression, bindSym);
             if (!info) {
                 unresolved = true;
-            } else {
+            }
+            else {
                 const condTrue = child === parent.thenStatement;
                 // condTrue===info.positive means the binding IS the type on this branch.
                 if (condTrue === info.positive) positives.push(info.type);
@@ -510,10 +509,7 @@ function isSubclassOf(
     for (const b of bases) if (isSubclassOf(b, base, seen)) return true;
     return false;
 }
-
-// ---------------------------------------------------------------------------
 // Call sites
-// ---------------------------------------------------------------------------
 
 function callEscape(
     env: Env,
@@ -620,10 +616,7 @@ function applySink(v: ExceptionsValue, sink: SinkConfig): ExceptionsValue {
     }
     return { top: false, types: kept, origins: keptOrigins };
 }
-
-// ---------------------------------------------------------------------------
 // Diagnostics
-// ---------------------------------------------------------------------------
 
 // Anchor each escape at the statement where it actually leaves the function.
 // `binding`/`remainder` describe the enclosing catch: a bare rethrow of `binding`
@@ -783,7 +776,8 @@ function walkDiagnostics(
                         // Rethrow of the catch binding: the un-discharged remainder leaves here.
                         if (remainder && !isEmpty(remainder))
                             out.push(throwDiagnostic(ctx, n, remainder));
-                    } else {
+                    }
+                    else {
                         const rem = valueOfType(
                             env,
                             env.typeAt(n.expression),
@@ -832,7 +826,8 @@ function handleTry(
         const discharge = dischargedKeys(env, n.catchClause, tryEsc, bindSym);
         const rem = subtract(tryEsc, discharge);
         walkDiagnostics(env, ctx, n.catchClause.block, bindSym, rem, out);
-    } else {
+    }
+    else {
         walkDiagnostics(env, ctx, n.tryBlock, binding, remainder, out);
     }
     if (n.finallyBlock)
@@ -944,10 +939,7 @@ function buildRelated(
     }
     return related;
 }
-
-// ---------------------------------------------------------------------------
 // Shared helpers
-// ---------------------------------------------------------------------------
 
 // Convert a thrown/error type to a lattice value, retaining each constituent's
 // concrete type for later subtype discharge.
@@ -981,3 +973,6 @@ function isBindingRef(
     if (!bindSym || !ts.isIdentifier(expr)) return false;
     return env.checker.getSymbolAtLocation(expr) === bindSym;
 }
+
+
+export { createExceptionsChannel, overlayThrows };
