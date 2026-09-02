@@ -36,9 +36,6 @@ import {
   type ExceptionsValue,
 } from "./value";
 
-// Non-public checker capabilities we lean on (assignability for subtype discharge
-// and global name resolution for overlay/JSDoc type names). Local cast only.
-
 interface ExceptionsOverlayEntry {
   exceptions?: unknown;
   exceptionsFromCallbacks?: unknown;

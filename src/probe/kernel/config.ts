@@ -238,10 +238,6 @@ export function configFromObject(raw: unknown, projectRoot: string): AnalyzeConf
   return normalizeConfig(raw as RawConfig, projectRoot);
 }
 
-// Read the analyze config from a tsconfig.json's `plugins: [{ name: "ts-probe", … }]`
-// entry — the same inline config the language-service plugin uses, so the CLI and
-// editor share one source. Returns undefined when there is no analyze plugin entry.
-// The resolved config's `tsconfigPath` points back at this tsconfig.
 // Read `compilerOptions.plugins` from a tsconfig, following relative `extends`.
 function readTsconfigPlugins(
   tsconfigPath: string,
