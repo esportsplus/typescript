@@ -83,65 +83,46 @@ The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them
 - **`resources`** — acquired resources (timers, event listeners, file handles, sockets, `Disposable`s, …) that can leak: not released, transferred, or `using`-bound on every path — including throwing paths, which it derives from the `exceptions` channel's summaries.
 - **`async`** — unbounded `Promise.all(…)`-style fan-out, orphaned promises whose rejections go unhandled, and awaited cancellable calls that drop an `AbortSignal` the function holds.
 
-Only `exceptions` is on by default; enable the others per project. It rides the `tsc` passthrough (build/CI), and ships an LSP server so editors can render the same findings.
+Only channels you configure run; a channel is otherwise off. It rides the `tsc` passthrough (build/CI), and ships an LSP server so editors can render the same findings.
 
 ### Enable
 
-Add an `analyze` entry to `compilerOptions.plugins`. Analysis covers every file the tsconfig includes (ignoring excludes); no config beyond the entry is required.
+Add a top-level `tsc-probe` key to `tsconfig.json` (a sibling of `compilerOptions`, like `tsc-alias`). Analysis is always whole-project and covers every file the tsconfig includes (ignoring excludes). Its only root keys are the channel names — `exceptions`, `resources`, and `async` — with no `channels` wrapper. An absent channel is off; a present channel with no `severity` is `error`. Consequently, a bare `"tsc-probe": {}` analyzes nothing: the minimum useful config is the three-line per-channel shape below.
+
+Unlike `compilerOptions.plugins` — which `extends` **replaces** wholesale — `tsc-probe` is **deep-merged down the `extends` chain**: a shared base can carry the defaults and a package override a single channel key (e.g. `tsc-probe.exceptions.report`) without restating the rest. Set an inherited key to `null` to delete it.
+
+`enabled`, top-level `severity`/`failOnFindings`, `presets`, `overlays`, `sinks`, `handlerBoundaries`, `entryPoints`, and the `channels` wrapper are removed; leaving one in the config fails the build with a diagnostic naming its replacement. Platform effect models (Node/DOM globals, `node:fs`, and so on) are built in, so there is nothing to select. `dispatch` is recognised on every channel.
 
 ```jsonc
 {
-    "compilerOptions": {
-        "plugins": [
-            {
-                "name": "ts-probe",
-                // Editor squiggle color; "warn" opts down. CLI/build ignore this.
-                "severity": "error",
-                // Fail the tsc/build run when there are findings.
-                "failOnFindings": true,
-                // Per-channel config. `enabled` and `dispatch` are recognised on
-                // every channel; other keys are that channel's own options.
-                "channels": {
-                    "exceptions": {
-                        "enabled": true,
-                        // "consumers" (default): uncaught calls only, and only when
-                        //   the throwing callee is in another PACKAGE — a throw within
-                        //   this package is its own contract, seen only where an
-                        //   external consumer calls in.
-                        // "cross-module": like "consumers" but the boundary is the
-                        //   FILE — a callee thrown from the caller's own file stays
-                        //   silent; a call from another file reports.
-                        // "all": throws AND every uncaught call.
-                        "report": "consumers",
-                        // Flag `throw`s inside `catch` that drop the caught error's cause.
-                        "errorCause": true
-                    },
-                    "resources": {
-                        "enabled": true,
-                        // Untrackable handling when a resource escapes local analysis:
-                        // "optimist" assumes transfer (silent), "pessimist" reports it.
-                        "dispatch": "optimist",
-                        // Calls that take ownership of a passed resource argument.
-                        "ownership": [{ "callee": "registerCleanup", "params": [0] }]
-                    },
-                    "async": {
-                        "enabled": true,
-                        "fanOut": "warn",                     // "off" | "warn" | "error"
-                        "fanOutAllowLiteralUpTo": 16,         // inline array/tuple size that is fine
-                        "poolFunctions": ["p-limit", "p-map"] // sanctioned concurrency wrappers
-                    }
-                },
-                // Model third-party throw behavior: "node", "express".
-                "presets": ["node"]
-            }
-        ]
+    "compilerOptions": { /* … */ },
+    "tsc-probe": {
+        "exceptions": {
+            "severity": "error",            // "error" reports + fails the build; "warn" reports only; "off" skips
+            // "consumers": uncaught calls only, and only when the throwing
+            //   callee is in another PACKAGE.
+            // "cross-module": like "consumers" but the boundary is the FILE.
+            // "all": throws AND every uncaught call.
+            "report": "cross-module",        // "consumers" | "cross-module" | "all"
+            "errorCause": true               // flag catch-rethrows that drop the caught error's cause
+        },
+        "resources": {
+            "severity": "error",
+            "dispatch": "optimist"           // untrackable escape: "optimist" assumes transfer, "pessimist" reports
+        },
+        "async": {
+            "severity": "warn",
+            "fanOut": true                   // bound Promise.all-style fan-out; severity sets the level
+        }
     }
 }
 ```
 
+Each channel's `severity` is `"error"`, `"warn"`, or `"off"`. The remaining channel options are `exceptions.report` (`"consumers"` | `"cross-module"` | `"all"`) and `exceptions.errorCause` (boolean); `resources.ownership` (`[{ callee, params }]`); and `async.fanOut` (boolean, default `true`), `async.fanOutAllowLiteralUpTo` (number), and `async.poolFunctions` (string array).
+
 ### CLI / build
 
-The `tsc` passthrough runs analyze after a successful compile and prints findings to stderr. With `failOnFindings: true`, a run with findings exits non-zero — drop it into CI as a gate.
+The `tsc` passthrough runs analyze after a successful compile and prints findings to stderr. It exits non-zero (`1`) when any finding is in a channel whose `severity` is `"error"`; `warn` channels never fail the build. A rejected or removed config key is a hard error and also exits `1`.
 
 ```bash
 tsc   # compiles, resolves aliases, then reports analyze findings
@@ -149,13 +130,25 @@ tsc   # compiles, resolves aliases, then reports analyze findings
 
 ### Editor (LSP)
 
-The package ships a standalone language server (`esportsplus-tsc-lsp` bin, or the `@esportsplus/typescript/lsp` export) that publishes analyze findings over LSP. A client spawns it beside the native TypeScript server and merges both diagnostic streams; `severity` drives the squiggle color. Analysis runs against saved files on open and save. Beyond diagnostics it serves **hovers** (the finding plus its origin→boundary chain) and **quick-fixes** — `void`/`await` an orphaned promise, forward an `AbortSignal`, or fix a leaked handle by converting it to `using` or wrapping the region in `try/finally`.
+The package ships a standalone language server (`esportsplus-tsc-lsp` bin, or the `@esportsplus/typescript/lsp` export) that publishes analyze findings over LSP. It runs as a *second* server **beside** the TypeScript language server — it is not a tsserver plugin — and the editor merges both diagnostic streams; each finding's squiggle color comes from its own channel's `severity`. Analysis runs against saved files on open and save. Beyond diagnostics it serves **hovers** (the finding plus its origin→boundary chain) and **quick-fixes** — `void`/`await` an orphaned promise, forward an `AbortSignal`, or fix a leaked handle by converting it to `using` or wrapping the region in `try/finally`.
+
+Wiring it up:
+
+- **Config-driven LSP editors** (Neovim, Emacs, Helix, Zed, Sublime LSP): register `esportsplus-tsc-lsp` as an additional server for `typescript`/`typescriptreact`. It attaches to the same buffers as the TypeScript server; no tsconfig change.
+- **VS Code**: install the client extension under [`editor/vscode`](editor/vscode) — it resolves and spawns the server from the workspace's own install.
 
 ```typescript
 import { startServer } from '@esportsplus/typescript/lsp';
 
 startServer(); // stdio LSP server
 ```
+
+### Accepted false negatives
+
+- A library function that returns a resource the caller must release (for example, `db.connect()` → `.close()`) is not modeled unless it is in the built-in table.
+- Third-party throws are derived by syntactically reading installed `.js`; cross-file/transitive throws beyond a small depth, dynamically dispatched calls, and non-standard export shapes are missed (optimistically, without false positives).
+- Backing `.js` files that are minified or larger than 512 KiB are skipped.
+- A bare `"tsc-probe": {}` is inert.
 
 ## API
 
