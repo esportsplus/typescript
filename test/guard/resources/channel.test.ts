@@ -194,6 +194,19 @@ describe("resources channel — R1", () => {
         expect(diags).toHaveLength(0);
     });
 
+    it("accepts a listener registered with { once: true } or { signal }", () => {
+        const diags = analyzeFixture({
+            "index.ts": [
+                "export function bind(t: EventTarget, fn: () => void, signal: AbortSignal) {",
+                "    t.addEventListener('a', fn, { once: true });",
+                "    t.addEventListener('b', fn, { signal });",
+                "}",
+            ].join("\n"),
+        });
+
+        expect(diags).toHaveLength(0);
+    });
+
     it("accepts a timeout stored into a this-owned collection", () => {
         const diags = analyzeFixture({
             "index.ts": [

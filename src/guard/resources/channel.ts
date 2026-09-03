@@ -1201,6 +1201,31 @@ function computeOwnership(env: Env): Set<number> {
 }
 
 // Walk one acquire site and emit a leak/untrackable diagnostic when warranted.
+// addEventListener(type, handler, options): `{ once: true }` auto-removes the
+// listener after one dispatch, and `{ signal }` removes it when the signal aborts —
+// either way it cannot outlive its own cleanup, so it is not a leak.
+function selfRemovingListener(call: ts.CallExpression | ts.NewExpression): boolean {
+    const options = call.arguments?.[2];
+
+    if (!options || !ts.isObjectLiteralExpression(options)) {
+        return false;
+    }
+
+    return options.properties.some((p) => {
+        if (ts.isShorthandPropertyAssignment(p)) {
+            return ts.isIdentifier(p.name) && p.name.text === 'signal';
+        }
+
+        return (
+            ts.isPropertyAssignment(p) &&
+            ts.isIdentifier(p.name) &&
+            ((p.name.text === 'once' &&
+                p.initializer.kind === ts.SyntaxKind.TrueKeyword) ||
+                p.name.text === 'signal')
+        );
+    });
+}
+
 function diagnoseAcquire(
     env: Env,
     call: ts.CallExpression | ts.NewExpression,
@@ -1208,7 +1233,7 @@ function diagnoseAcquire(
     out: Diagnostic[],
 ): void {
     if (acq.kind === 'pair') {
-        if (!hasMatchingRelease(env, call, acq)) {
+        if (!selfRemovingListener(call) && !hasMatchingRelease(env, call, acq)) {
             out.push(
                 leakDiagnostic(
                     call,
