@@ -160,6 +160,23 @@ describe("resources channel — R1", () => {
         expect(diags[0]!.message).toContain("removeEventListener");
     });
 
+    it("accepts a listener removed in a returned teardown closure", () => {
+        const diags = analyzeFixture({
+            "index.ts": [
+                "export function mount(t: EventTarget, fn: () => void) {",
+                "    t.addEventListener('click', fn);",
+                "    return {",
+                "        shutdown() {",
+                "            t.removeEventListener('click', fn);",
+                "        },",
+                "    };",
+                "}",
+            ].join("\n"),
+        });
+
+        expect(diags).toHaveLength(0);
+    });
+
     it("flags a class field resource with no disposal and accepts one with disposal", () => {
         const diags = analyzeFixture({
             "index.ts": [

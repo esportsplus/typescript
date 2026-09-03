@@ -105,7 +105,11 @@ function refsSym(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean {
 }
 
 // True when `node` (or a descendant, not crossing into a nested function) matches.
-function containsMatch(node: ts.Node, pred: (n: ts.Node) => boolean): boolean {
+function containsMatch(
+    node: ts.Node,
+    pred: (n: ts.Node) => boolean,
+    descendIntoFunctions = false,
+): boolean {
     let found = false;
 
     const rec = (n: ts.Node): void => {
@@ -113,7 +117,7 @@ function containsMatch(node: ts.Node, pred: (n: ts.Node) => boolean): boolean {
             return;
         }
 
-        if (n !== node && isFunctionLike(n)) {
+        if (n !== node && !descendIntoFunctions && isFunctionLike(n)) {
             return;
         }
 
@@ -741,8 +745,13 @@ function hasMatchingRelease(
         ? acqCallee.expression.getText()
         : undefined;
 
-    return containsMatch(body, (n) =>
-        isReleaseCallForPair(n, acq, acquireCall, acquireExpressionText),
+    // A listener registered on mount is commonly removed in a returned teardown
+    // closure (effect-cleanup style); accept a same-key release nested in the
+    // acquiring function's closures, not only on its own paths.
+    return containsMatch(
+        body,
+        (n) => isReleaseCallForPair(n, acq, acquireCall, acquireExpressionText),
+        true,
     );
 }
 
