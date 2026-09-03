@@ -87,38 +87,30 @@ Only channels you configure run; a channel is otherwise off. It rides the `tsc` 
 
 ### Enable
 
-Add a top-level `tsc-probe` key to `tsconfig.json` (a sibling of `compilerOptions`, like `tsc-alias`). Analysis is always whole-project and covers every file the tsconfig includes (ignoring excludes). Its only root keys are the channel names — `exceptions`, `resources`, and `async` — with no `channels` wrapper. An absent channel is off; a present channel with no `severity` is `error`. Consequently, a bare `"tsc-probe": {}` analyzes nothing: the minimum useful config is the three-line per-channel shape below.
+Add a top-level `tsc-guard` key to `tsconfig.json` (a sibling of `compilerOptions`, like `tsc-alias`). Analysis is always whole-project and covers every file the tsconfig includes (ignoring excludes). Its only root keys are the channel names — `exceptions`, `resources`, and `async` — with no `channels` wrapper. An absent channel is off; a present channel with no `severity` is `error`. Consequently, a bare `"tsc-guard": {}` analyzes nothing: the minimum useful config is the three-line per-channel shape below.
 
-Unlike `compilerOptions.plugins` — which `extends` **replaces** wholesale — `tsc-probe` is **deep-merged down the `extends` chain**: a shared base can carry the defaults and a package override a single channel key (e.g. `tsc-probe.exceptions.report`) without restating the rest. Set an inherited key to `null` to delete it.
+Unlike `compilerOptions.plugins` — which `extends` **replaces** wholesale — `tsc-guard` is **deep-merged down the `extends` chain**: a shared base can carry the defaults and a package override a single channel key (e.g. `tsc-guard.exceptions.report`) without restating the rest. Set an inherited key to `null` to delete it.
 
 `enabled`, top-level `severity`/`failOnFindings`, `presets`, `overlays`, `sinks`, `handlerBoundaries`, `entryPoints`, and the `channels` wrapper are removed; leaving one in the config fails the build with a diagnostic naming its replacement. Platform effect models (Node/DOM globals, `node:fs`, and so on) are built in, so there is nothing to select. `dispatch` is recognised on every channel.
 
 ```jsonc
 {
     "compilerOptions": { /* … */ },
-    "tsc-probe": {
+    "tsc-guard": {
         "exceptions": {
-            "severity": "error",            // "error" reports + fails the build; "warn" reports only; "off" skips
-            // "consumers": uncaught calls only, and only when the throwing
-            //   callee is in another PACKAGE.
+            "severity": "error",            // "error" reports + fails the build; "warn"/"info" report only; "off" skips
+            // "consumers": uncaught calls only, when the throwing callee is in another PACKAGE.
             // "cross-module": like "consumers" but the boundary is the FILE.
             // "all": throws AND every uncaught call.
-            "report": "cross-module",        // "consumers" | "cross-module" | "all"
-            "errorCause": true               // flag catch-rethrows that drop the caught error's cause
+            "report": "cross-module"         // "consumers" | "cross-module" | "all"
         },
-        "resources": {
-            "severity": "error",
-            "dispatch": "optimist"           // untrackable escape: "optimist" assumes transfer, "pessimist" reports
-        },
-        "async": {
-            "severity": "warn",
-            "fanOut": true                   // bound Promise.all-style fan-out; severity sets the level
-        }
+        "resources": { "severity": "error" },
+        "async":     { "severity": "warn" }
     }
 }
 ```
 
-Each channel's `severity` is `"error"`, `"warn"`, or `"off"`. The remaining channel options are `exceptions.report` (`"consumers"` | `"cross-module"` | `"all"`) and `exceptions.errorCause` (boolean); `resources.ownership` (`[{ callee, params }]`); and `async.fanOut` (boolean, default `true`), `async.fanOutAllowLiteralUpTo` (number), and `async.poolFunctions` (string array).
+Each channel's `severity` is `"error"`, `"warn"`, `"info"`, or `"off"` — `error` reports and fails the build; `warn`/`info` report without gating (a `warn` squiggle vs a subtler `info` one in the editor); `off` skips the channel. The only remaining channel option is `exceptions.report` (`"consumers"` | `"cross-module"` | `"all"`, default `"consumers"`). Everything else is inferred from the code and unconditional: the exceptions channel traces third-party throws from the installed `.js` and flags the catch-`{ cause }` smell; the resources channel infers ownership by tracing releases/transfers and reports any resource that escapes somewhere untrackable; the async channel flags orphaned promises, dropped `AbortSignal`s, and `Promise.all`/`race`/… over a **dynamically-sized** input (a statically-sized array literal or fixed tuple is always fine).
 
 ### CLI / build
 
@@ -148,7 +140,7 @@ startServer(); // stdio LSP server
 - A library function that returns a resource the caller must release (for example, `db.connect()` → `.close()`) is not modeled unless it is in the built-in table.
 - Third-party throws are derived by syntactically reading installed `.js`; cross-file/transitive throws beyond a small depth, dynamically dispatched calls, and non-standard export shapes are missed (optimistically, without false positives).
 - Backing `.js` files that are minified or larger than 512 KiB are skipped.
-- A bare `"tsc-probe": {}` is inert.
+- A bare `"tsc-guard": {}` is inert.
 
 ## API
 

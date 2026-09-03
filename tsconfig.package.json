@@ -12,7 +12,7 @@
         ]
     },
     "extends": "./tsconfig.base.json",
-    "tsc-probe": {
+    "tsc-guard": {
         "exceptions": {
             "report": "consumers"
         }

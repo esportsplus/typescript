@@ -36,26 +36,16 @@
     "tsc-alias": {
         "resolveFullPaths": true
     },
-    // Channel names at the root; each carries its own "severity" ("error" reports
-    // and fails the build, "warn" reports only, "off"/absent skips). Platform
-    // effect models are built in — no presets/overlays to configure.
-    "tsc-probe": {
+    "tsc-guard": {
         "exceptions": {
             "severity": "error",
-            "report": "cross-module",
-            // Flag `throw`s inside `catch` that drop the caught error's cause.
-            "errorCause": true
+            "report": "cross-module"
         },
         "resources": {
-            "severity": "error",
-            // Untracked escape handling: "optimist" assumes transfer (silent),
-            // "pessimist" reports it.
-            "dispatch": "optimist"
+            "severity": "error"
         },
         "async": {
-            "severity": "warn",
-            // Unbounded Promise.all-style fan-out; severity governs the level.
-            "fanOut": true
+            "severity": "info"
         }
     }
 }
