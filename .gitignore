@@ -3,6 +3,10 @@
 .idea
 build
 node_modules
+# Derive-scan test fixtures live under a real node_modules/ so createRequire can
+# resolve them; keep them tracked.
+!/test/fixtures/node_modules/
+!/test/fixtures/node_modules/**
 storage/.fixture-*
 tmpclaude*
 

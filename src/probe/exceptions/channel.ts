@@ -16,6 +16,7 @@ import type {
 import { bodyOf, paramSymbols } from '../kernel/ast';
 import { isFunctionLike, locationOf } from '../kernel/ids';
 import { declaredExceptions } from './jsdoc';
+import { deriveThrows, type ThrowIndex } from './derive';
 import {
     bottom,
     constituentsOf,
@@ -57,6 +58,7 @@ function overlayThrows(entry: unknown): boolean {
 type Env  = {
     readonly checker: ts.TypeChecker;
     readonly dispatch: Dispatch;
+    readonly throwIndex: ThrowIndex;
     readonly fn: FunctionInfo;
     readonly summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>;
     readonly resolveCall: (
@@ -80,7 +82,7 @@ type Env  = {
     };
 };
 
-function createExceptionsChannel(): Channel<ExceptionsValue> {
+function createExceptionsChannel(throwIndex: ThrowIndex): Channel<ExceptionsValue> {
     // Origins that escape to a call-graph root uncaught — computed once per run,
     // when a boundary-gated mode ("consumers", "cross-module") needs it.
     let unhandledCache:
@@ -119,6 +121,7 @@ function createExceptionsChannel(): Channel<ExceptionsValue> {
             const env = makeEnv(
                 ctx.checker,
                 ctx.dispatch,
+                throwIndex,
                 ctx.fn,
                 ctx.summaryOf,
                 ctx.resolveCall,
@@ -139,6 +142,7 @@ function createExceptionsChannel(): Channel<ExceptionsValue> {
             const base = makeEnv(
                 ctx.checker,
                 ctx.dispatch,
+                throwIndex,
                 ctx.fn,
                 ctx.summaryOf,
                 ctx.resolveCall,
@@ -195,6 +199,7 @@ function createExceptionsChannel(): Channel<ExceptionsValue> {
 function makeEnv(
     checker: ts.TypeChecker,
     dispatch: Dispatch,
+    throwIndex: ThrowIndex,
     fn: FunctionInfo,
     summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>,
     resolveCall: (
@@ -206,6 +211,7 @@ function makeEnv(
     return {
         checker,
         dispatch,
+        throwIndex,
         fn,
         summaryOf,
         resolveCall,
@@ -524,11 +530,178 @@ function callEscape(
                 v = join(v, env.summaryOf(f).value);
         }
     }
-    if (res.overlay) v = join(v, overlayValue(env, res, call));
+    if (res.overlay) {
+        v = join(v, overlayValue(env, res, call));
+    }
+    // No app targets and no overlay model: a third-party leaf. Derive its throws
+    // from the installed `.js` (tier-0 `@throws` first, then the syntactic scan).
+    else if (res.targets.length === 0) {
+        const derived = deriveForCall(env, call);
+        if (derived) v = join(v, derived);
+    }
     // Unresolved callee with no model: degrade by dispatch.
     if (res.unresolved && !res.overlay && env.dispatch === 'pessimist')
         v = join(v, top());
     return v;
+}
+
+// Third-party throw derivation for a bodyless leaf whose symbol is declared in a
+// node_modules `.d.ts`. Tier 0 reads `@throws` on the declaration; otherwise the
+// call's import alias yields (specifier, export, member) and the scanner reads the
+// backing `.js`. Anything not expressible this way stays effect-free.
+function deriveForCall(
+    env: Env,
+    call: ts.CallExpression | ts.NewExpression,
+): ExceptionsValue | undefined {
+    const sym = resolveCalleeSymbol(env.checker, call);
+    if (!sym || !declaredInNodeModulesDts(sym)) {
+        return undefined;
+    }
+    const tier0 = declaredThrowsOf(env, sym);
+    if (tier0) {
+        return tier0;
+    }
+    const info = importInfoForCall(env.checker, call);
+    if (!info) {
+        return undefined;
+    }
+    const summary = deriveThrows(env.throwIndex, {
+        awaited: ts.isCallExpression(call) && isAwaitedCall(call),
+        exportName: info.exportName,
+        importerFileName: call.getSourceFile().fileName,
+        memberName: info.memberName,
+        specifier: info.specifier,
+    });
+    if (!summary) {
+        return undefined;
+    }
+    let v = bottom();
+    for (const [cls, origins] of summary.classes) {
+        let cv = namedValue(env, cls, call);
+        for (const origin of origins) {
+            cv = withOrigin(cv, origin);
+        }
+        v = join(v, cv);
+    }
+    return v;
+}
+
+function resolveCalleeSymbol(
+    checker: ts.TypeChecker,
+    call: ts.CallExpression | ts.NewExpression,
+): ts.Symbol | undefined {
+    let sym = checker.getSymbolAtLocation(call.expression);
+    if (sym && sym.flags & ts.SymbolFlags.Alias) {
+        sym = checker.getAliasedSymbol(sym);
+    }
+    return sym;
+}
+
+function declaredInNodeModulesDts(sym: ts.Symbol): boolean {
+    for (const decl of ts.symbolDeclarations(sym)) {
+        const sf = decl.getSourceFile();
+        if (sf.isDeclarationFile && sf.fileName.replace(/\\/g, '/').includes('/node_modules/')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Tier 0: a `@throws` tag on any of the symbol's declarations is the summary.
+function declaredThrowsOf(env: Env, sym: ts.Symbol): ExceptionsValue | undefined {
+    for (const decl of ts.symbolDeclarations(sym)) {
+        if (!isFunctionLike(decl)) {
+            continue;
+        }
+        const declared = declaredExceptions(decl, env.checker);
+        if (declared.declared) {
+            return declared.value;
+        }
+    }
+    return undefined;
+}
+
+// The module specifier + export name (+ member) behind a call, read from the
+// call's import alias. Covers `import { f }`, `import def`, and namespace member
+// access; instance methods and `require()` bindings return undefined (effect-free).
+function importInfoForCall(
+    checker: ts.TypeChecker,
+    call: ts.CallExpression | ts.NewExpression,
+): { exportName: string; memberName: string | undefined; specifier: string } | undefined {
+    const callee = call.expression;
+    if (ts.isIdentifier(callee)) {
+        return importInfoOfSymbol(checker.getSymbolAtLocation(callee), undefined);
+    }
+    if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)) {
+        return importInfoOfSymbol(
+            checker.getSymbolAtLocation(callee.expression),
+            callee.name.text,
+        );
+    }
+    return undefined;
+}
+
+// Resolve the import binding a symbol was declared by. When `member` is set the
+// binding is a namespace import and `member` is the accessed export.
+function importInfoOfSymbol(
+    sym: ts.Symbol | undefined,
+    member: string | undefined,
+): { exportName: string; memberName: string | undefined; specifier: string } | undefined {
+    if (!sym) {
+        return undefined;
+    }
+    for (const decl of ts.symbolDeclarations(sym)) {
+        const specifier = moduleSpecifierOf(decl);
+        if (!specifier) {
+            continue;
+        }
+        if (member !== undefined) {
+            if (ts.isNamespaceImport(decl)) {
+                return { exportName: member, memberName: undefined, specifier };
+            }
+            continue;
+        }
+        if (ts.isImportSpecifier(decl)) {
+            return {
+                exportName: (decl.propertyName ?? decl.name).text,
+                memberName: undefined,
+                specifier,
+            };
+        }
+        if (ts.isImportClause(decl)) {
+            return { exportName: 'default', memberName: undefined, specifier };
+        }
+    }
+    return undefined;
+}
+
+// The module string of the `import` declaration enclosing `decl`, if any.
+function moduleSpecifierOf(decl: ts.Node): string | undefined {
+    let node: ts.Node | undefined = decl;
+    while (node) {
+        if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+            return node.moduleSpecifier.text;
+        }
+        node = node.parent;
+    }
+    return undefined;
+}
+
+// Whether a call's result is directly `await`ed (through parens/casts).
+function isAwaitedCall(call: ts.CallExpression): boolean {
+    let child: ts.Node = call;
+    let parent = call.parent;
+    while (
+        parent &&
+        (ts.isParenthesizedExpression(parent) ||
+            ts.isAsExpression(parent) ||
+            ts.isNonNullExpression(parent)) &&
+        (parent as { expression?: ts.Node }).expression === child
+    ) {
+        child = parent;
+        parent = parent.parent;
+    }
+    return parent !== undefined && ts.isAwaitExpression(parent);
 }
 
 function overlayValue(

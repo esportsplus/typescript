@@ -3,6 +3,7 @@ import * as ts from '~/probe/adapter';
 import { channelFor } from '../channels';
 import { buildCallGraph } from './graph';
 import { buildProgram } from './program';
+import { createThrowIndex, disposeThrowIndex } from '../exceptions/derive';
 import { runChannel } from './fixpoint';
 import { loadOverlays } from '../overlay/load';
 
@@ -14,6 +15,7 @@ import type {
     SummaryStore,
     AnalyzeConfig,
 } from './types';
+import type { ThrowIndex } from '../exceptions/derive';
 
 type AnalyzeResult  = {
     readonly diagnostics: ReadonlyArray<Diagnostic>;
@@ -23,10 +25,30 @@ type Runnable = { config: ChannelConfig; channel: Channel<unknown> };
 
 // Analyze an already-built Program — the path the language-service plugin takes,
 // reusing the editor's incrementally-updated program instead of building one.
+// `throwIndex` (the cross-module `.js` scan cache) is owned by a long-lived caller
+// (AnalyzeWorkspace in the LSP) so it survives across saves; when absent, a
+// short-lived one is created and disposed per call (the CLI path).
 function analyzeProgram(
     program: ts.Program,
     checker: ts.TypeChecker,
     config: AnalyzeConfig,
+    throwIndex?: ThrowIndex,
+): AnalyzeResult {
+    const index = throwIndex ?? createThrowIndex();
+    try {
+        return runAnalysis(program, checker, config, index);
+    } finally {
+        if (!throwIndex) {
+            disposeThrowIndex(index);
+        }
+    }
+}
+
+function runAnalysis(
+    program: ts.Program,
+    checker: ts.TypeChecker,
+    config: AnalyzeConfig,
+    throwIndex: ThrowIndex,
 ): AnalyzeResult {
     const overlays = loadOverlays();
     const graph = buildCallGraph(program, checker, overlays);
@@ -40,7 +62,7 @@ function analyzeProgram(
         }
         const channelConfig = config.channels[name];
         const channel = channelConfig
-            ? channelFor(name, channelConfig.options)
+            ? channelFor(name, channelConfig.options, throwIndex)
             : undefined;
         if (!channelConfig || !channel) {
             return undefined;

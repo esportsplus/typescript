@@ -3,10 +3,12 @@ import * as NodePath from 'node:path';
 import * as ts from '~/probe/adapter';
 
 import { analyzeProgram } from '~/probe/kernel/analyze';
+import { createThrowIndex, disposeThrowIndex } from '~/probe/exceptions/derive';
 import { loadConfigFromTsconfig } from '~/probe/kernel/config';
 import { open } from '~/compiler/language-service';
 
 import type { AnalyzeResult } from '~/probe/kernel/analyze';
+import type { ThrowIndex } from '~/probe/exceptions/derive';
 import type { AnalyzeConfig } from '~/probe/kernel/types';
 
 type Snapshot = ReturnType<ts.API['updateSnapshot']>;
@@ -18,6 +20,9 @@ class AnalyzeWorkspace {
     private api: ts.API;
     readonly configPath: string;
     private snapshot: Snapshot | undefined;
+    // Long-lived across saves: the cross-module `.js` scan cache (parsed files +
+    // per-export summaries), so incremental re-analysis does not re-read deps.
+    private throwIndex: ThrowIndex = createThrowIndex();
 
     // The parsed `tsc-probe` config, or undefined when the tsconfig opts out of
     // analyze. A configless workspace stays inert — analyze() yields nothing.
@@ -81,10 +86,12 @@ class AnalyzeWorkspace {
             return undefined;
         }
 
-        return analyzeProgram(project.program, project.checker, this.config);
+        return analyzeProgram(project.program, project.checker, this.config, this.throwIndex);
     }
 
     dispose(): void {
+        disposeThrowIndex(this.throwIndex);
+
         if (this.snapshot && !this.snapshot.isDisposed()) {
             this.snapshot.dispose();
         }
