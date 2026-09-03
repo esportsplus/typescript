@@ -136,7 +136,6 @@ function runChannel<V>(
         fn,
         dispatch,
         channelConfig,
-        sinks: analysis.config.sinks,
         summaryOf,
         resolveCall: (call) => graph.resolveCall(call, channel.name),
         resolveCallFor: (peerChannel, call) =>
@@ -251,7 +250,6 @@ function runChannel<V>(
             fn,
             dispatch,
             channelConfig,
-            sinks: analysis.config.sinks,
             isBoundary: boundaries.has(fn.id),
             summaryOf,
             resolveCall: (call) => graph.resolveCall(call, channel.name),

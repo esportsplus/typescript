@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "noEmit": true,
+        "rootDir": "${configDir}"
+    },
+    "extends": "./tsconfig.package.json",
+    "include": [
+        "${configDir}/*.config.ts",
+        "${configDir}/bench/**/*",
+        "${configDir}/src/**/*",
+        "${configDir}/test/**/*"
+    ],
+    // Dogfood the probe over the whole repo (src + tests + benches), but report as
+    // warnings so a known first-party finding never fails the local typecheck; the
+    // shipped tsconfig.base.json keeps the demonstrative "error" severities.
+    "tsc-probe": {
+        "exceptions": { "severity": "warn" },
+        "resources": { "severity": "warn" }
+    }
+}

@@ -10,11 +10,10 @@ import type {
     DiagnoseContext,
     Dispatch,
     FunctionInfo,
-    SinkConfig,
     Summary,
     TransferContext,
 } from '../kernel/types';
-import { bodyOf, calleeSelectors, paramSymbols } from '../kernel/ast';
+import { bodyOf, paramSymbols } from '../kernel/ast';
 import { isFunctionLike, locationOf } from '../kernel/ids';
 import { declaredExceptions } from './jsdoc';
 import {
@@ -58,7 +57,6 @@ function overlayThrows(entry: unknown): boolean {
 type Env  = {
     readonly checker: ts.TypeChecker;
     readonly dispatch: Dispatch;
-    readonly sinks: ReadonlyArray<SinkConfig>;
     readonly fn: FunctionInfo;
     readonly summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>;
     readonly resolveCall: (
@@ -121,7 +119,6 @@ function createExceptionsChannel(): Channel<ExceptionsValue> {
             const env = makeEnv(
                 ctx.checker,
                 ctx.dispatch,
-                ctx.sinks,
                 ctx.fn,
                 ctx.summaryOf,
                 ctx.resolveCall,
@@ -142,7 +139,6 @@ function createExceptionsChannel(): Channel<ExceptionsValue> {
             const base = makeEnv(
                 ctx.checker,
                 ctx.dispatch,
-                ctx.sinks,
                 ctx.fn,
                 ctx.summaryOf,
                 ctx.resolveCall,
@@ -199,7 +195,6 @@ function createExceptionsChannel(): Channel<ExceptionsValue> {
 function makeEnv(
     checker: ts.TypeChecker,
     dispatch: Dispatch,
-    sinks: ReadonlyArray<SinkConfig>,
     fn: FunctionInfo,
     summaryOf: (fn: FunctionInfo) => Summary<ExceptionsValue>,
     resolveCall: (
@@ -211,7 +206,6 @@ function makeEnv(
     return {
         checker,
         dispatch,
-        sinks,
         fn,
         summaryOf,
         resolveCall,
@@ -534,8 +528,6 @@ function callEscape(
     // Unresolved callee with no model: degrade by dispatch.
     if (res.unresolved && !res.overlay && env.dispatch === 'pessimist')
         v = join(v, top());
-    const sink = matchSink(env, call);
-    if (sink) v = applySink(v, sink);
     return v;
 }
 
@@ -594,32 +586,6 @@ function detectParamCall(
     if (idx !== undefined) env.fromCallbacks.add(idx);
 }
 
-function matchSink(
-    env: Env,
-    call: ts.CallExpression | ts.NewExpression,
-): SinkConfig | undefined {
-    if (!ts.isCallExpression(call)) return undefined;
-    const names = calleeSelectors(call.expression);
-    for (const s of env.sinks) if (names.has(s.callee)) return s;
-    return undefined;
-}
-
-// Absent `absorbs` swallows everything; otherwise only listed type displays are
-// discharged and the rest leak. TOP leaks past a partial sink.
-function applySink(v: ExceptionsValue, sink: SinkConfig): ExceptionsValue {
-    if (!sink.absorbs) return bottom();
-    if (v.top) return v;
-    const absorb = new Set(sink.absorbs);
-    const kept = new Map<string, string>();
-    const keptOrigins = new Map<string, ReadonlyArray<ExceptionOrigin>>();
-    for (const [k, d] of v.types) {
-        if (absorb.has(d)) continue;
-        kept.set(k, d);
-        const o = v.origins.get(k);
-        if (o) keptOrigins.set(k, o);
-    }
-    return { top: false, types: kept, origins: keptOrigins };
-}
 // Diagnostics
 
 // Anchor each escape at the statement where it actually leaves the function.

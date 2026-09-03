@@ -1,5 +1,7 @@
-// Base exceptions-channel overlay. Top-level keys are lib sections; each section
-// maps an overlay key (see load.ts overlayKey) to an exceptions entry:
+// Base exceptions-channel overlay. Top-level keys are sections: `lib.*` (matched
+// for symbols declared in that lib), `node:*` (matched for @types/node symbols),
+// and `global` (searched last, for runtime globals present in both hosts). Each
+// section maps an overlay key (see load.ts overlayKey) to an exceptions entry:
 //   { "exceptions": ["SyntaxError"] }   - the error types the leaf may throw
 //   { "exceptionsFromCallbacks": [0] }  - inherits whatever the arg at that index throws
 //   { "exceptions": [] }                - modeled as non-throwing (so it is not logged)
@@ -46,7 +48,18 @@
     "BigInt": { "exceptions": ["RangeError", "SyntaxError", "TypeError"] }
   },
 
-  "lib.dom": {
+  "node:fs": {
+    "readFileSync": { "exceptions": ["Error"] },
+    "writeFileSync": { "exceptions": ["Error"] },
+    "mkdirSync": { "exceptions": ["Error"] }
+  },
+
+  "node:path": {
+    "relative": { "exceptions": ["TypeError"] },
+    "resolve": { "exceptions": ["TypeError"] }
+  },
+
+  "global": {
     "URL": { "exceptions": ["TypeError"] },
     "URLSearchParams": { "exceptions": ["TypeError"] },
     "structuredClone": { "exceptions": ["DataCloneError"] }

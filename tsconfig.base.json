@@ -23,25 +23,6 @@
                 "${configDir}/storage/*"
             ]
         },
-        "plugins": [
-            {
-                "name": "ts-probe",
-                // Editor squiggle color; "warn" opts down. CLI/build ignore this.
-                "severity": "error",
-                // Fail the tsc/build run when there are findings.
-                "failOnFindings": true,
-                "channels": {
-                    "exceptions": {
-                        "enabled": true,
-                        "report": "cross-module",
-                        // Flag `throw`s inside `catch` that drop the caught error's cause.
-                        "errorCause": true
-                    }
-                },
-                // Model third-party throw behavior: "node", "express".
-                "presets": ["node"]
-            }
-        ],
         "removeComments": true,
         "resolveJsonModule": true,
         "rootDir": "${configDir}/src",
@@ -54,5 +35,27 @@
     ],
     "tsc-alias": {
         "resolveFullPaths": true
+    },
+    // Channel names at the root; each carries its own "severity" ("error" reports
+    // and fails the build, "warn" reports only, "off"/absent skips). Platform
+    // effect models are built in — no presets/overlays to configure.
+    "tsc-probe": {
+        "exceptions": {
+            "severity": "error",
+            "report": "cross-module",
+            // Flag `throw`s inside `catch` that drop the caught error's cause.
+            "errorCause": true
+        },
+        "resources": {
+            "severity": "error",
+            // Untracked escape handling: "optimist" assumes transfer (silent),
+            // "pessimist" reports it.
+            "dispatch": "optimist"
+        },
+        "async": {
+            "severity": "warn",
+            // Unbounded Promise.all-style fan-out; severity governs the level.
+            "fanOut": true
+        }
     }
 }

@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
-import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runTscAlias } from '~/cli/tsc';
+import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runAnalyze, runTscAlias } from '~/cli/tsc';
 import { flatten, format } from '~/cli/diagnostics';
+import { createFixtureDir } from './fixtures';
 import sourcemap from '~/compiler/sourcemap';
 
 import fs from 'fs';
@@ -558,6 +559,85 @@ describe('main flag gating', () => {
         expect(exits).toContain(1);
         expect(errors.some((line) => line.includes('@esportsplus/typescript') && line.includes('--watch'))).toBe(true);
         expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+});
+
+
+describe('runAnalyze', () => {
+    let exits: number[],
+        fixtureDir: string;
+
+    const TSCONFIG = {
+        compilerOptions: { lib: ['esnext'], module: 'esnext', moduleResolution: 'bundler', noEmit: true, skipLibCheck: true, strict: true, target: 'esnext', types: [] as string[] },
+        include: ['src'],
+    };
+
+    function writeProject(probe: Record<string, unknown> | undefined, source: string): string {
+        fixtureDir = createFixtureDir('.fixture-analyze-');
+
+        let tsconfig: Record<string, unknown> = { ...TSCONFIG };
+
+        if (probe !== undefined) {
+            tsconfig['tsc-probe'] = probe;
+        }
+
+        fs.writeFileSync(path.join(fixtureDir, 'tsconfig.json'), JSON.stringify(tsconfig));
+        fs.mkdirSync(path.join(fixtureDir, 'src'), { recursive: true });
+        fs.writeFileSync(path.join(fixtureDir, 'src', 'a.ts'), source);
+
+        return path.join(fixtureDir, 'tsconfig.json');
+    }
+
+    beforeEach(() => {
+        exits = [];
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(process, 'exit').mockImplementation(((code?: number): never => {
+            exits.push(code ?? 0);
+
+            throw new Error(`analyze-test: process.exit(${code ?? 0})`);
+        }) as typeof process.exit);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+
+        if (fixtureDir) {
+            fs.rmSync(fixtureDir, { force: true, recursive: true });
+        }
+    });
+
+    it('exits 1 on a rejected legacy config key', () => {
+        let tsconfig = writeProject({ channels: { exceptions: {} } }, 'export function b(): void {}\n');
+
+        expect(() => runAnalyze(tsconfig)).toThrow(/process\.exit/);
+        expect(exits).toContain(1);
+    });
+
+    it('exits 1 when a finding belongs to an error-severity channel', () => {
+        let tsconfig = writeProject(
+            { exceptions: { severity: 'error', report: 'all' } },
+            'export function b(x: string): unknown { return JSON.parse(x); }\n',
+        );
+
+        expect(() => runAnalyze(tsconfig)).toThrow(/process\.exit/);
+        expect(exits).toContain(1);
+    });
+
+    it('does not exit when the only findings are in a warn-severity channel', () => {
+        let tsconfig = writeProject(
+            { exceptions: { severity: 'warn', report: 'all' } },
+            'export function b(x: string): unknown { return JSON.parse(x); }\n',
+        );
+
+        expect(() => runAnalyze(tsconfig)).not.toThrow();
+        expect(exits).toEqual([]);
+    });
+
+    it('stays inert (no exit) when the tsconfig declares no tsc-probe config', () => {
+        let tsconfig = writeProject(undefined, 'export function b(): void {}\n');
+
+        expect(() => runAnalyze(tsconfig)).not.toThrow();
+        expect(exits).toEqual([]);
     });
 });
 

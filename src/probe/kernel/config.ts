@@ -1,243 +1,144 @@
 import * as NodePath from 'node:path';
 
-import { readPlugins } from '~/tsconfig';
+import { readProbeConfig } from '~/tsconfig';
 import { stripJsonc } from '~/jsonc';
 
 import type {
     ChannelConfig,
     Dispatch,
-    HandlerBoundary,
-    SinkConfig,
+    Severity,
     AnalyzeConfig,
 } from './types';
 
-// The known channel names. Config for any other key is rejected so typos fail
-// loudly instead of silently disabling a check.
+// The known channel names. `tsc-probe`'s keys are exactly these; any other key
+// is rejected so a typo fails loudly instead of silently disabling a check.
 const CHANNEL_NAMES = ['exceptions', 'resources', 'async'] as const;
 
-const DEFAULT_ENABLED: Readonly<Record<string, boolean>> = {
-    exceptions: true,
-    resources: false,
-    async: false,
+// Removed user-facing keys, each mapped to the diagnostic naming its replacement.
+// Effect models are built in and analysis is always whole-project, so none of
+// these are configurable any longer.
+const LEGACY_KEYS: Readonly<Record<string, string>> = {
+    channels: '"channels" wrapper removed — put channels at the tsc-probe root',
+    enabled: '"enabled" removed — use "severity": "off"',
+    entryPoints:
+        '"sinks"/"handlerBoundaries"/"entryPoints" removed — analysis is always whole-project',
+    failOnFindings:
+        'top-level "severity"/"failOnFindings" moved into each channel as "severity"',
+    handlerBoundaries:
+        '"sinks"/"handlerBoundaries"/"entryPoints" removed — analysis is always whole-project',
+    overlays:
+        '"presets"/"overlays" are no longer configurable — platform models are built in',
+    presets:
+        '"presets"/"overlays" are no longer configurable — platform models are built in',
+    severity:
+        'top-level "severity"/"failOnFindings" moved into each channel as "severity"',
+    sinks: '"sinks"/"handlerBoundaries"/"entryPoints" removed — analysis is always whole-project',
 };
 
-type RawConfig  = {
-    entryPoints?: unknown;
-    tsconfig?: unknown;
-    handlerBoundaries?: unknown;
-    sinks?: unknown;
-    presets?: unknown;
-    overlays?: unknown;
-    channels?: unknown;
-    failOnFindings?: unknown;
-    severity?: unknown;
-};
+const SEVERITIES = ['error', 'off', 'warn'] as const;
+
+type RawConfig = Record<string, unknown>;
 
 function fail(message: string): never {
     throw new Error(`analyze config: ${message}`);
 }
 
-// Strip line/block comments and trailing commas so JSON.parse accepts JSONC.
-// String-literal aware so `"http://"` and `"a,]"` survive intact.
-function legacyStripJsonc(text: string): string {
-    let out = '';
-    let i = 0;
-    const n = text.length;
-    let inString = false;
-    let quote = '';
-    while (i < n) {
-        const ch = text[i]!;
-        const next = i + 1 < n ? text[i + 1]! : '';
-        if (inString) {
-            out += ch;
-            if (ch === '\\') {
-                out += next;
-                i += 2;
-                continue;
-            }
-            if (ch === quote) {
-                inString = false;
-            }
-            i += 1;
-            continue;
-        }
-        if (ch === '"' || ch === "'") {
-            inString = true;
-            quote = ch;
-            out += ch;
-            i += 1;
-            continue;
-        }
-        if (ch === '/' && next === '/') {
-            while (i < n && text[i] !== '\n') {
-                i += 1;
-            }
-            continue;
-        }
-        if (ch === '/' && next === '*') {
-            i += 2;
-            while (i < n && !(text[i] === '*' && text[i + 1] === '/')) {
-                i += 1;
-            }
-            i += 2;
-            continue;
-        }
-        out += ch;
-        i += 1;
-    }
-    // Drop trailing commas before } or ].
-    return out.replace(/,(\s*[}\]])/g, '$1');
+// A merged `null` (from a deep-merge that deletes an inherited key) reads as an
+// absent value at every level.
+function absent(value: unknown): boolean {
+    return value === undefined || value === null;
 }
 
-void legacyStripJsonc;
-
-function asStringArray(value: unknown, field: string): ReadonlyArray<string> {
-    if (value === undefined) {
-        return [];
-    }
-    if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
-        fail(`"${field}" must be an array of strings`);
-    }
-    return value as ReadonlyArray<string>;
-}
-
-function parseHandlerBoundaries(
-    value: unknown,
-): ReadonlyArray<HandlerBoundary> {
-    if (value === undefined) {
-        return [];
-    }
-    if (!Array.isArray(value)) {
-        fail(`"handlerBoundaries" must be an array`);
-    }
-    return value.map((raw, index) => {
-        if (typeof raw !== 'object' || raw === null) {
-            fail(`handlerBoundaries[${index}] must be an object`);
-        }
-        const entry = raw as Record<string, unknown>;
-        if (typeof entry['callee'] !== 'string') {
-            fail(`handlerBoundaries[${index}].callee must be a string`);
-        }
-        const callbackArgs = entry['callbackArgs'];
-        if (
-            !Array.isArray(callbackArgs) ||
-            callbackArgs.some(
-                (v) => typeof v !== 'number' || !Number.isInteger(v),
-            )
-        ) {
-            fail(
-                `handlerBoundaries[${index}].callbackArgs must be an array of integers`,
-            );
-        }
-        return {
-            callee: entry['callee'] as string,
-            callbackArgs: callbackArgs as ReadonlyArray<number>,
-        };
-    });
-}
-
-function parseSinks(value: unknown): ReadonlyArray<SinkConfig> {
-    if (value === undefined) {
-        return [];
-    }
-    if (!Array.isArray(value)) {
-        fail(`"sinks" must be an array`);
-    }
-    return value.map((raw, index) => {
-        if (typeof raw !== 'object' || raw === null) {
-            fail(`sinks[${index}] must be an object`);
-        }
-        const entry = raw as Record<string, unknown>;
-        if (typeof entry['callee'] !== 'string') {
-            fail(`sinks[${index}].callee must be a string`);
-        }
-        let absorbs: ReadonlyArray<string> | undefined;
-        if (entry['absorbs'] !== undefined) {
-            absorbs = asStringArray(
-                entry['absorbs'],
-                `sinks[${index}].absorbs`,
-            );
-        }
-        return { callee: entry['callee'] as string, absorbs };
-    });
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function parseDispatch(value: unknown, channel: string): Dispatch {
-    if (value === undefined) {
+    if (absent(value)) {
         return 'optimist';
     }
     if (value !== 'optimist' && value !== 'pessimist') {
-        fail(`channels.${channel}.dispatch must be "optimist" or "pessimist"`);
+        fail(`${channel}.dispatch must be "optimist" or "pessimist"`);
     }
     return value;
 }
 
-function parseChannels(value: unknown): Record<string, ChannelConfig> {
-    const channels: Record<string, ChannelConfig> = {};
-    const raw = value === undefined ? {} : (value as Record<string, unknown>);
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-        fail(`"channels" must be an object`);
+function parseSeverity(value: unknown, channel: string): Severity {
+    if (absent(value)) {
+        return 'error';
     }
-    for (const key of Object.keys(raw)) {
-        if (!(CHANNEL_NAMES as ReadonlyArray<string>).includes(key)) {
-            fail(
-                `unknown channel "${key}" (known: ${CHANNEL_NAMES.join(', ')})`,
-            );
-        }
+    if (!(SEVERITIES as ReadonlyArray<unknown>).includes(value)) {
+        fail(`${channel}.severity must be "error", "warn", or "off"`);
     }
-    for (const name of CHANNEL_NAMES) {
-        const entry = (raw[name] ?? {}) as Record<string, unknown>;
-        if (
-            typeof entry !== 'object' ||
-            entry === null ||
-            Array.isArray(entry)
-        ) {
-            fail(`channels.${name} must be an object`);
-        }
-        const enabled =
-            entry['enabled'] === undefined
-                ? DEFAULT_ENABLED[name]!
-                : entry['enabled'];
-        if (typeof enabled !== 'boolean') {
-            fail(`channels.${name}.enabled must be a boolean`);
-        }
-        const { enabled: _e, dispatch: _d, ...options } = entry;
-        channels[name] = {
-            enabled,
-            dispatch: parseDispatch(entry['dispatch'], name),
-            options,
-        };
-    }
-    return channels;
+    return value as Severity;
 }
 
-// Turn raw parsed JSONC into a validated, defaulted config. Pure — no I/O — so
-// it is directly testable. `projectRoot` anchors relative paths.
+function parseChannel(name: string, raw: unknown): ChannelConfig {
+    if (!isPlainObject(raw)) {
+        fail(`${name} must be an object`);
+    }
+    if ('enabled' in raw && !absent(raw['enabled'])) {
+        fail(`${name}.enabled removed — use "severity": "off"`);
+    }
+    const options: Record<string, unknown> = {};
+    for (const key of Object.keys(raw)) {
+        if (key === 'severity' || key === 'dispatch' || key === 'enabled') {
+            continue;
+        }
+        if (absent(raw[key])) {
+            continue;
+        }
+        options[key] = raw[key];
+    }
+    // `fanOut` is a boolean; the channel severity governs the finding level. The
+    // old "off"|"warn"|"error" strings are rejected as a config error.
+    if (
+        name === 'async' &&
+        options['fanOut'] !== undefined &&
+        typeof options['fanOut'] !== 'boolean'
+    ) {
+        fail(
+            'async.fanOut must be a boolean — the "off"|"warn"|"error" strings are replaced by the channel "severity"',
+        );
+    }
+    return {
+        severity: parseSeverity(raw['severity'], name),
+        dispatch: parseDispatch(raw['dispatch'], name),
+        options,
+    };
+}
+
+// Turn the raw parsed `tsc-probe` object into a validated, defaulted config.
+// Pure — no I/O — so it is directly testable. `projectRoot` anchors the config.
+// A present channel defaults to `severity: "error"`; an absent one is "off".
 function normalizeConfig(raw: RawConfig, projectRoot: string): AnalyzeConfig {
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    if (!isPlainObject(raw)) {
         fail(`root must be a JSON object`);
     }
-    const tsconfig =
-        raw.tsconfig === undefined ? 'tsconfig.json' : raw.tsconfig;
-    if (typeof tsconfig !== 'string') {
-        fail(`"tsconfig" must be a string`);
+    for (const key of Object.keys(raw)) {
+        if (absent(raw[key])) {
+            continue;
+        }
+        const legacy = LEGACY_KEYS[key];
+        if (legacy !== undefined) {
+            fail(legacy);
+        }
+        if (!(CHANNEL_NAMES as ReadonlyArray<string>).includes(key)) {
+            fail(`unknown channel "${key}" (known: ${CHANNEL_NAMES.join(', ')})`);
+        }
+    }
+    const channels: Record<string, ChannelConfig> = {};
+    for (const name of CHANNEL_NAMES) {
+        channels[name] = absent(raw[name])
+            ? { severity: 'off', dispatch: 'optimist', options: {} }
+            : parseChannel(name, raw[name]);
     }
     return {
         projectRoot,
-        tsconfigPath: NodePath.resolve(projectRoot, tsconfig),
-        entryPoints: asStringArray(raw.entryPoints, 'entryPoints'),
-        handlerBoundaries: parseHandlerBoundaries(raw.handlerBoundaries),
-        sinks: parseSinks(raw.sinks),
-        presets: asStringArray(raw.presets, 'presets'),
-        overlays: asStringArray(raw.overlays, 'overlays').map((p) =>
-            NodePath.resolve(projectRoot, p),
-        ),
-        channels: parseChannels(raw.channels),
-        failOnFindings: raw.failOnFindings === true,
-        severity:
-            raw.severity === 'warn' || raw.severity === 'warning'
-                ? 'warning'
-                : 'error',
+        // Always overridden by loadConfigFromTsconfig with the invoking tsconfig;
+        // this default only applies to direct configFromObject/parseConfig use.
+        tsconfigPath: NodePath.join(projectRoot, 'tsconfig.json'),
+        channels,
     };
 }
 
@@ -252,28 +153,22 @@ function parseConfig(text: string, projectRoot: string): AnalyzeConfig {
     return normalizeConfig(parsed, projectRoot);
 }
 
-// Validate an already-parsed config object (e.g. the tsserver plugin entry in
-// tsconfig.json, minus its `name`) anchored at `projectRoot`.
-function configFromObject(
-    raw: unknown,
-    projectRoot: string,
-): AnalyzeConfig {
-    return normalizeConfig(raw as RawConfig, projectRoot);
+// Validate an already-parsed config object (the merged `tsc-probe` key from
+// tsconfig.json) anchored at `projectRoot`.
+function configFromObject(raw: unknown, projectRoot: string): AnalyzeConfig {
+    return normalizeConfig((raw ?? {}) as RawConfig, projectRoot);
 }
 
 function loadConfigFromTsconfig(
     tsconfigPath: string,
 ): AnalyzeConfig | undefined {
     const resolved = NodePath.resolve(tsconfigPath);
-    const plugins = readPlugins(resolved) ?? [];
-    const entry = plugins.find(
-        (p) => p !== null && typeof p === 'object' && (p as { name?: unknown }).name === 'ts-probe',
-    );
-    if (!entry) {
+    const probe = readProbeConfig(resolved);
+    if (!probe) {
         return undefined;
     }
     return {
-        ...configFromObject(entry, NodePath.dirname(resolved)),
+        ...configFromObject(probe, NodePath.dirname(resolved)),
         tsconfigPath: resolved,
     };
 }

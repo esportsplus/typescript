@@ -24,12 +24,9 @@ const TSCONFIG = {
 interface AnalyzeOptions {
     readonly dispatch?: Dispatch;
     readonly errorCause?: boolean;
-    // Restrict @types to node so `node:*` presets resolve deterministically.
+    // Restrict @types to node so `node:*` built-in models resolve deterministically.
     readonly nodeTypes?: boolean;
-    readonly overlays?: Record<string, string>;
-    readonly presets?: ReadonlyArray<string>;
     readonly report?: "all" | "consumers" | "cross-module";
-    readonly sinks?: unknown;
 }
 
 // Build a fixture project from `sources` (relative path -> TS text), run ONLY the
@@ -50,29 +47,16 @@ export const analyzeFixture = (
             fs.mkdirSync(path.dirname(target), { recursive: true });
             fs.writeFileSync(target, text);
         }
-        const overlayPaths: string[] = [];
-        for (const [rel, text] of Object.entries(opts.overlays ?? {})) {
-            const target = path.join(dir, rel);
-            fs.mkdirSync(path.dirname(target), { recursive: true });
-            fs.writeFileSync(target, text);
-            overlayPaths.push(rel);
-        }
         const built = buildProgram(path.join(dir, "tsconfig.json"));
         try {
             const config = configFromObject(
                 {
-                    channels: {
-                        exceptions: {
-                            dispatch: opts.dispatch ?? "optimist",
-                            enabled: true,
-                            ...(opts.errorCause !== undefined ? { errorCause: opts.errorCause } : {}),
-                            ...(opts.report !== undefined ? { report: opts.report } : {}),
-                        },
+                    exceptions: {
+                        severity: "error",
+                        dispatch: opts.dispatch ?? "optimist",
+                        ...(opts.errorCause !== undefined ? { errorCause: opts.errorCause } : {}),
+                        ...(opts.report !== undefined ? { report: opts.report } : {}),
                     },
-                    entryPoints: [],
-                    ...(opts.overlays !== undefined ? { overlays: overlayPaths } : {}),
-                    ...(opts.presets !== undefined ? { presets: opts.presets } : {}),
-                    ...(opts.sinks !== undefined ? { sinks: opts.sinks } : {}),
                 },
                 dir,
             );

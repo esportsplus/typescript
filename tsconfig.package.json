@@ -11,5 +11,10 @@
             "node"
         ]
     },
-    "extends": "./tsconfig.base.json"
+    "extends": "./tsconfig.base.json",
+    "tsc-probe": {
+        "exceptions": {
+            "report": "consumers"
+        }
+    }
 }

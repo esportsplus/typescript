@@ -19,6 +19,8 @@ type AnalyzeResult  = {
     readonly diagnostics: ReadonlyArray<Diagnostic>;
 };
 
+type Runnable = { config: ChannelConfig; channel: Channel<unknown> };
+
 // Analyze an already-built Program — the path the language-service plugin takes,
 // reusing the editor's incrementally-updated program instead of building one.
 function analyzeProgram(
@@ -26,47 +28,60 @@ function analyzeProgram(
     checker: ts.TypeChecker,
     config: AnalyzeConfig,
 ): AnalyzeResult {
-    const overlays = loadOverlays(config);
+    const overlays = loadOverlays();
+    const graph = buildCallGraph(program, checker, overlays);
+    const analysis: Analysis = { program, checker, config, overlays, graph };
 
-    // Preset handler boundaries are kernel config; fold them in before the graph
-    // expands boundaries so preset-declared callbacks are analyzed as entries.
-    const effectiveConfig: AnalyzeConfig = {
-        ...config,
-        handlerBoundaries: [
-            ...config.handlerBoundaries,
-            ...overlays.boundariesFromPresets(),
-        ],
-    };
-
-    const graph = buildCallGraph(program, checker, effectiveConfig, overlays);
-    const analysis: Analysis = {
-        program,
-        checker,
-        config: effectiveConfig,
-        overlays,
-        graph,
-    };
-
-    const diagnostics: Diagnostic[] = [];
-
-    const runnable = new Map<
-        string,
-        { config: ChannelConfig; channel: Channel<unknown> }
-    >();
-    for (const [name, channelConfig] of Object.entries(
-        effectiveConfig.channels,
-    )) {
-        if (!channelConfig.enabled) {
-            continue;
+    const built = new Map<string, Runnable>();
+    const instance = (name: string): Runnable | undefined => {
+        const cached = built.get(name);
+        if (cached) {
+            return cached;
         }
-        runnable.set(name, {
-            config: channelConfig,
-            channel: channelFor(name, channelConfig.options)!,
-        });
+        const channelConfig = config.channels[name];
+        const channel = channelConfig
+            ? channelFor(name, channelConfig.options)
+            : undefined;
+        if (!channelConfig || !channel) {
+            return undefined;
+        }
+        const entry: Runnable = { config: channelConfig, channel };
+        built.set(name, entry);
+        return entry;
+    };
+
+    // Enabled = every channel not turned `off`. Its diagnostics are reported.
+    const enabled = new Set<string>();
+    for (const [name, channelConfig] of Object.entries(config.channels)) {
+        if (channelConfig.severity !== 'off') {
+            enabled.add(name);
+        }
+    }
+
+    // Runnable = enabled channels plus any channel they transitively `dependsOn`,
+    // even when that dependency is `off` (a silent peer: it runs so its summaries
+    // exist, but its diagnostics are discarded).
+    const runnable = new Set<string>();
+    const include = (name: string, stack: ReadonlySet<string>): void => {
+        if (runnable.has(name) || stack.has(name)) {
+            return;
+        }
+        const inst = instance(name);
+        if (!inst) {
+            return;
+        }
+        const next = new Set(stack).add(name);
+        for (const dep of inst.channel.dependsOn ?? []) {
+            include(dep, next);
+        }
+        runnable.add(name);
+    };
+    for (const name of enabled) {
+        include(name, new Set());
     }
 
     // Order so a channel's declared peer dependencies run first, making their
-    // summaries available; a disabled/unimplemented dependency is simply absent.
+    // summaries available.
     const ordered: string[] = [];
     const placed = new Set<string>();
     const place = (name: string, stack: ReadonlySet<string>): void => {
@@ -74,28 +89,33 @@ function analyzeProgram(
             return;
         }
         const next = new Set(stack).add(name);
-        for (const dep of runnable.get(name)!.channel.dependsOn ?? []) {
+        for (const dep of instance(name)!.channel.dependsOn ?? []) {
             place(dep, next);
         }
         placed.add(name);
         ordered.push(name);
     };
-    for (const name of runnable.keys()) {
+    for (const name of runnable) {
         place(name, new Set());
     }
 
+    const diagnostics: Diagnostic[] = [];
     const peers = new Map<string, SummaryStore<unknown>>();
     for (const name of ordered) {
-        const { config, channel } = runnable.get(name)!;
+        const { config: channelConfig, channel } = instance(name)!;
         const result = runChannel(
             analysis,
             channel,
-            config.dispatch,
-            config.options,
+            channelConfig.dispatch,
+            channelConfig.options,
             peers,
         );
         peers.set(name, result.store);
-        diagnostics.push(...result.diagnostics);
+        // Silent peer: pulled in only as a dependency of an enabled channel; keep
+        // its summaries for that channel, discard its own diagnostics.
+        if (enabled.has(name)) {
+            diagnostics.push(...result.diagnostics);
+        }
     }
 
     return { diagnostics };

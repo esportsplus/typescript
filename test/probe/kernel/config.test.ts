@@ -10,34 +10,18 @@ import { stripJsonc } from '~/jsonc';
 let ROOT = "/project";
 
 describe("kernel config — JSONC parsing", () => {
-    it("strips line and block comments but preserves comment-like text inside strings", () => {
+    it("strips comments and trailing commas but preserves comment-like text in strings", () => {
         let text = `{
     // a line comment
-    "tsconfig": "tsconfig.json", /* trailing block */
-    "channels": {
-        "exceptions": { "enabled": true }
-    },
-    "entryPoints": ["http://not-a-comment", "a/*still*/b"]
+    "exceptions": { "severity": "error", "report": "a/*keep*/b" }, /* trailing */
 }`;
         let config = parseConfig(text, ROOT);
-        expect(config.entryPoints).toEqual(["http://not-a-comment", "a/*still*/b"]);
-        expect(config.channels["exceptions"]!.enabled).toBe(true);
+        expect(config.channels["exceptions"]!.severity).toBe("error");
+        expect(config.channels["exceptions"]!.options).toEqual({ report: "a/*keep*/b" });
     });
 
-    it("removes trailing commas before object and array closers", () => {
-        let text = `{
-    "entryPoints": ["src/**/*.ts",],
-    "channels": { "async": { "enabled": true, }, },
-}`;
-        let config = parseConfig(text, ROOT);
-        expect(config.entryPoints).toEqual(["src/**/*.ts"]);
-        expect(config.channels["async"]!.enabled).toBe(true);
-    });
-
-    it('preserves comma-like text inside strings while stripping trailing commas', () => {
-        let config = JSON.parse(stripJsonc('{"a":"x,]","b":[1,],}'));
-
-        expect(config).toEqual({ a: 'x,]', b: [1] });
+    it("preserves comma-like text inside strings while stripping trailing commas", () => {
+        expect(JSON.parse(stripJsonc('{"a":"x,]","b":[1,],}'))).toEqual({ a: "x,]", b: [1] });
     });
 
     it("throws a prefixed error on invalid JSONC", () => {
@@ -45,68 +29,122 @@ describe("kernel config — JSONC parsing", () => {
     });
 });
 
-describe("kernel config — validation and defaults", () => {
-    it("defaults channel enablement: exceptions on, resources/async off", () => {
+describe("kernel config — severity defaults", () => {
+    it("makes every absent channel off, so a bare {} analyzes nothing", () => {
         let config = configFromObject({}, ROOT);
-        expect(config.channels["exceptions"]!.enabled).toBe(true);
-        expect(config.channels["resources"]!.enabled).toBe(false);
-        expect(config.channels["async"]!.enabled).toBe(false);
+        expect(config.channels["exceptions"]!.severity).toBe("off");
+        expect(config.channels["resources"]!.severity).toBe("off");
+        expect(config.channels["async"]!.severity).toBe("off");
     });
 
-    it("folds unknown channel keys into a loud failure", () => {
-        expect(() => configFromObject({ channels: { bogus: { enabled: true } } }, ROOT)).toThrow(
-            /unknown channel "bogus"/,
-        );
+    it("defaults a present channel with no severity to error", () => {
+        expect(configFromObject({ exceptions: {} }, ROOT).channels["exceptions"]!.severity).toBe("error");
     });
 
-    it("rejects a non-boolean enabled and an invalid dispatch", () => {
-        expect(() => configFromObject({ channels: { exceptions: { enabled: "yes" } } }, ROOT)).toThrow(
-            /channels.exceptions.enabled must be a boolean/,
-        );
-        expect(() => configFromObject({ channels: { exceptions: { dispatch: "eager" } } }, ROOT)).toThrow(
-            /dispatch must be "optimist" or "pessimist"/,
-        );
+    it("honors explicit warn and off", () => {
+        let config = configFromObject({ async: { severity: "warn" }, resources: { severity: "off" } }, ROOT);
+        expect(config.channels["async"]!.severity).toBe("warn");
+        expect(config.channels["resources"]!.severity).toBe("off");
     });
 
-    it("collects non-enabled/dispatch keys as opaque channel options", () => {
-        let config = configFromObject(
-            { channels: { exceptions: { enabled: true, dispatch: "pessimist", report: "all", errorCause: true } } },
-            ROOT,
-        );
-        let exceptions = config.channels["exceptions"]!;
-        expect(exceptions.dispatch).toBe("pessimist");
-        expect(exceptions.options).toEqual({ report: "all", errorCause: true });
-    });
-
-    it("parses sinks and rejects a malformed sink", () => {
-        let config = configFromObject({ sinks: [{ callee: "guard", absorbs: ["TypeError"] }] }, ROOT);
-        expect(config.sinks).toEqual([{ callee: "guard", absorbs: ["TypeError"] }]);
-        expect(() => configFromObject({ sinks: [{ absorbs: [] }] }, ROOT)).toThrow(/sinks\[0\].callee/);
-    });
-
-    it("reads the failOnFindings gate only for a literal true", () => {
-        expect(configFromObject({ failOnFindings: true }, ROOT).failOnFindings).toBe(true);
-        expect(configFromObject({ failOnFindings: "true" }, ROOT).failOnFindings).toBe(false);
-        expect(configFromObject({}, ROOT).failOnFindings).toBe(false);
+    it("rejects an unknown severity", () => {
+        expect(() => configFromObject({ async: { severity: "loud" } }, ROOT)).toThrow(/severity must be "error", "warn", or "off"/);
     });
 });
 
+describe("kernel config — channels and options", () => {
+    it("collects non-severity/dispatch keys as opaque channel options", () => {
+        let config = configFromObject(
+            { exceptions: { severity: "error", dispatch: "pessimist", report: "all", errorCause: true } },
+            ROOT,
+        );
+        expect(config.channels["exceptions"]!.dispatch).toBe("pessimist");
+        expect(config.channels["exceptions"]!.options).toEqual({ report: "all", errorCause: true });
+    });
 
-describe('kernel config — tsconfig plugin discovery', () => {
-    it('finds ts-probe inherited through a package extends entry', () => {
-        let dir = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-config-')),
-            pkg = path.join(dir, 'node_modules', 'shared-config'),
-            tsconfig = path.join(dir, 'tsconfig.json');
+    it("rejects an unknown channel and an invalid dispatch", () => {
+        expect(() => configFromObject({ bogus: {} }, ROOT)).toThrow(/unknown channel "bogus"/);
+        expect(() => configFromObject({ exceptions: { dispatch: "eager" } }, ROOT)).toThrow(/dispatch must be "optimist" or "pessimist"/);
+    });
+
+    it("keeps async fanOut a boolean and rejects the legacy off/warn/error strings", () => {
+        expect(configFromObject({ async: { fanOut: true } }, ROOT).channels["async"]!.options).toEqual({ fanOut: true });
+        expect(() => configFromObject({ async: { fanOut: "warn" } }, ROOT)).toThrow(/fanOut must be a boolean/);
+    });
+});
+
+describe("kernel config — legacy key rejection", () => {
+    const CASES: ReadonlyArray<[string, unknown, RegExp]> = [
+        ["presets", ["node"], /platform models are built in/],
+        ["overlays", ["x.jsonc"], /platform models are built in/],
+        ["channels", { exceptions: {} }, /"channels" wrapper removed/],
+        ["severity", "error", /moved into each channel/],
+        ["failOnFindings", true, /moved into each channel/],
+        ["sinks", [], /always whole-project/],
+        ["handlerBoundaries", [], /always whole-project/],
+        ["entryPoints", [], /always whole-project/],
+    ];
+
+    for (const [key, value, re] of CASES) {
+        it(`rejects the removed "${key}" key with a replacement diagnostic`, () => {
+            expect(() => configFromObject({ [key]: value }, ROOT)).toThrow(re);
+        });
+    }
+
+    it('rejects a per-channel "enabled" pointing to severity: off', () => {
+        expect(() => configFromObject({ exceptions: { enabled: false } }, ROOT)).toThrow(/enabled/);
+    });
+});
+
+describe("kernel config — tsconfig discovery and merge", () => {
+    it("inherits the tsc-probe key through a package extends entry", () => {
+        let dir = fs.mkdtempSync(path.join(os.tmpdir(), "probe-config-")),
+            pkg = path.join(dir, "node_modules", "shared-config"),
+            tsconfig = path.join(dir, "tsconfig.json");
 
         try {
             fs.mkdirSync(pkg, { recursive: true });
-            fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: 'shared-config' }));
-            fs.writeFileSync(path.join(pkg, 'tsconfig.json'), JSON.stringify({
-                compilerOptions: { plugins: [{ name: 'ts-probe', entryPoints: ['src/**/*.ts'] }] },
+            fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "shared-config" }));
+            fs.writeFileSync(path.join(pkg, "tsconfig.json"), JSON.stringify({
+                "tsc-probe": { exceptions: { severity: "error", report: "cross-module" } },
             }));
-            fs.writeFileSync(tsconfig, JSON.stringify({ extends: 'shared-config/tsconfig.json' }));
+            fs.writeFileSync(tsconfig, JSON.stringify({ extends: "shared-config/tsconfig.json" }));
 
-            expect(loadConfigFromTsconfig(tsconfig)?.entryPoints).toEqual(['src/**/*.ts']);
+            let config = loadConfigFromTsconfig(tsconfig);
+
+            expect(config?.channels["exceptions"]!.severity).toBe("error");
+            expect(config?.channels["exceptions"]!.options).toEqual({ report: "cross-module" });
+        }
+        finally {
+            fs.rmSync(dir, { force: true, recursive: true });
+        }
+    });
+
+    it("deep-merges a nested override and treats a null value as a delete", () => {
+        let dir = fs.mkdtempSync(path.join(os.tmpdir(), "probe-config-")),
+            pkg = path.join(dir, "node_modules", "shared-config"),
+            tsconfig = path.join(dir, "tsconfig.json");
+
+        try {
+            fs.mkdirSync(pkg, { recursive: true });
+            fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "shared-config" }));
+            fs.writeFileSync(path.join(pkg, "tsconfig.json"), JSON.stringify({
+                "tsc-probe": {
+                    exceptions: { severity: "error", report: "cross-module", errorCause: true },
+                    resources: { severity: "error" },
+                },
+            }));
+            fs.writeFileSync(tsconfig, JSON.stringify({
+                extends: "shared-config/tsconfig.json",
+                "tsc-probe": { exceptions: { report: "consumers" }, resources: null },
+            }));
+
+            let config = loadConfigFromTsconfig(tsconfig);
+
+            // The child overrides only `report`; the base's other keys survive.
+            expect(config?.channels["exceptions"]!.options).toEqual({ report: "consumers", errorCause: true });
+            // `null` deletes the inherited `resources` channel, so it is off.
+            expect(config?.channels["resources"]!.severity).toBe("off");
         }
         finally {
             fs.rmSync(dir, { force: true, recursive: true });

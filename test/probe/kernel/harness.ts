@@ -11,6 +11,7 @@ import type { Analysis, CallGraph } from "~/probe/kernel/types";
 
 const TSCONFIG = {
     compilerOptions: {
+        allowJs: true,
         lib: ["esnext"],
         module: "esnext",
         moduleResolution: "bundler",
@@ -20,12 +21,13 @@ const TSCONFIG = {
         target: "esnext",
         types: [],
     },
-    include: ["src"],
+    include: ["src", "node_modules"],
 };
 
-interface GraphOptions {
-    readonly entryPoints?: ReadonlyArray<string>;
-    readonly handlerBoundaries?: unknown;
+interface BuildOptions {
+    // Extra files written verbatim relative to the fixture root (e.g. a
+    // `node_modules/dep/index.js` dependency body), for exclusion tests.
+    readonly files?: Record<string, string>;
 }
 
 export interface BuiltAnalysis {
@@ -35,10 +37,12 @@ export interface BuiltAnalysis {
 }
 
 // Build a full kernel Analysis (program + checker + graph + overlays) from inline
-// sources so graph and fixpoint units can drive the real pipeline.
+// sources so graph and fixpoint units can drive the real pipeline. `sources` are
+// written under `src/`; whole-project analysis makes every reached function a
+// boundary.
 export const buildAnalysis = (
     sources: Record<string, string>,
-    opts: GraphOptions = {},
+    opts: BuildOptions = {},
 ): BuiltAnalysis => {
     const dir = createFixtureDir(".fixture-kernel-");
     let disposed = false;
@@ -48,17 +52,15 @@ export const buildAnalysis = (
         fs.mkdirSync(path.dirname(target), { recursive: true });
         fs.writeFileSync(target, text);
     }
+    for (const [rel, text] of Object.entries(opts.files ?? {})) {
+        const target = path.join(dir, rel);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, text);
+    }
     const built = buildProgram(path.join(dir, "tsconfig.json"));
-    const config = configFromObject(
-        {
-            channels: { exceptions: { enabled: true } },
-            entryPoints: opts.entryPoints ?? [],
-            ...(opts.handlerBoundaries !== undefined ? { handlerBoundaries: opts.handlerBoundaries } : {}),
-        },
-        dir,
-    );
-    const overlays = loadOverlays(config);
-    const graph = buildCallGraph(built.program, built.checker, config, overlays);
+    const config = configFromObject({ exceptions: { severity: "error" } }, dir);
+    const overlays = loadOverlays();
+    const graph = buildCallGraph(built.program, built.checker, overlays);
     const analysis: Analysis = {
         program: built.program,
         checker: built.checker,

@@ -5,7 +5,7 @@
 {
   "overlay": {
     "async": {
-      "lib.dom": {
+      "global": {
         "fetch": { "cancellable": true }
       }
     }

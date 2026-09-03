@@ -437,28 +437,38 @@ function runAnalyze(tsconfig: string, program?: Program, checker?: Checker): voi
         config = loadConfigFromTsconfig(tsconfig);
     }
     catch (error) {
+        // A rejected/legacy config key is a hard error: report it and fail the
+        // build rather than silently running with analysis disabled.
         console.error(`${PACKAGE_NAME}: analyze config error: ${error instanceof Error ? error.message : String(error)}`);
-
-        return;
+        process.exit(1);
     }
 
     if (!config) {
         return;
     }
 
+    let result;
+
     try {
-        let result = program && checker ? analyzeProgram(program, checker, config) : analyze(config);
-
-        if (result.diagnostics.length > 0) {
-            console.error(formatDiagnostics(result.diagnostics, config.projectRoot));
-
-            if (config.failOnFindings) {
-                process.exit(1);
-            }
-        }
+        result = program && checker ? analyzeProgram(program, checker, config) : analyze(config);
     }
     catch (error) {
         console.error(`${PACKAGE_NAME}: analyze failed: ${error instanceof Error ? error.message : String(error)}`);
+
+        return;
+    }
+
+    if (result.diagnostics.length === 0) {
+        return;
+    }
+
+    console.error(formatDiagnostics(result.diagnostics, config.projectRoot));
+
+    // Fail the build only when a finding belongs to a channel configured
+    // `severity: "error"`; `warn` channels report without gating. Kept outside the
+    // analyze try so the exit is never swallowed as an "analyze failed".
+    if (result.diagnostics.some((diagnostic) => config.channels[diagnostic.channel]?.severity === 'error')) {
+        process.exit(1);
     }
 }
 
@@ -510,126 +520,6 @@ function spawnTsc(tscJs: string, args: string[]): Promise<number> {
     });
 }
 
-function legacyStripJsonc(text: string): string {
-    let escaped = false,
-        inBlockComment = false,
-        inLineComment = false,
-        inString = false,
-        stripped = '';
-
-    for (let i = 0, n = text.length; i < n; i++) {
-        let char = text[i],
-            next = text[i + 1];
-
-        if (inLineComment) {
-            if (char === '\n') {
-                inLineComment = false;
-                stripped += char;
-            }
-
-            continue;
-        }
-
-        if (inBlockComment) {
-            if (char === '*' && next === '/') {
-                inBlockComment = false;
-                i++;
-            }
-
-            continue;
-        }
-
-        if (inString) {
-            stripped += char;
-
-            if (escaped) {
-                escaped = false;
-            }
-            else if (char === '\\') {
-                escaped = true;
-            }
-            else if (char === '"') {
-                inString = false;
-            }
-
-            continue;
-        }
-
-        if (char === '"') {
-            inString = true;
-            stripped += char;
-
-            continue;
-        }
-
-        if (char === '/' && next === '/') {
-            inLineComment = true;
-            i++;
-
-            continue;
-        }
-
-        if (char === '/' && next === '*') {
-            inBlockComment = true;
-            i++;
-
-            continue;
-        }
-
-        stripped += char;
-    }
-
-    escaped = false;
-    inString = false;
-
-    let result = '';
-
-    for (let i = 0, n = stripped.length; i < n; i++) {
-        let char = stripped[i];
-
-        if (inString) {
-            result += char;
-
-            if (escaped) {
-                escaped = false;
-            }
-            else if (char === '\\') {
-                escaped = true;
-            }
-            else if (char === '"') {
-                inString = false;
-            }
-
-            continue;
-        }
-
-        if (char === '"') {
-            inString = true;
-            result += char;
-
-            continue;
-        }
-
-        if (char === ',') {
-            let j = i + 1;
-
-            while (j < n && (stripped[j] === ' ' || stripped[j] === '\n' || stripped[j] === '\r' || stripped[j] === '\t')) {
-                j++;
-            }
-
-            if (stripped[j] === ']' || stripped[j] === '}') {
-                continue;
-            }
-        }
-
-        result += char;
-    }
-
-    return result;
-}
-
-void legacyStripJsonc;
-
 function teardown(snapshot: Snapshot, configPath: string, owned: boolean): void {
     if (owned) {
         languageService.dispose(configPath);
@@ -648,4 +538,4 @@ if (process.env.VITEST === undefined) {
 }
 
 
-export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runTscAlias, stripJsonc };
+export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runAnalyze, runTscAlias, stripJsonc };

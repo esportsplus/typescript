@@ -9,11 +9,16 @@
 {
     "overlay": {
         "resources": {
-            "lib.dom": {
+            "global": {
                 "setInterval": { "acquires": "Interval", "releasedBy": "clearInterval" },
                 "setTimeout": { "acquires": "Timeout", "releasedBy": "clearTimeout" },
 
                 "EventTarget#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
+
+                "AbortController": { "acquires": "AbortController", "informational": true }
+            },
+
+            "lib.dom": {
                 "Element#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
                 "HTMLElement#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
                 "Window#addEventListener": { "acquires": "Listener", "releasedBy": "removeEventListener", "pairKey": [0, 1] },
@@ -22,13 +27,7 @@
 
                 "ResizeObserver": { "acquires": "ResizeObserver", "releasedBy": "#disconnect" },
                 "MutationObserver": { "acquires": "MutationObserver", "releasedBy": "#disconnect" },
-                "WebSocket": { "acquires": "WebSocket", "releasedBy": "#close" },
-                "AbortController": { "acquires": "AbortController", "informational": true }
-            },
-
-            "node:timers": {
-                "setInterval": { "acquires": "Interval", "releasedBy": "clearInterval" },
-                "setTimeout": { "acquires": "Timeout", "releasedBy": "clearTimeout" }
+                "WebSocket": { "acquires": "WebSocket", "releasedBy": "#close" }
             },
 
             "node:fs/promises": {

@@ -20,66 +20,42 @@ afterEach(() => {
     built = undefined;
 });
 
-describe("call graph — entry-point globs", () => {
-    it("`src/*.ts` matches one directory level but `src/**/*.ts` recurses", () => {
-        built = buildAnalysis(IMPORT_TREE, { entryPoints: ["src/*.ts"] });
-        const single = reachedNames(built.graph);
-        built.dispose();
-        built = undefined;
-        // isolatedC lives in src/sub and is never called, so a single-level glob
-        // never reaches it; the recursive glob makes it an entry.
-        expect(single.has("isolatedC")).toBe(false);
-
-        built = buildAnalysis(IMPORT_TREE, { entryPoints: ["src/**/*.ts"] });
-        expect(reachedNames(built.graph).has("isolatedC")).toBe(true);
-    });
-});
-
-describe("call graph — worklist reachability", () => {
-    it("reaches transitive callees across an import but not unreferenced functions", () => {
-        built = buildAnalysis(IMPORT_TREE, { entryPoints: ["src/a.ts"] });
+describe("call graph — whole-project reachability", () => {
+    it("interns every project function, whether called or not", () => {
+        built = buildAnalysis(IMPORT_TREE);
         const names = reachedNames(built.graph);
-        expect(names.has("entryA")).toBe(true);
-        expect(names.has("helperA")).toBe(true);
-        expect(names.has("deep")).toBe(true);
-        expect(names.has("isolatedC")).toBe(false);
+        // Whole-project mode makes every function an entry, so even uncalled
+        // (`orphanA`) and cross-file-unreferenced (`isolatedC`) functions are in.
+        for (const name of ["entryA", "helperA", "deep", "orphanA", "isolatedC"]) {
+            expect(names.has(name)).toBe(true);
+        }
+    });
+
+    it("makes every reached function a boundary", () => {
+        built = buildAnalysis(IMPORT_TREE);
+        expect(built.graph.boundaries().size).toBe(built.graph.reachedFunctions().length);
     });
 });
 
-describe("call graph — selector-driven handler boundaries", () => {
-    const BARE = {
-        "b.ts": `declare function onRequest(cb: () => void): void;
-export function register(): void { onRequest(() => { work(); }); }
-function work(): void {}
+describe("call graph — first-party guard", () => {
+    it("never interns a function body that lives under node_modules", () => {
+        built = buildAnalysis(
+            {
+                "a.ts": `import { dep } from 'dep';
+export function useDep(): void { dep(); }
 `,
-    };
-    const DOTTED = {
-        "d.ts": `type Router = { get(path: string, cb: () => void): void };
-declare const router: Router;
-export function setup(): void { router.get('/x', () => { handler(); }); }
-function handler(): void {}
+            },
+            {
+                files: {
+                    "node_modules/dep/package.json": JSON.stringify({ main: "index.js", name: "dep", version: "1.0.0" }),
+                    "node_modules/dep/index.js": `function dep() { throw new Error('boom'); }
+module.exports = { dep };
 `,
-    };
-
-    it("promotes a bare-name selector's callback argument to a boundary", () => {
-        built = buildAnalysis(BARE, { entryPoints: ["src/b.ts"] });
-        expect(built.graph.boundaries().size).toBe(1);
-        built.dispose();
-        built = buildAnalysis(BARE, {
-            entryPoints: ["src/b.ts"],
-            handlerBoundaries: [{ callee: "onRequest", callbackArgs: [0] }],
-        });
-        expect(built.graph.boundaries().size).toBe(2);
-    });
-
-    it("promotes a dotted `Interface#method` selector's callback argument", () => {
-        built = buildAnalysis(DOTTED, { entryPoints: ["src/d.ts"] });
-        expect(built.graph.boundaries().size).toBe(1);
-        built.dispose();
-        built = buildAnalysis(DOTTED, {
-            entryPoints: ["src/d.ts"],
-            handlerBoundaries: [{ callee: "Router#get", callbackArgs: [1] }],
-        });
-        expect(built.graph.boundaries().size).toBe(2);
+                },
+            },
+        );
+        const names = reachedNames(built.graph);
+        expect(names.has("useDep")).toBe(true);
+        expect(names.has("dep")).toBe(false);
     });
 });

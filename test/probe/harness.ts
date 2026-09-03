@@ -9,10 +9,36 @@ import { buildProgram } from '~/probe/kernel/program';
 import type { Diagnostic } from '~/probe/kernel/types';
 
 
+// Test-facing shape: a `channels` map still written in the pre-hoist style
+// (`{ enabled, dispatch, ...options }`), translated below to the flat per-channel
+// `tsc-probe` config (`enabled:false` -> `severity:"off"`, else `severity:"error"`;
+// async `fanOut` strings collapse to the boolean). `entryPoints` is ignored —
+// analysis is always whole-project.
 type AnalyzeOptions = {
     channels: Record<string, unknown>;
     entryPoints?: ReadonlyArray<string>;
 };
+
+function toFlatConfig(channels: Record<string, unknown>): Record<string, unknown> {
+    let flat: Record<string, unknown> = {};
+
+    for (let [name, raw] of Object.entries(channels)) {
+        let entry = typeof raw === 'object' && raw !== null ? { ...(raw as Record<string, unknown>) } : {},
+            enabled = entry['enabled'],
+            severity = entry['severity'];
+
+        delete entry['enabled'];
+        delete entry['severity'];
+
+        if (name === 'async' && typeof entry['fanOut'] === 'string') {
+            entry['fanOut'] = entry['fanOut'] !== 'off';
+        }
+
+        flat[name] = { severity: enabled === false ? 'off' : (severity ?? 'error'), ...entry };
+    }
+
+    return flat;
+}
 
 
 let tsconfig = {
@@ -39,7 +65,7 @@ function writeSources(dir: string, sources: Record<string, string>): void {
 }
 
 
-let analyzeFixture = (sources: Record<string, string>, { channels, entryPoints = ['src/**/*.ts'] }: AnalyzeOptions): ReadonlyArray<Diagnostic> => {
+let analyzeFixture = (sources: Record<string, string>, { channels }: AnalyzeOptions): ReadonlyArray<Diagnostic> => {
     let dir = createFixtureDir('.fixture-probe-');
 
     try {
@@ -49,7 +75,7 @@ let analyzeFixture = (sources: Record<string, string>, { channels, entryPoints =
         let built = buildProgram(path.join(dir, 'tsconfig.json'));
 
         try {
-            let config = configFromObject({ channels, entryPoints }, dir);
+            let config = configFromObject(toFlatConfig(channels), dir);
 
             return analyzeProgram(built.program, built.checker, config).diagnostics;
         }

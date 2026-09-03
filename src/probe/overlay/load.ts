@@ -6,10 +6,8 @@ import * as ts from '~/probe/adapter';
 import { stripJsonc } from '~/jsonc';
 
 import type {
-    HandlerBoundary,
     OverlayLookup,
     OverlaySet,
-    AnalyzeConfig,
 } from '../kernel/types';
 
 // Namespace-like globals whose members read as `Global.member` instead of
@@ -26,74 +24,23 @@ const KNOWN_NAMESPACES = new Set([
     'console',
 ]);
 
+// The fallback section searched after the hint-scoped ones: runtime symbols
+// (`URL`, `fetch`, `structuredClone`, timers, `AbortController`, …) that exist
+// in both the DOM and Node hosts. A Node program declares these via @types/node
+// `declare global`, so the hint is `node` and no `lib.dom` section ever matches
+// them; searching `global` last closes that gap regardless of hint kind.
+const GLOBAL_SECTION = 'global';
+
 // A section's symbol->entry table, and a channel's section tables.
 type SectionTable = Map<string, unknown>;
 type ChannelTable = Map<string, SectionTable>;
 type OverlayFile = { name: string; root: Record<string, unknown> };
-type UserOverlayCacheEntry = { mtimeMs: number; file: OverlayFile };
 
 type MergedOverlay  = {
     // channel -> section -> overlayKey -> raw entry
     readonly channels: ReadonlyMap<string, ChannelTable>;
-    readonly boundaries: ReadonlyArray<HandlerBoundary>;
     entry(channel: string, section: string, key: string): unknown;
 };
-
-type LoadedOverlays = OverlaySet & {
-    boundariesFromPresets(): ReadonlyArray<HandlerBoundary>;
-};
-// JSONC parsing (inlined so this subsystem stays extractable by directory move)
-
-function legacyStripJsonc(text: string): string {
-    let out = '';
-    let i = 0;
-    const n = text.length;
-    let inString = false;
-    let quote = '';
-    while (i < n) {
-        const ch = text[i]!;
-        const next = i + 1 < n ? text[i + 1]! : '';
-        if (inString) {
-            out += ch;
-            if (ch === '\\') {
-                out += next;
-                i += 2;
-                continue;
-            }
-            if (ch === quote) {
-                inString = false;
-            }
-            i += 1;
-            continue;
-        }
-        if (ch === '"' || ch === "'") {
-            inString = true;
-            quote = ch;
-            out += ch;
-            i += 1;
-            continue;
-        }
-        if (ch === '/' && next === '/') {
-            while (i < n && text[i] !== '\n') {
-                i += 1;
-            }
-            continue;
-        }
-        if (ch === '/' && next === '*') {
-            i += 2;
-            while (i < n && !(text[i] === '*' && text[i + 1] === '/')) {
-                i += 1;
-            }
-            i += 2;
-            continue;
-        }
-        out += ch;
-        i += 1;
-    }
-    return out.replace(/,(\s*[}\]])/g, '$1');
-}
-
-void legacyStripJsonc;
 
 function parseJsonc(name: string, text: string): Record<string, unknown> {
     let parsed: unknown;
@@ -143,45 +90,8 @@ function mergeSections(
     }
 }
 
-function readBoundaries(name: string, raw: unknown): HandlerBoundary[] {
-    if (raw === undefined) {
-        return [];
-    }
-    if (!Array.isArray(raw)) {
-        throw new Error(
-            `analyze overlay: ${name} handlerBoundaries must be an array`,
-        );
-    }
-    return raw.map((item, index) => {
-        if (typeof item !== 'object' || item === null) {
-            throw new Error(
-                `analyze overlay: ${name} handlerBoundaries[${index}] must be an object`,
-            );
-        }
-        const obj = item as Record<string, unknown>;
-        const callee = obj['callee'];
-        const callbackArgs = obj['callbackArgs'];
-        if (typeof callee !== 'string') {
-            throw new Error(
-                `analyze overlay: ${name} handlerBoundaries[${index}].callee must be a string`,
-            );
-        }
-        if (
-            !Array.isArray(callbackArgs) ||
-            callbackArgs.some(
-                (v) => typeof v !== 'number' || !Number.isInteger(v),
-            )
-        ) {
-            throw new Error(
-                `analyze overlay: ${name} handlerBoundaries[${index}].callbackArgs must be an array of integers`,
-            );
-        }
-        return { callee, callbackArgs: callbackArgs as ReadonlyArray<number> };
-    });
-}
-
 // Merge overlay files in precedence order (later wins). A file is either a
-// bundle (has `overlay`/`handlerBoundaries`) or a bare exceptions section map.
+// bundle (has `overlay`) or a bare exceptions section map.
 function mergeOverlayData(
     files: ReadonlyArray<{ name: string; text: string }>,
 ): MergedOverlay {
@@ -195,7 +105,6 @@ function mergeOverlayData(
 
 function mergeParsedOverlayData(files: ReadonlyArray<OverlayFile>): MergedOverlay {
     const channels = new Map<string, ChannelTable>();
-    const boundaries: HandlerBoundary[] = [];
 
     const channelFor = (channel: string): ChannelTable => {
         let table = channels.get(channel);
@@ -208,11 +117,7 @@ function mergeParsedOverlayData(files: ReadonlyArray<OverlayFile>): MergedOverla
 
     for (const file of files) {
         const root = file.root;
-        const isBundle = 'overlay' in root || 'handlerBoundaries' in root;
-        if (isBundle) {
-            boundaries.push(
-                ...readBoundaries(file.name, root['handlerBoundaries']),
-            );
+        if ('overlay' in root) {
             const overlay = root['overlay'];
             if (overlay !== undefined) {
                 if (!isSectionMap(overlay)) {
@@ -235,7 +140,6 @@ function mergeParsedOverlayData(files: ReadonlyArray<OverlayFile>): MergedOverla
 
     return {
         channels,
-        boundaries,
         entry(channel, section, key) {
             return channels.get(channel)?.get(section)?.get(key);
         },
@@ -339,11 +243,23 @@ function findInSections(
     }
     return undefined;
 }
+
+// The `global` section, searched after the hint-scoped sections regardless of
+// hint kind.
+function findInGlobal(
+    channel: ChannelTable,
+    key: string,
+): OverlayLookup | undefined {
+    const table = channel.get(GLOBAL_SECTION);
+    if (table && table.has(key)) {
+        return { pkg: GLOBAL_SECTION, symbol: key, entry: table.get(key) };
+    }
+    return undefined;
+}
 // Loading
 
 const HERE = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const shippedOverlayCache = new Map<string, OverlayFile>();
-const userOverlayCache = new Map<string, UserOverlayCacheEntry>();
 
 function readShippedOverlay(file: string): OverlayFile {
     let cached = shippedOverlayCache.get(file);
@@ -357,49 +273,16 @@ function readShippedOverlay(file: string): OverlayFile {
     return cached;
 }
 
-function readUserOverlay(file: string): OverlayFile {
-    const mtimeMs = NodeFS.statSync(file).mtimeMs;
-    const cached = userOverlayCache.get(file);
-    if (!cached || cached.mtimeMs !== mtimeMs) {
-        const fresh = {
-            name: file,
-            root: parseJsonc(file, NodeFS.readFileSync(file, 'utf8')),
-        };
-        userOverlayCache.set(file, { mtimeMs, file: fresh });
-        return fresh;
-    }
-    return cached.file;
-}
-
-function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
-    const files: OverlayFile[] = [];
-    files.push(readShippedOverlay(NodePath.join(HERE, 'base', 'async.jsonc')));
-    files.push(readShippedOverlay(NodePath.join(HERE, 'base', 'exceptions.jsonc')));
-    files.push(readShippedOverlay(NodePath.join(HERE, 'base', 'resources.jsonc')));
-    for (const preset of config.presets) {
-        const presetPath = NodePath.join(HERE, 'presets', `${preset}.jsonc`);
-        if (!NodeFS.existsSync(presetPath)) {
-            throw new Error(
-                `analyze overlay: unknown preset "${preset}" (no file at ${presetPath})`,
-            );
-        }
-        files.push(readShippedOverlay(presetPath));
-    }
-    for (const overlay of config.overlays) {
-        if (!NodeFS.existsSync(overlay)) {
-            throw new Error(
-                `analyze overlay: overlay file not found: ${overlay}`,
-            );
-        }
-        files.push(readUserOverlay(overlay));
-    }
-
-    const merged = mergeParsedOverlayData(files);
+// Load the shipped, built-in platform model. There is no user overlay: models
+// are internal, and `sourceHint` + the `global` fallback do all the gating.
+function loadOverlays(): OverlaySet {
+    const merged = mergeParsedOverlayData([
+        readShippedOverlay(NodePath.join(HERE, 'base', 'async.jsonc')),
+        readShippedOverlay(NodePath.join(HERE, 'base', 'exceptions.jsonc')),
+        readShippedOverlay(NodePath.join(HERE, 'base', 'resources.jsonc')),
+    ]);
 
     return {
-        boundariesFromPresets() {
-            return merged.boundaries;
-        },
         lookup(symbol, channel) {
             const table = merged.channels.get(channel);
             if (!table) {
@@ -407,31 +290,33 @@ function loadOverlays(config: AnalyzeConfig): LoadedOverlays {
             }
             const key = keyFor(symbol);
             const hint = sourceHint(symbol);
+            let found: OverlayLookup | undefined;
             if (hint.kind === 'lib') {
-                return findInSections(
+                found = findInSections(
                     table,
                     key,
                     (s) => s.startsWith('lib.'),
                     hint.section,
                 );
-            }
-            if (hint.kind === 'node') {
-                return findInSections(
+            } else if (hint.kind === 'node') {
+                found = findInSections(
                     table,
                     key,
                     (s) => s.startsWith('node:'),
                     hint.section,
                 );
+            } else {
+                found = findInSections(
+                    table,
+                    key,
+                    (s) => s !== GLOBAL_SECTION && !s.startsWith('lib.'),
+                    undefined,
+                );
             }
-            return findInSections(
-                table,
-                key,
-                (s) => !s.startsWith('lib.'),
-                undefined,
-            );
+            return found ?? findInGlobal(table, key);
         },
     };
 }
 
 
-export { loadOverlays, mergeOverlayData, overlayKey, type LoadedOverlays, type MergedOverlay };
+export { loadOverlays, mergeOverlayData, overlayKey, type MergedOverlay };

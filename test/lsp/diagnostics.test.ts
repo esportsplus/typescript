@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
 
-import { codeActionsAt, hoverAt } from "~/lsp/diagnostics";
+import { codeActionsAt, DiagnosticSeverity, groupByFile, hoverAt } from "~/lsp/diagnostics";
 import type { Diagnostic } from "~/probe/kernel/types";
 
 const URI = "file:///x.ts";
@@ -31,6 +31,18 @@ describe("lsp diagnostics — hover", () => {
 
     it("returns undefined off any finding", () => {
         expect(hoverAt([diag(0, 5)], 10, doc("foo();\n"))).toBeUndefined();
+    });
+});
+
+describe("lsp diagnostics — per-channel severity", () => {
+    it("maps each finding to its own channel's configured severity", () => {
+        const diags = [diag(0, 5, { channel: "exceptions" }), diag(6, 10, { channel: "async" })];
+        const severityOf = (channel: string) => (channel === "async" ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error);
+        const grouped = groupByFile(diags, severityOf, () => undefined, (fileName) => `file://${fileName}`);
+        const list = grouped.get("/x.ts")!;
+
+        expect(list.find((d) => d.code === "exceptions")!.severity).toBe(DiagnosticSeverity.Error);
+        expect(list.find((d) => d.code === "async")!.severity).toBe(DiagnosticSeverity.Warning);
     });
 });
 

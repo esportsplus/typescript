@@ -37,6 +37,11 @@ type Summary<V>  = {
 };
 
 export type Dispatch = 'optimist' | 'pessimist';
+
+// Per-channel report/gate level. `error` reports and fails the build for the
+// channel; `warn` reports without failing; `off` skips the channel (except as a
+// silent peer whose summaries an enabled channel depends on).
+export type Severity = 'error' | 'off' | 'warn';
 // Call resolution (kernel structure; the channel supplies the semantics)
 
 // The kernel answers "who does this call reach and what function values flow
@@ -71,7 +76,6 @@ type TransferContext<V>  = {
     readonly fn: FunctionInfo;
     readonly dispatch: Dispatch;
     readonly channelConfig: unknown;
-    readonly sinks: ReadonlyArray<SinkConfig>;
     // Current-iteration summary of a reachable callee (bottom until analyzed).
     summaryOf(fn: FunctionInfo): Summary<V>;
     // Resolve a call/new expression to targets + function args + overlay.
@@ -94,9 +98,8 @@ type DiagnoseContext<V>  = {
     readonly fn: FunctionInfo;
     readonly dispatch: Dispatch;
     readonly channelConfig: unknown;
-    readonly sinks: ReadonlyArray<SinkConfig>;
-    // True when `fn` is an entry point or handler-boundary callback — the place
-    // an escaping effect becomes a diagnostic.
+    // True when `fn` is a boundary — under whole-project analysis every reached
+    // function is a boundary, so any uncaught effect becomes a diagnostic.
     readonly isBoundary: boolean;
     summaryOf(fn: FunctionInfo): Summary<V>;
     resolveCall(call: ts.CallExpression | ts.NewExpression): CalleeResolution;
@@ -172,22 +175,10 @@ type Diagnostic  = {
 };
 // Config (shared kernel concepts; channel sections are opaque here)
 
-type HandlerBoundary  = {
-    // Declaration-identity selector, e.g. "express.Router#get".
-    readonly callee: string;
-    // Which argument positions are the analyzed callbacks.
-    readonly callbackArgs: ReadonlyArray<number>;
-};
-
-// A configured absorber: a call under which effects are discharged. `absorbs`
-// restricts to a channel-declared subset; absent means "absorbs everything".
-type SinkConfig  = {
-    readonly callee: string;
-    readonly absorbs: ReadonlyArray<string> | undefined;
-};
-
 type ChannelConfig  = {
-    readonly enabled: boolean;
+    // Report/gate level. `enabled` (run at all) is `severity !== 'off'`; the
+    // build-failing gate is `severity === 'error'`.
+    readonly severity: Severity;
     readonly dispatch: Dispatch;
     // Raw channel-specific options, validated by the channel.
     readonly options: unknown;
@@ -196,17 +187,8 @@ type ChannelConfig  = {
 type AnalyzeConfig  = {
     readonly projectRoot: string;
     readonly tsconfigPath: string;
-    readonly entryPoints: ReadonlyArray<string>;
-    readonly handlerBoundaries: ReadonlyArray<HandlerBoundary>;
-    readonly sinks: ReadonlyArray<SinkConfig>;
-    readonly presets: ReadonlyArray<string>;
-    readonly overlays: ReadonlyArray<string>;
+    // Every channel name maps to its config; an absent channel is `severity: 'off'`.
     readonly channels: Readonly<Record<string, ChannelConfig>>;
-    // CLI/build gate: when true, a run with findings exits nonzero.
-    readonly failOnFindings: boolean;
-    // Editor squiggle severity. Findings surface as errors unless the tsconfig
-    // plugin entry opts down with "severity": "warn". Ignored by the CLI gate.
-    readonly severity: 'error' | 'warning';
 };
 // Overlay set (implemented by src/overlay; consumed by graph + channels)
 
@@ -250,4 +232,4 @@ type Analysis  = {
 };
 
 
-export { type Analysis, type AnalyzeConfig, type CallGraph, type CalleeResolution, type Channel, type ChannelConfig, type DiagnoseContext, type Diagnostic, type DiagnosticEdit, type DiagnosticFix, type DiagnosticRelated, type FunctionInfo, type HandlerBoundary, type OverlayLookup, type OverlaySet, type SinkConfig, type SourceLocation, type Summary, type SummaryStore, type TransferContext };
+export { type Analysis, type AnalyzeConfig, type CallGraph, type CalleeResolution, type Channel, type ChannelConfig, type DiagnoseContext, type Diagnostic, type DiagnosticEdit, type DiagnosticFix, type DiagnosticRelated, type FunctionInfo, type OverlayLookup, type OverlaySet, type SourceLocation, type Summary, type SummaryStore, type TransferContext };

@@ -41,9 +41,11 @@ function toLspDiagnostic(diagnostic: AnalyzeDiagnostic, severity: DiagnosticSeve
     };
 }
 
-// Group findings by their anchor file, mapping each to LSP form. Files with no
-// findings never appear here; the server clears their stale diagnostics.
-function groupByFile(diagnostics: ReadonlyArray<AnalyzeDiagnostic>, severity: DiagnosticSeverity, resolve: DocumentResolver, uriOf: (fileName: string) => string): Map<string, LspDiagnostic[]> {
+// Group findings by their anchor file, mapping each to LSP form. Each finding's
+// squiggle severity comes from its own channel's configured severity, via
+// `severityOf`. Files with no findings never appear here; the server clears their
+// stale diagnostics.
+function groupByFile(diagnostics: ReadonlyArray<AnalyzeDiagnostic>, severityOf: (channel: string) => DiagnosticSeverity, resolve: DocumentResolver, uriOf: (fileName: string) => string): Map<string, LspDiagnostic[]> {
     let grouped = new Map<string, LspDiagnostic[]>();
 
     for (let i = 0, n = diagnostics.length; i < n; i++) {
@@ -56,7 +58,7 @@ function groupByFile(diagnostics: ReadonlyArray<AnalyzeDiagnostic>, severity: Di
             grouped.set(fileName, list);
         }
 
-        list.push(toLspDiagnostic(diagnostic, severity, resolve, uriOf));
+        list.push(toLspDiagnostic(diagnostic, severityOf(diagnostic.channel), resolve, uriOf));
     }
 
     return grouped;

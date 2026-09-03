@@ -44,16 +44,51 @@ function createServer(connection: Connection): void {
         timer: ReturnType<typeof setTimeout> | undefined,
         workspace: AnalyzeWorkspace | undefined;
 
+    // Publish (or clear) the single tsconfig.json diagnostic that reports a
+    // rejected/legacy `tsc-probe` key. The workspace keeps `config` undefined while
+    // an error stands, so analysis stays inert until the config loads cleanly.
+    function publishConfigError(): void {
+        if (!workspace) {
+            return;
+        }
+
+        let uri = pathToFileURL(workspace.configPath).toString();
+
+        if (workspace.configError) {
+            connection.sendDiagnostics({
+                diagnostics: [{
+                    message: workspace.configError,
+                    range: { end: { character: 0, line: 0 }, start: { character: 0, line: 0 } },
+                    severity: DiagnosticSeverity.Error,
+                    source: 'analyze',
+                }],
+                uri,
+            });
+            published.add(uri);
+        }
+        else if (published.has(uri)) {
+            connection.sendDiagnostics({ diagnostics: [], uri });
+            published.delete(uri);
+        }
+    }
+
     // The native API reads files from disk, so unsaved buffers are not reflected;
     // analysis runs on open and on save against the last-saved project state.
     function runAnalysis(): void {
         timer = undefined;
 
-        if (!workspace || !workspace.config) {
+        if (!workspace) {
             return;
         }
 
-        let changed = [...pending];
+        publishConfigError();
+
+        if (!workspace.config) {
+            return;
+        }
+
+        let config = workspace.config,
+            changed = [...pending];
 
         pending.clear();
 
@@ -89,10 +124,16 @@ function createServer(connection: Connection): void {
 
         let openByPath = new Map(documents.all().map((document) => [pathKey(fileURLToPath(document.uri)), document])),
             resolve: DocumentResolver = (fileName) => openByPath.get(pathKey(fileName)),
-            severity = workspace.config.severity === 'warning' ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
+            severityOf = (channel: string) => config.channels[channel]?.severity === 'warn' ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
             uriOf = (fileName: string) => openByPath.get(pathKey(fileName))?.uri ?? pathToFileURL(fileName).toString(),
-            grouped = groupByFile(result.diagnostics, severity, resolve, uriOf),
+            grouped = groupByFile(result.diagnostics, severityOf, resolve, uriOf),
             next = new Set<string>();
+
+        // A standing config-error diagnostic on tsconfig.json is not a finding, so
+        // keep it out of the stale-clear sweep below.
+        if (workspace.configError) {
+            next.add(pathToFileURL(workspace.configPath).toString());
+        }
 
         for (let [fileName, diagnostics] of grouped) {
             let uri = uriOf(fileName);

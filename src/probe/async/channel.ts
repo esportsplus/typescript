@@ -30,9 +30,10 @@ const UNBOUNDED_TUPLE_FLAGS = 12;
 type Ownership = 'opaque' | 'orphan' | 'owned';
 
 // Validated channel options. `fanOut` gates the bounded-fan-out check; promise
-// ownership is always checked when the channel is enabled.
+// ownership is always checked when the channel is enabled. The finding level is
+// governed by the channel `severity`, not by `fanOut`.
 type AsyncOptions  = {
-    readonly fanOut: 'error' | 'off' | 'warn';
+    readonly fanOut: boolean;
     readonly fanOutAllowLiteralUpTo: number;
     readonly poolFunctions: ReadonlyArray<string>;
 };
@@ -60,14 +61,10 @@ function parseOptions(raw: unknown): AsyncOptions {
         typeof raw === 'object' && raw !== null
             ? (raw as Record<string, unknown>)
             : {};
-    let fanOut: AsyncOptions['fanOut'] = 'warn';
+    let fanOut = true;
     if (obj['fanOut'] !== undefined) {
-        if (
-            obj['fanOut'] !== 'off' &&
-            obj['fanOut'] !== 'warn' &&
-            obj['fanOut'] !== 'error'
-        ) {
-            fail(`"fanOut" must be "off", "warn", or "error"`);
+        if (typeof obj['fanOut'] !== 'boolean') {
+            fail(`"fanOut" must be a boolean`);
         }
         fanOut = obj['fanOut'];
     }
@@ -671,7 +668,7 @@ function checkFanOut(
     call: ts.CallExpression,
     out: Diagnostic[],
 ): void {
-    if (env.options.fanOut === 'off') {
+    if (!env.options.fanOut) {
         return;
     }
     const aggregator = aggregatorOf(call);

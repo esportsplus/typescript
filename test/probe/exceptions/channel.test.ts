@@ -205,36 +205,7 @@ function risky(): void { throw new TypeError('x'); }
     });
 });
 
-describe("exceptions channel — sinks", () => {
-    it("a sink with no `absorbs` swallows every escape", () => {
-        const diags = analyzeFixture({
-            "a.ts": `export function b(): void { absorb(); }
-function absorb(): void { throw new TypeError('x'); }
-`,
-        }, { report: "all", sinks: [{ callee: "absorb" }] });
-        expect(toBoundary(diags, "b").length).toBe(0);
-    });
-
-    it("a sink absorbs only its listed types and leaks the rest", () => {
-        const matched = analyzeFixture({
-            "a.ts": `export function b(): void { absorb(); }
-function absorb(): void { throw new TypeError('x'); }
-`,
-        }, { report: "all", sinks: [{ callee: "absorb", absorbs: ["TypeError"] }] });
-        expect(toBoundary(matched, "b").length).toBe(0);
-
-        const leaked = analyzeFixture({
-            "a.ts": `export function b(): void { absorb(); }
-function absorb(): void { throw new TypeError('x'); }
-`,
-        }, { report: "all", sinks: [{ callee: "absorb", absorbs: ["RangeError"] }] });
-        const atB = toBoundary(leaked, "b");
-        expect(atB.length).toBe(1);
-        expect(atB[0]!.message).toContain("TypeError");
-    });
-});
-
-describe("exceptions channel — overlays and presets", () => {
+describe("exceptions channel — built-in platform model", () => {
     it("models the base overlay JSON.parse as throwing SyntaxError", () => {
         const diags = analyzeFixture({
             "a.ts": `export function b(x: string): unknown {
@@ -248,32 +219,14 @@ describe("exceptions channel — overlays and presets", () => {
         expect(atB[0]!.message).toContain("from JSON.parse");
     });
 
-    it("applies a user overlay bundle entry", () => {
-        const diags = analyzeFixture({
-            "a.ts": `export function b(): void { doThrow(); }
-declare function doThrow(): void;
-`,
-        }, {
-            report: "all",
-            overlays: {
-                "overlay.jsonc": JSON.stringify({
-                    overlay: { exceptions: { app: { doThrow: { exceptions: ["RangeError"] } } } },
-                }),
-            },
-        });
-        const atB = toBoundary(diags, "b");
-        expect(atB.length).toBe(1);
-        expect(atB[0]!.message).toContain("RangeError");
-    });
-
-    it("applies the node preset to readFileSync", () => {
+    it("models the built-in node:fs readFileSync as throwing Error", () => {
         const diags = analyzeFixture({
             "a.ts": `import { readFileSync } from 'node:fs';
 export function b(): string {
     return readFileSync('x', 'utf8');
 }
 `,
-        }, { report: "all", presets: ["node"], nodeTypes: true });
+        }, { report: "all", nodeTypes: true });
         const atB = toBoundary(diags, "b");
         expect(atB.length).toBe(1);
         expect(atB[0]!.message).toContain("Error");

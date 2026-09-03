@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { mergeOverlayData, overlayKey } from "~/probe/overlay/load";
+import fs from "node:fs";
+import path from "node:path";
+
+import * as ts from "~/probe/adapter";
+import { buildProgram } from "~/probe/kernel/program";
+import { createFixtureDir } from "../../cli/fixtures";
+import { loadOverlays, mergeOverlayData, overlayKey } from "~/probe/overlay/load";
 
 describe("overlay key format", () => {
     it("renders a bare global, a namespace member, and an interface method", () => {
@@ -14,17 +20,10 @@ describe("overlay merge", () => {
     it("treats a bare file as the exceptions section and a bundle as channel-keyed", () => {
         const merged = mergeOverlayData([
             { name: "bare", text: JSON.stringify({ "lib.es5": { "JSON.parse": { exceptions: ["SyntaxError"] } } }) },
-            {
-                name: "bundle",
-                text: JSON.stringify({
-                    overlay: { async: { "lib.dom": { fetch: { cancellable: true } } } },
-                    handlerBoundaries: [{ callee: "app.get", callbackArgs: [1] }],
-                }),
-            },
+            { name: "bundle", text: JSON.stringify({ overlay: { async: { global: { fetch: { cancellable: true } } } } }) },
         ]);
         expect(merged.entry("exceptions", "lib.es5", "JSON.parse")).toEqual({ exceptions: ["SyntaxError"] });
-        expect(merged.entry("async", "lib.dom", "fetch")).toEqual({ cancellable: true });
-        expect(merged.boundaries).toEqual([{ callee: "app.get", callbackArgs: [1] }]);
+        expect(merged.entry("async", "global", "fetch")).toEqual({ cancellable: true });
     });
 
     it("lets a later file win on a colliding key", () => {
@@ -43,10 +42,72 @@ describe("overlay merge", () => {
         expect(merged.entry("exceptions", "lib.es5", "RegExp")).toEqual({ exceptions: ["SyntaxError"] });
         expect(merged.entry("exceptions", "lib.es5", "decodeURI")).toEqual({ exceptions: ["URIError"] });
     });
+});
 
-    it("rejects a non-array handlerBoundaries in a bundle", () => {
-        expect(() =>
-            mergeOverlayData([{ name: "bad", text: JSON.stringify({ handlerBoundaries: {} }) }]),
-        ).toThrow(/handlerBoundaries must be an array/);
+describe("overlay lookup — global fallback for node-declared globals", () => {
+    let dispose: (() => void) | undefined;
+
+    afterEach(() => {
+        dispose?.();
+        dispose = undefined;
+    });
+
+    it("resolves `URL` for a Node-only program with no dom lib via the global section", () => {
+        const dir = createFixtureDir(".fixture-overlay-");
+        try {
+            fs.writeFileSync(
+                path.join(dir, "tsconfig.json"),
+                JSON.stringify({
+                    compilerOptions: {
+                        lib: ["esnext"],
+                        module: "esnext",
+                        moduleResolution: "bundler",
+                        noEmit: true,
+                        skipLibCheck: true,
+                        strict: true,
+                        target: "esnext",
+                        types: ["node"],
+                    },
+                    include: ["src"],
+                }),
+            );
+            fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+            fs.writeFileSync(path.join(dir, "src", "a.ts"), "export function f(x: string): void { new URL(x); }\n");
+
+            const built = buildProgram(path.join(dir, "tsconfig.json"));
+            dispose = () => {
+                built.dispose();
+                fs.rmSync(dir, { force: true, recursive: true });
+            };
+
+            const checker = built.checker;
+            let sym: ts.Symbol | undefined;
+            for (const sf of ts.getSourceFiles(built.program)) {
+                if (!sf.fileName.endsWith("/a.ts") && !sf.fileName.endsWith("\\a.ts")) {
+                    continue;
+                }
+                const visit = (node: ts.Node): void => {
+                    if (ts.isNewExpression(node)) {
+                        let s = checker.getSymbolAtLocation(node.expression);
+                        if (s && s.flags & ts.SymbolFlags.Alias) {
+                            s = checker.getAliasedSymbol(s);
+                        }
+                        sym = s ?? sym;
+                    }
+                    ts.forEachChild(node, visit);
+                };
+                ts.forEachChild(sf, visit);
+            }
+
+            expect(sym).toBeDefined();
+            const found = loadOverlays().lookup(sym!, "exceptions");
+            expect(found?.pkg).toBe("global");
+            expect((found?.entry as { exceptions: string[] }).exceptions).toEqual(["TypeError"]);
+        }
+        finally {
+            if (!dispose) {
+                fs.rmSync(dir, { force: true, recursive: true });
+            }
+        }
     });
 });
