@@ -177,6 +177,40 @@ describe("resources channel — R1", () => {
         expect(diags).toHaveLength(0);
     });
 
+    it("accepts an interval cleared in a returned teardown method", () => {
+        const diags = analyzeFixture({
+            "index.ts": [
+                "export function rateLimiter() {",
+                "    let timer = setInterval(() => {}, 1000);",
+                "    return {",
+                "        destroy() {",
+                "            clearInterval(timer);",
+                "        },",
+                "    };",
+                "}",
+            ].join("\n"),
+        });
+
+        expect(diags).toHaveLength(0);
+    });
+
+    it("accepts a timeout stored into a this-owned collection", () => {
+        const diags = analyzeFixture({
+            "index.ts": [
+                "class Client {",
+                "    private pending = new Map<string, { timer: ReturnType<typeof setTimeout> }>();",
+                "    request(id: string) {",
+                "        let timer = setTimeout(() => {}, 1000);",
+                "        this.pending.set(id, { timer });",
+                "    }",
+                "}",
+                "export { Client };",
+            ].join("\n"),
+        });
+
+        expect(diags).toHaveLength(0);
+    });
+
     it("flags a class field resource with no disposal and accepts one with disposal", () => {
         const diags = analyzeFixture({
             "index.ts": [

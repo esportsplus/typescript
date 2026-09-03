@@ -104,6 +104,55 @@ function refsSym(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean {
     return env.checker.getSymbolAtLocation(e) === sym;
 }
 
+// Whether `sym` is referenced anywhere in a subtree — the handle carried inside an
+// object literal or other argument (`this.pending.set(id, { timer })`), which the
+// identifier-only `refsSym` cannot see.
+function refsSymDeep(env: Env, node: ts.Node, sym: ts.Symbol): boolean {
+    let found = false;
+
+    const rec = (n: ts.Node): void => {
+        if (found) {
+            return;
+        }
+
+        // A shorthand property (`{ timer }`) resolves to the property symbol via
+        // getSymbolAtLocation, not the value binding — ask for the value directly.
+        if (ts.isShorthandPropertyAssignment(n)) {
+            if (env.checker.getShorthandAssignmentValueSymbol(n) === sym) {
+                found = true;
+            }
+
+            return;
+        }
+
+        if (ts.isIdentifier(n) && env.checker.getSymbolAtLocation(n) === sym) {
+            found = true;
+            return;
+        }
+
+        ts.forEachChild(n, rec);
+    };
+
+    rec(node);
+
+    return found;
+}
+
+// A receiver whose access chain bottoms out at `this` — a container living on the
+// instance, which outlives the current call.
+function isThisRooted(expr: ts.Expression): boolean {
+    let cur: ts.Expression = expr;
+
+    while (
+        ts.isPropertyAccessExpression(cur) ||
+        ts.isElementAccessExpression(cur)
+    ) {
+        cur = cur.expression;
+    }
+
+    return cur.kind === ts.SyntaxKind.ThisKeyword;
+}
+
 // True when `node` (or a descendant, not crossing into a nested function) matches.
 function containsMatch(
     node: ts.Node,
@@ -477,7 +526,24 @@ function isTransferExpr(
     }
 
     if (ts.isCallExpression(expr) || ts.isNewExpression(expr)) {
-        return callOwnsArg(env, expr, sym);
+        if (callOwnsArg(env, expr, sym)) {
+            return true;
+        }
+
+        // Stored into a container living on `this` (`this.pending.set(id, { timer
+        // })`): ownership moves to the instance, which outlives the call — the same
+        // escape as `this.x[k] = handle`, just through a collection mutator.
+        if (
+            ts.isCallExpression(expr) &&
+            ts.isPropertyAccessExpression(expr.expression) &&
+            OPAQUE_METHODS.has(expr.expression.name.text) &&
+            isThisRooted(expr.expression.expression) &&
+            expr.arguments.some((a) => refsSymDeep(env, a, sym))
+        ) {
+            return true;
+        }
+
+        return false;
     }
 
     return false;
@@ -663,6 +729,47 @@ function opaqueUseOf(
     return hit;
 }
 
+// A discharge inside a closure nested in the acquiring function: a handle whose
+// cleanup lives in a returned teardown (`return { destroy() { clearInterval(timer)
+// } }`) or other captured closure. Presence-based — the handle is captured to be
+// released later, mirroring how a listener pair release is accepted in a closure.
+function releasedInClosure(
+    env: Env,
+    sym: ts.Symbol,
+    acq: Acquire | undefined,
+    body: ts.Node,
+): boolean {
+    let found = false;
+
+    const rec = (n: ts.Node): void => {
+        if (found) {
+            return;
+        }
+
+        if (n !== body && isFunctionLike(n)) {
+            if (
+                containsMatch(
+                    n,
+                    (m) =>
+                        (ts.isCallExpression(m) || ts.isNewExpression(m)) &&
+                        isDischargeOf(env, m as ts.Expression, sym, acq),
+                    true,
+                )
+            ) {
+                found = true;
+            }
+
+            return;
+        }
+
+        ts.forEachChild(n, rec);
+    };
+
+    rec(body);
+
+    return found;
+}
+
 function handleOutcome(
     env: Env,
     acq: Acquire,
@@ -676,6 +783,10 @@ function handleOutcome(
     }
 
     if (firstGuaranteed(env, sym, acq, declStmt, block)) {
+        return 'safe';
+    }
+
+    if (releasedInClosure(env, sym, acq, body)) {
         return 'safe';
     }
 
