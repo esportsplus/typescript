@@ -3,7 +3,7 @@
         "noEmit": true,
         "rootDir": "${configDir}"
     },
-    "extends": "./tsconfig.package.json",
+    "extends": "./tsconfig.browser.json",
     "include": [
         "${configDir}/*.config.ts",
         "${configDir}/bench/**/*",

@@ -22,9 +22,11 @@
     },
     "exports": {
         "./package.json": "./package.json",
+        "./tsconfig.browser.dev.json": "./tsconfig.browser.dev.json",
         "./tsconfig.browser.json": "./tsconfig.browser.json",
-        "./tsconfig.dev.json": "./tsconfig.dev.json",
+        "./tsconfig.node.dev.json": "./tsconfig.node.dev.json",
         "./tsconfig.node.json": "./tsconfig.node.json",
+        "./tsconfig.package.dev.json": "./tsconfig.package.dev.json",
         "./tsconfig.package.json": "./tsconfig.package.json",
         "./compiler": {
             "types": "./build/compiler/index.d.ts",
@@ -43,9 +45,11 @@
         "bin",
         "build",
         "tsconfig.base.json",
+        "tsconfig.browser.dev.json",
         "tsconfig.browser.json",
-        "tsconfig.dev.json",
+        "tsconfig.node.dev.json",
         "tsconfig.node.json",
+        "tsconfig.package.dev.json",
         "tsconfig.package.json"
     ],
     "main": "build/index.js",

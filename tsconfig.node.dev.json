@@ -3,15 +3,11 @@
         "noEmit": true,
         "rootDir": "${configDir}"
     },
-    "extends": "./tsconfig.package.json",
+    "extends": "./tsconfig.node.json",
     "include": [
         "${configDir}/*.config.ts",
         "${configDir}/bench/**/*",
         "${configDir}/src/**/*",
         "${configDir}/test/**/*"
-    ],
-    "tsc-guard": {
-        "exceptions": { "severity": "warn" },
-        "resources": { "severity": "warn" }
-    }
+    ]
 }

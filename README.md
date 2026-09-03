@@ -204,13 +204,23 @@ type ReplacementIntent = {
 
 ## Shared Config
 
-Importable base tsconfig files:
+Importable base tsconfig files, one per target:
 
 ```json
 { "extends": "@esportsplus/typescript/tsconfig.browser.json" }
 { "extends": "@esportsplus/typescript/tsconfig.node.json" }
 { "extends": "@esportsplus/typescript/tsconfig.package.json" }
 ```
+
+Each target also ships a `.dev` variant that extends its build config, sets `noEmit` with `rootDir` at the config dir, and widens `include` to the whole repo (`src`, `test`, `bench`, `*.config.ts`) — for editor and full-typecheck passes over everything, not just the emitted sources:
+
+```json
+{ "extends": "@esportsplus/typescript/tsconfig.browser.dev.json" }
+{ "extends": "@esportsplus/typescript/tsconfig.node.dev.json" }
+{ "extends": "@esportsplus/typescript/tsconfig.package.dev.json" }
+```
+
+`tsconfig.package.dev.json` additionally sets `tsc-guard` to `warn` for `exceptions` and `resources`, so the analyzer reports over your sources during development without failing the typecheck.
 
 ## TypeScript 7 migration
 
