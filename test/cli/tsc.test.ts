@@ -572,13 +572,13 @@ describe('runAnalyze', () => {
         include: ['src'],
     };
 
-    function writeProject(probe: Record<string, unknown> | undefined, source: string): string {
+    function writeProject(guard: Record<string, unknown> | undefined, source: string): string {
         fixtureDir = createFixtureDir('.fixture-analyze-');
 
         let tsconfig: Record<string, unknown> = { ...TSCONFIG };
 
-        if (probe !== undefined) {
-            tsconfig['tsc-probe'] = probe;
+        if (guard !== undefined) {
+            tsconfig['tsc-guard'] = guard;
         }
 
         fs.writeFileSync(path.join(fixtureDir, 'tsconfig.json'), JSON.stringify(tsconfig));
@@ -633,7 +633,7 @@ describe('runAnalyze', () => {
         expect(exits).toEqual([]);
     });
 
-    it('stays inert (no exit) when the tsconfig declares no tsc-probe config', () => {
+    it('stays inert (no exit) when the tsconfig declares no tsc-guard config', () => {
         let tsconfig = writeProject(undefined, 'export function b(): void {}\n');
 
         expect(() => runAnalyze(tsconfig)).not.toThrow();

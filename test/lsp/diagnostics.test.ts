@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { TextDocument } from "vscode-languageserver-textdocument";
 
 import { codeActionsAt, DiagnosticSeverity, groupByFile, hoverAt } from "~/lsp/diagnostics";
-import type { Diagnostic } from "~/probe/kernel/types";
+import type { Diagnostic } from "~/guard/kernel/types";
 
 const URI = "file:///x.ts";
 

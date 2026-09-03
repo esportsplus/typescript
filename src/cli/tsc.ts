@@ -12,9 +12,9 @@ import fs from 'fs';
 import languageService from '~/compiler/language-service';
 import path from 'path';
 import sourcemap from '~/compiler/sourcemap';
-import { analyze, analyzeProgram } from '~/probe/kernel/analyze';
-import { formatDiagnostics } from '~/probe/kernel/format';
-import { loadConfigFromTsconfig } from '~/probe/kernel/config';
+import { analyze, analyzeProgram } from '~/guard/kernel/analyze';
+import { formatDiagnostics } from '~/guard/kernel/format';
+import { loadConfigFromTsconfig } from '~/guard/kernel/config';
 import { stripJsonc } from '~/jsonc';
 import { readPlugins } from '~/tsconfig';
 

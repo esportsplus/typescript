@@ -24,9 +24,9 @@ afterEach(() => {
     }
 });
 
-function project(probe: Record<string, unknown>): string {
+function project(guard: Record<string, unknown>): string {
     dir = createFixtureDir(".fixture-ws-");
-    fs.writeFileSync(path.join(dir, "tsconfig.json"), JSON.stringify({ ...TSCONFIG, "tsc-probe": probe }));
+    fs.writeFileSync(path.join(dir, "tsconfig.json"), JSON.stringify({ ...TSCONFIG, "tsc-guard": guard }));
     fs.mkdirSync(path.join(dir, "src"), { recursive: true });
     fs.writeFileSync(path.join(dir, "src", "a.ts"), "export function b(): void {}\n");
 
@@ -34,11 +34,11 @@ function project(probe: Record<string, unknown>): string {
 }
 
 describe("lsp workspace — config error surfacing", () => {
-    it("keeps config undefined and records configError on a rejected legacy key", () => {
+    it("keeps config undefined and records configError on an unknown root key", () => {
         workspace = new AnalyzeWorkspace(project({ channels: { exceptions: {} } }));
 
         expect(workspace.config).toBeUndefined();
-        expect(workspace.configError).toMatch(/"channels" wrapper removed/);
+        expect(workspace.configError).toMatch(/unknown channel "channels"/);
     });
 
     it("loads a clean config with no configError", () => {

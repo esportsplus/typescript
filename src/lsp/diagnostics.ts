@@ -2,7 +2,7 @@ import { CodeActionKind, DiagnosticSeverity, MarkupKind } from 'vscode-languages
 
 import type { CodeAction, Diagnostic as LspDiagnostic, DiagnosticRelatedInformation, Hover, Position, Range, TextEdit } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
-import type { Diagnostic as AnalyzeDiagnostic, SourceLocation } from '~/probe/kernel/types';
+import type { Diagnostic as AnalyzeDiagnostic, SourceLocation } from '~/guard/kernel/types';
 
 // Resolves an analyze absolute file path to the client's open document, so ranges
 // come from the exact buffer the editor holds (and its URI matches the client's).

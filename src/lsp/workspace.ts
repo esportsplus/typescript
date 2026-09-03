@@ -1,15 +1,15 @@
 import * as NodePath from 'node:path';
 
-import * as ts from '~/probe/adapter';
+import * as ts from '~/guard/adapter';
 
-import { analyzeProgram } from '~/probe/kernel/analyze';
-import { createThrowIndex, disposeThrowIndex } from '~/probe/exceptions/derive';
-import { loadConfigFromTsconfig } from '~/probe/kernel/config';
+import { analyzeProgram } from '~/guard/kernel/analyze';
+import { createThrowIndex, disposeThrowIndex } from '~/guard/exceptions/derive';
+import { loadConfigFromTsconfig } from '~/guard/kernel/config';
 import { open } from '~/compiler/language-service';
 
-import type { AnalyzeResult } from '~/probe/kernel/analyze';
-import type { ThrowIndex } from '~/probe/exceptions/derive';
-import type { AnalyzeConfig } from '~/probe/kernel/types';
+import type { AnalyzeResult } from '~/guard/kernel/analyze';
+import type { ThrowIndex } from '~/guard/exceptions/derive';
+import type { AnalyzeConfig } from '~/guard/kernel/types';
 
 type Snapshot = ReturnType<ts.API['updateSnapshot']>;
 
@@ -24,7 +24,7 @@ class AnalyzeWorkspace {
     // per-export summaries), so incremental re-analysis does not re-read deps.
     private throwIndex: ThrowIndex = createThrowIndex();
 
-    // The parsed `tsc-probe` config, or undefined when the tsconfig opts out of
+    // The parsed `tsc-guard` config, or undefined when the tsconfig opts out of
     // analyze. A configless workspace stays inert — analyze() yields nothing.
     config: AnalyzeConfig | undefined;
 
@@ -54,7 +54,7 @@ class AnalyzeWorkspace {
         }
     }
 
-    // Re-read the `tsc-probe` config after the tsconfig itself changes on disk.
+    // Re-read the `tsc-guard` config after the tsconfig itself changes on disk.
     reloadConfig(): void {
         this.loadConfig();
     }

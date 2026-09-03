@@ -10,7 +10,7 @@ import { AnalyzeWorkspace } from './workspace';
 
 import type { Connection } from 'vscode-languageserver/node';
 import type { DocumentResolver } from './diagnostics';
-import type { Diagnostic as AnalyzeDiagnostic } from '~/probe/kernel/types';
+import type { Diagnostic as AnalyzeDiagnostic } from '~/guard/kernel/types';
 
 // Windows hands back file URIs with inconsistent drive-letter casing and percent
 // encoding; a case-folded absolute path is the only stable key across the native
@@ -19,6 +19,20 @@ function pathKey(fileName: string): string {
     let resolved = NodePath.resolve(fileName);
 
     return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+// Map a channel's configured severity to its editor squiggle: `warn` → Warning,
+// `info` → Information, anything else (error) → Error.
+function lspSeverity(severity: string | undefined): DiagnosticSeverity {
+    if (severity === 'warn') {
+        return DiagnosticSeverity.Warning;
+    }
+
+    if (severity === 'info') {
+        return DiagnosticSeverity.Information;
+    }
+
+    return DiagnosticSeverity.Error;
 }
 
 function findTsconfig(rootDir: string): string | undefined {
@@ -45,7 +59,7 @@ function createServer(connection: Connection): void {
         workspace: AnalyzeWorkspace | undefined;
 
     // Publish (or clear) the single tsconfig.json diagnostic that reports a
-    // rejected/legacy `tsc-probe` key. The workspace keeps `config` undefined while
+    // rejected/legacy `tsc-guard` key. The workspace keeps `config` undefined while
     // an error stands, so analysis stays inert until the config loads cleanly.
     function publishConfigError(): void {
         if (!workspace) {
@@ -124,7 +138,7 @@ function createServer(connection: Connection): void {
 
         let openByPath = new Map(documents.all().map((document) => [pathKey(fileURLToPath(document.uri)), document])),
             resolve: DocumentResolver = (fileName) => openByPath.get(pathKey(fileName)),
-            severityOf = (channel: string) => config.channels[channel]?.severity === 'warn' ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
+            severityOf = (channel: string) => lspSeverity(config.channels[channel]?.severity),
             uriOf = (fileName: string) => openByPath.get(pathKey(fileName))?.uri ?? pathToFileURL(fileName).toString(),
             grouped = groupByFile(result.diagnostics, severityOf, resolve, uriOf),
             next = new Set<string>();
