@@ -267,12 +267,14 @@ const transform = (
     uid.scope(root, file.fileName, code);
 
     let changed = false,
+        configPath = project.configPath ?? languageService.findConfig(root) ?? root,
         currentCode = code,
         currentFile = file,
         currentProject = project,
         fileName = file.fileName,
         generations: OffsetAnchor[][] = [],
-        last = plugins.length - 1;
+        last = plugins.length - 1,
+        staged = false;
 
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
@@ -337,11 +339,18 @@ const transform = (
             changed = true;
 
             if (i < last) {
-                currentProject = languageService.update(project.configPath ?? languageService.findConfig(root) ?? root, fileName, currentCode);
+                currentProject = languageService.update(configPath, fileName, currentCode);
                 currentFile = currentProject.program.getSourceFile(fileName) ??
                     languageService.parse(fileName, currentCode);
+                staged = true;
             }
         }
+    }
+
+    // The language service entry is shared by every file the host transforms; a later file that
+    // imports this one must see its source, not the intermediate output handed to later plugins.
+    if (staged) {
+        languageService.update(configPath, fileName, code);
     }
 
     return { changed, code: currentCode, map: { generations } };

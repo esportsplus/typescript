@@ -195,6 +195,24 @@ describe('coordinator.transform', () => {
         expect(result.code).toContain('const B = 2;');
     });
 
+    it('restores the original source in the language service after intermediate updates', () => {
+        let code = 'let x = 1;',
+            file = parse(code),
+            project = { ...makeProject(file), configPath: root + '/tsconfig.json' },
+            plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
+            plugin2 = makePlugin(() => ({ prepend: ['const B = 2;'] }));
+
+        coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
+
+        let otherProject = languageService.update(
+            root + '/tsconfig.json',
+            root + '/src/coordinator-fixture-other.ts',
+            'export {};'
+        );
+
+        expect(otherProject.program.getSourceFile(fileName)!.text).toBe(code);
+    });
+
     it('shares context between plugins', () => {
         let code = 'let x = 1;',
             file = parse(code),
