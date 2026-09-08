@@ -46,7 +46,8 @@ jobs:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
-NPM_TOKEN is optional and used only for installing private dependencies.
+NPM_TOKEN is optional and available during install, verification, and publish
+lifecycle hooks so those commands can install private dependencies.
 Publishing uses OIDC. Configure npm trusted publishing for the **caller**
 repository and its publish.yml filename. The caller must grant id-token: write;
 the shared publish job already grants it. Called workflows cannot elevate

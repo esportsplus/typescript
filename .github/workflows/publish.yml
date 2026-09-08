@@ -74,6 +74,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Verify package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if node -e "process.exit(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).scripts?.verify ? 0 : 1)"; then
             pnpm run verify
@@ -84,3 +86,6 @@ jobs:
           fi
       - name: Publish verified package with OIDC
         run: pnpm publish --no-git-checks
+        env:
+          # Lifecycle hooks may install private dependencies; pnpm prefers OIDC for publishing.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

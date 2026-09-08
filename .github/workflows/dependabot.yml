@@ -58,6 +58,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Verify package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if node -e "process.exit(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).scripts?.verify ? 0 : 1)"; then
             pnpm run verify
