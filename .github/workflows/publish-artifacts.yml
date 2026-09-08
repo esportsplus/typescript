@@ -1,0 +1,119 @@
+name: Publish tested artifacts
+on:
+  workflow_call:
+    inputs:
+      build-run-id:
+        description: Completed build run containing release-revision and tested artifacts
+        type: string
+        required: true
+      source-workflow:
+        type: string
+        default: .github/workflows/build.yml
+      node-version:
+        type: string
+        default: ''
+      artifact-pattern:
+        type: string
+        default: dist-*
+      artifact-path:
+        type: string
+        default: dist
+    secrets:
+      NPM_TOKEN:
+        required: false
+concurrency:
+  group: shared-artifact-publish
+  cancel-in-progress: false
+permissions:
+  contents: read
+  actions: read
+jobs:
+  publish:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Validate source build
+        id: build
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          BUILD_RUN_ID: ${{ inputs.build-run-id }}
+          SOURCE_WORKFLOW: ${{ inputs.source-workflow }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        with:
+          script: |
+            const runId = Number(process.env.BUILD_RUN_ID);
+            if (!Number.isSafeInteger(runId) || runId <= 0) throw new Error('[artifact-publish] Invalid build run ID');
+            const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
+            if (run.path !== process.env.SOURCE_WORKFLOW || run.head_branch !== process.env.DEFAULT_BRANCH || run.head_repository?.full_name !== context.repo.owner + '/' + context.repo.repo || run.status !== 'completed' || run.conclusion !== 'success') {
+              throw new Error('[artifact-publish] Publishing requires a successful main-branch build run');
+            }
+            core.setOutput('run-id', String(runId));
+      - name: Download tested revision
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-revision
+          path: release
+          run-id: ${{ steps.build.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Read tested revision
+        id: revision
+        run: |
+          sha=$(cat release/release-sha.txt)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.revision.outputs.sha }}
+          persist-credentials: false
+      - name: Resolve package toolchain
+        id: toolchain
+        env:
+          NODE_OVERRIDE: ${{ inputs.node-version }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const node = process.env.NODE_OVERRIDE || pkg.engines?.node || '26.8.1';
+          const manager = pkg.packageManager;
+          if (manager && !/^pnpm@\d+\.\d+\.\d+(?:[-+].*)?$/.test(manager)) {
+            throw new Error('packageManager must declare an exact pnpm version');
+          }
+          if (/[\r\n]/.test(node)) throw new Error('Invalid Node requirement');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'node=' + node + '\nlegacy-pnpm=' + (manager ? '' : '11.10.0') + '\n');
+          if (!pkg.engines?.node && !process.env.NODE_OVERRIDE) console.log('::warning::No engines.node; using migration fallback 26.8.1');
+          if (!manager) console.log('::warning::No packageManager; using migration fallback pnpm 11.10.0');
+          NODE
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ steps.toolchain.outputs.node }}
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+        with:
+          run_install: false
+          version: ${{ steps.toolchain.outputs.legacy-pnpm }}
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Download tested binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: ${{ inputs.artifact-pattern }}
+          path: ${{ inputs.artifact-path }}
+          merge-multiple: true
+          run-id: ${{ steps.build.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Publish with npm trusted publishing
+        run: npm publish --tag latest
+        env:
+          # Ignore setup-node's token configuration so npm uses GitHub OIDC.
+          NPM_CONFIG_USERCONFIG: /dev/null
+          NODE_AUTH_TOKEN: ''

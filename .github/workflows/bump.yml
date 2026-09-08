@@ -3,6 +3,17 @@ on:
   push:
     branches: '**'
   workflow_call:
+    inputs:
+      release-revision:
+        description: Upload the post-bump SHA for a downstream native build
+        type: boolean
+        default: false
+      patch-keywords:
+        type: string
+        default: fix,chore
+      should-default-to-patch:
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -20,4 +31,14 @@ jobs:
       - uses: jpb06/bump-package@17ebfe09aceb4f746cc3dc23e82faa4a63284845 # reviewed latest
         with:
           minor-keywords: feat,minor,refactor
-          patch-keywords: fix,chore
+          patch-keywords: ${{ inputs.patch-keywords || 'fix,chore' }}
+          should-default-to-patch: ${{ inputs.should-default-to-patch || false }}
+      - name: Record release revision
+        if: inputs.release-revision
+        run: git rev-parse HEAD > release-sha.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: inputs.release-revision
+        with:
+          name: release-revision
+          path: release-sha.txt
+          if-no-files-found: error

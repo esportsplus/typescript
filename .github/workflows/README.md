@@ -106,6 +106,29 @@ Do not give a caller the same concurrency group as its called workflow.
 
 ## Upgrades
 
+### Native artifact packages
+
+Native packages can call bump.yml with `release-revision: true` to upload a
+`release-revision` artifact containing `release-sha.txt`. Optional
+`patch-keywords` and `should-default-to-patch` inputs preserve package versioning
+policies. A revision is emitted after successful bump processing, including
+no-op bumps, so downstream builds always receive a defined checkout.
+
+Keep platform compilation and extended native tests in the package repository.
+Its build workflow must check out that revision, test all targets, and upload
+the same revision artifact plus its binaries. Call publish-artifacts.yml with
+the successful `build-run-id`. It validates the source workflow path (default
+`.github/workflows/build.yml`), repository, default branch, and successful result
+before accepting artifacts. Its caller needs contents: read, actions: read, and
+id-token: write. Keep the caller filename publish.yml for npm trust.
+
+Artifact inputs default to pattern `dist-*` and destination `dist`; Node and
+pnpm use the same resolution and fallback as ordinary publishing. This publisher
+runs npm publish, including the package's prepublishOnly hook, against the exact
+recorded commit. Native packages should use that hook to build JS and validate
+the complete packaged binary inventory. It does not rerun a single-platform
+verify command that could overwrite the tested artifacts.
+
 Existing @main callers receive changes immediately once pushed. For controlled
 rollouts, validate a candidate commit with a caller first, then publish a
 dedicated workflow tag such as workflows-v1.0.0 and use that tag or its immutable
