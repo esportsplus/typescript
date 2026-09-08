@@ -8,8 +8,8 @@
         "tsc-alias": "./bin/tsc-alias"
     },
     "dependencies": {
-        "@esportsplus/cli-passthrough": "^0.0.15",
-        "@esportsplus/utilities": "^0.28.0",
+        "@esportsplus/cli-passthrough": "^0.0.18",
+        "@esportsplus/utilities": "^0.28.3",
         "@types/node": "^26.4.1",
         "tsc-alias": "^1.9.4",
         "typescript": "7.0.2",

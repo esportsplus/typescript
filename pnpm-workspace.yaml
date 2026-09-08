@@ -3,6 +3,8 @@
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
+  - '@esportsplus/cli-passthrough@0.0.18'
+  - '@esportsplus/utilities@0.28.3'
   - '@esportsplus/*'
   - '@types/node@26.4.1'
   - tsc-alias@1.9.4
