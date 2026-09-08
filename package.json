@@ -71,9 +71,11 @@
         "prepare": "pnpm build",
         "prepublishOnly": "pnpm build",
         "test": "vitest run",
-        "typecheck": "tsc"
+        "typecheck": "tsc",
+        "verify": "pnpm build && pnpm typecheck && pnpm test"
     },
     "type": "module",
     "types": "build/index.d.ts",
-    "version": "0.33.5"
+    "version": "0.33.5",
+    "packageManager": "pnpm@11.10.0"
 }

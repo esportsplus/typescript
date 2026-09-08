@@ -1,58 +1,92 @@
 name: dependabot automerge
-
 on:
   pull_request:
-    types: [opened, synchronize, labeled]
+    types: [opened, synchronize, labeled, reopened]
+  workflow_dispatch:
   workflow_call:
+    inputs:
+      node-version:
+        description: Override engines.node for an exact CI runtime
+        type: string
+        default: ''
     secrets:
       NPM_TOKEN:
-        required: true
-
+        description: Optional read token for private dependency installation
+        required: false
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: shared-verify-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 permissions:
-  contents: write
-  pull-requests: write
-
+  contents: read
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        name: Install pnpm
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Resolve package toolchain
+        id: toolchain
+        env:
+          NODE_OVERRIDE: ${{ inputs.node-version }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const node = process.env.NODE_OVERRIDE || pkg.engines?.node || '26.8.1';
+          const manager = pkg.packageManager;
+          if (manager && !/^pnpm@\d+\.\d+\.\d+(?:[-+].*)?$/.test(manager)) {
+            throw new Error('packageManager must declare an exact pnpm version');
+          }
+          if (/[\r\n]/.test(node)) throw new Error('Invalid Node requirement');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'node=' + node + '\nlegacy-pnpm=' + (manager ? '' : '11.10.0') + '\n');
+          if (!pkg.engines?.node && !process.env.NODE_OVERRIDE) console.log('::warning::No engines.node; using migration fallback 26.8.1');
+          if (!manager) console.log('::warning::No packageManager; using migration fallback pnpm 11.10.0');
+          NODE
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ steps.toolchain.outputs.node }}
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
         with:
           run_install: false
-          version: latest
-      - uses: actions/setup-node@v6
-        with:
-          cache: 'pnpm'
-          node-version: 'latest'
-          registry-url: 'https://registry.npmjs.org'
-      - run: pnpm i && pnpm build
+          version: ${{ steps.toolchain.outputs.legacy-pnpm }}
+      - name: Frozen dependency install
+        run: pnpm install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify package
+        run: |
+          if node -e "process.exit(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).scripts?.verify ? 0 : 1)"; then
+            pnpm run verify
+          else
+            echo "::warning::Define scripts.verify; using legacy build and test commands"
+            pnpm run build
+            pnpm --if-present run test
+          fi
 
   automerge:
     needs: build
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       pull-requests: write
       contents: write
-    runs-on: ubuntu-latest
-    if: ${{ github.actor == 'dependabot[bot]' && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: dependabot/fetch-metadata@v3
-        id: metadata
-        with:
-          alert-lookup: true
-          compat-lookup: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Approve and merge Dependabot PR
+      # Never check out or execute PR code in this write-permission job.
+      - name: Approve tested commit and enable auto-merge
         run: |
-          gh pr review --approve "$PR_URL"
-          gh pr merge --squash --auto "$PR_URL"
+          gh api --method POST "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" -f event=APPROVE -f commit_id="$PR_HEAD"
+          gh pr merge --repo "$REPOSITORY" --squash --auto --match-head-commit "$PR_HEAD" "$PR_NUMBER"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
