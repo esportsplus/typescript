@@ -83,6 +83,12 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     }
 
     for (let i = 0, n = fileNames.length; i < n; i++) {
+        // Coordinated plugins can replace the shared language-service snapshot.
+        // Fetch the live project before reading the next source file.
+        if (owned) {
+            project = languageService.open(tsconfig).project;
+        }
+
         let fileName = fileNames[i],
             sourceFile = project.program.getSourceFile(fileName);
 

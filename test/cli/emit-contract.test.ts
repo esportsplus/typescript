@@ -69,6 +69,29 @@ describe('emit contract', () => {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
+    it('refreshes the owned project between files when plugins advance its snapshot', async () => {
+        const tsconfigPath = createFixture(tmpDir, {
+            sources: {
+                'first.ts': 'export const first = 1;',
+                'second.ts': 'export const second = 2;'
+            },
+            tsconfig: {
+                compilerOptions: {
+                    module: 'esnext', moduleResolution: 'bundler',
+                    skipLibCheck: true, target: 'esnext', types: []
+                },
+                files: ['./src/first.ts', './src/second.ts']
+            }
+        });
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'),
+            'export default [{ transform: () => ({ prepend: ["export const injected = 1;"] }) }, { transform: () => ({}) }];');
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath, '--noEmit'];
+
+        await expect(build(tsconfigPath.replace(/\\/g, '/'), [{ transform: './plugin.mjs' }], undefined, true))
+            .rejects.toThrow('process.exit(0)');
+        expect(exits).toEqual([0]);
+    });
+
     it('composed .js.map resolves post-injection lines and untouched columns to real source', async () => {
         let outDir = path.join(tmpDir, 'out'),
             source = 'export const untouched = 123;\nexport const value = untouched + 1;\n',
