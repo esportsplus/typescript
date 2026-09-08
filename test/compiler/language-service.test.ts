@@ -151,10 +151,13 @@ describe('language-service', () => {
         });
 
         it('returns null when no tsconfig exists up the tree', () => {
-            let drive = ['Z', 'Y', 'X', 'W', 'V'].find((letter) => !fs.existsSync(letter + ':/'));
-
-            expect(drive).toBeDefined();
-            expect(languageService.findConfig(drive + ':/no-tsconfig/nested/deep')).toBeNull();
+            let directory = '/no-tsconfig/nested/deep';
+            if (process.platform === 'win32') {
+                const drive = ['Z', 'Y', 'X', 'W', 'V'].find((letter) => !fs.existsSync(letter + ':/'));
+                expect(drive).toBeDefined();
+                directory = drive + ':' + directory;
+            }
+            expect(languageService.findConfig(directory)).toBeNull();
         });
     });
 
