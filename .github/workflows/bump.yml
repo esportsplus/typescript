@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: jpb06/bump-package@17ebfe09aceb4f746cc3dc23e82faa4a63284845 # reviewed latest
+      - uses: jpb06/bump-package@9ac11999a9120098fc7ae13d12dcc129f4fcd30e # reviewed latest
         with:
           minor-keywords: feat,minor,refactor
           patch-keywords: ${{ inputs.patch-keywords || 'fix,chore' }}
