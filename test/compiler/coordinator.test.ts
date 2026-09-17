@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { ImportIntent, Plugin, ReplacementIntent, SharedContext, TransformContext } from '~/compiler/types';
-import { isCallExpression, isIdentifier } from 'typescript/unstable/ast/is';
+import { isCallExpression, isIdentifier, isImportDeclaration, isNamedImports } from 'typescript/unstable/ast/is';
 import type { Node, SourceFile } from 'typescript/unstable/ast';
 
 import coordinator from '~/compiler/coordinator';
@@ -852,6 +852,57 @@ describe('coordinator.transform', () => {
     // F-003: applyImports batching
 
     describe('applyImports batching', () => {
+        it('resolves barrel removals before reparsing and preserves unrelated bindings and source positions', () => {
+            let code = [
+                    "import fallback, { html, reactive, other, type Value } from './app';",
+                    "import * as app from './app';",
+                    "import { reactive as untouched } from './other';",
+                    'export const value = 1;'
+                ].join('\n'),
+                file = parse(code),
+                origins = new Map<Node, string>(),
+                project = makeProject(file);
+
+            for (let statement of file.statements) {
+                if (!isImportDeclaration(statement)) {
+                    continue;
+                }
+
+                let bindings = statement.importClause?.namedBindings;
+
+                if (bindings && isNamedImports(bindings)) {
+                    for (let element of bindings.elements) {
+                        if (element.name.text === 'html' || element.name.text === 'reactive') {
+                            origins.set(element.name, element.name.text === 'html' ? 'template-pkg' : 'reactivity-pkg');
+                        }
+                    }
+                }
+            }
+
+            project.checker = {
+                getSymbolAtLocation: (node: Node) => ({
+                    declarations: [{ path: `${root}/node_modules/${origins.get(node) ?? 'other-pkg'}/index.d.ts` }]
+                })
+            } as unknown as Checker;
+
+            let plugin = makePlugin(() => ({
+                    imports: [
+                        { namespace: 'template', package: 'template-pkg', remove: ['html'] },
+                        { namespace: 'reactivity', package: 'reactivity-pkg', remove: ['reactive'] }
+                    ],
+                    prepend: ['const generated = true;']
+                })),
+                result = coordinator.transform([plugin], code, file, project, root, new Map());
+
+            expect(result.code).toContain("import fallback, { other, type Value } from './app';");
+            expect(result.code).toContain("import * as app from './app';");
+            expect(result.code).toContain("import { reactive as untouched } from './other';");
+            expect(result.code).toContain("import * as template from 'template-pkg';");
+            expect(result.code).toContain("import * as reactivity from 'reactivity-pkg';");
+            expect(result.code).not.toContain('{ html');
+            expect(sourcemap.resolveOffset(result.map, result.code.indexOf('export const value'))).toBe(code.indexOf('export const value'));
+        });
+
         it('batches multiple intents for the same package into one modify call', () => {
             let code = 'let x = 1;',
                 file = parse(code),

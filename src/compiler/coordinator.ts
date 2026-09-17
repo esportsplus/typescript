@@ -2,7 +2,7 @@ import type { SourceFile } from 'typescript/unstable/ast';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
 import type { ModifyOptions } from './imports';
-import { isImportDeclaration } from 'typescript/unstable/ast/is';
+import { isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/unstable/ast/is';
 
 import type { OffsetAnchor, PositionMapping } from './sourcemap';
 
@@ -228,7 +228,7 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
         return code;
     }
 
-    replacements.sort((a, b) => b.start - a.start);
+    replacements.sort((a, b) => b.start - a.start || b.end - a.end);
 
     let parts: string[] = [],
         pos = code.length;
@@ -249,6 +249,48 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
     }
 
     return parts.reverse().join('');
+}
+
+function resolveImports(file: SourceFile, checker: Checker, intents: ImportIntent[]): ImportIntent[] {
+    let resolved = [...intents];
+
+    for (let i = 0, n = intents.length; i < n; i++) {
+        let intent = intents[i];
+
+        if (!intent.remove?.length) {
+            continue;
+        }
+
+        let remove = new Set(intent.remove);
+
+        for (let statement of file.statements) {
+            if (!isImportDeclaration(statement) || !isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text === intent.package) {
+                continue;
+            }
+
+            let bindings = statement.importClause?.namedBindings;
+
+            if (!bindings || !isNamedImports(bindings)) {
+                continue;
+            }
+
+            let names: string[] = [];
+
+            for (let element of bindings.elements) {
+                let name = element.name.text;
+
+                if ((remove.has(name) || remove.has(element.propertyName?.text ?? name)) && imports.includes(checker, element.name, intent.package)) {
+                    names.push(name);
+                }
+            }
+
+            if (names.length > 0) {
+                resolved.push({ package: statement.moduleSpecifier.text, remove: names });
+            }
+        }
+    }
+
+    return resolved;
 }
 
 
@@ -290,6 +332,7 @@ const transform = (
                 shared,
                 sourceFile: currentFile
             }),
+            importIntents = imports?.length ? resolveImports(currentFile, currentProject.checker, imports) : [],
             pluginChanged = false;
 
         if (replacements?.length) {
@@ -320,12 +363,12 @@ const transform = (
             pluginChanged = true;
         }
 
-        if (imports?.length) {
+        if (importIntents.length > 0) {
             if (pluginChanged) {
                 currentFile = languageService.parse(fileName, currentCode);
             }
 
-            let result = applyImports(currentCode, currentFile, imports);
+            let result = applyImports(currentCode, currentFile, importIntents);
 
             for (let j = 0, m = result.batches.length; j < m; j++) {
                 generations.push(sourcemap.buildGeneration(result.batches[j].before, result.batches[j].edits));

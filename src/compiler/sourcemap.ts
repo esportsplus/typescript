@@ -276,7 +276,7 @@ const buildGeneration = (beforeText: string, edits: Edit[]): OffsetAnchor[] => {
     let afterCursor = 0,
         anchors: OffsetAnchor[] = [],
         beforeCursor = 0,
-        ordered = [...edits].sort((a, b) => a.start - b.start);
+        ordered = [...edits].sort((a, b) => a.start - b.start || a.end - b.end);
 
     for (let i = 0, n = ordered.length; i < n; i++) {
         let edit = ordered[i];
