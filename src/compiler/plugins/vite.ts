@@ -1,6 +1,7 @@
 import type { Plugin, SharedContext } from '../types';
 import type { SourceMapV3 } from '../sourcemap';
 import type { ResolvedConfig } from 'vite';
+import { dirname } from 'node:path';
 
 import coordinator from '../coordinator';
 import languageService from '../language-service';
@@ -46,7 +47,9 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
                 contexts.delete(root || '');
             },
             configResolved(config: unknown) {
-                root ??= (config as ResolvedConfig).root;
+                let resolved = config as ResolvedConfig;
+
+                root ??= resolved.configFile ? dirname(resolved.configFile) : resolved.root;
                 tsconfig = languageService.findConfig(root);
             },
             enforce: 'pre',

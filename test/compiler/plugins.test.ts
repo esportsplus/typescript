@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolve } from 'node:path';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { Plugin } from '~/compiler/types';
 import type { SourceFile } from 'typescript/unstable/ast';
@@ -146,6 +147,33 @@ describe('plugin.vite', () => {
         plugin.transform('let x = 1;', 'src/app.ts');
 
         expect(languageService.update).toHaveBeenCalledWith('/my/root/tsconfig.json', expect.any(String), expect.any(String));
+    });
+
+    it.each([false, true])('uses the selected tsconfig for transforms and cleanup (explicit root: %s)', (explicit) => {
+        let app = resolve('/project'),
+            docs = resolve(app, 'docs'),
+            selected = explicit ? app : docs,
+            configPath = resolve(selected, 'tsconfig.json'),
+            plugin = vite({ name: 'test-pkg', plugins: [] })(explicit ? { root: app } : {});
+
+        vi.mocked(languageService.findConfig).mockReturnValueOnce(configPath);
+        plugin.configResolved({ root: app, configFile: resolve(docs, 'custom.vite.config.ts') });
+        plugin.transform('let x = 1;', resolve(docs, 'src/app.ts'));
+        plugin.watchChange(resolve(docs, 'src/app.ts'));
+        plugin.closeBundle();
+
+        expect(languageService.findConfig).toHaveBeenCalledWith(selected);
+        expect(languageService.update).toHaveBeenCalledWith(configPath, expect.any(String), 'let x = 1;');
+        expect(languageService.invalidate).toHaveBeenCalledWith(configPath, expect.any(String));
+        expect(languageService.dispose).toHaveBeenCalledWith(configPath);
+    });
+
+    it('uses the app root when config loading is disabled', () => {
+        let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+        plugin.configResolved({ root: '/project', configFile: false });
+
+        expect(languageService.findConfig).toHaveBeenCalledWith('/project');
     });
 
     it('catches coordinator.transform() error and returns null', () => {
