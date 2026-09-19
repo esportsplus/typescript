@@ -72,6 +72,6 @@
     },
     "type": "module",
     "types": "build/index.d.ts",
-    "version": "0.35.0",
+    "version": "0.35.1",
     "packageManager": "pnpm@11.10.0"
 }
