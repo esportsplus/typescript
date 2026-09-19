@@ -1,3 +1,5 @@
+import { lineOfPosition } from './position';
+
 type Edit = {
     end: number;
     newText: string;
@@ -125,21 +127,7 @@ function lineStarts(text: string): number[] {
 }
 
 function offsetToLineCol(starts: number[], offset: number): { column: number; line: number } {
-    let hi = starts.length - 1,
-        line = 0,
-        lo = 0;
-
-    while (lo <= hi) {
-        let mid = (lo + hi) >> 1;
-
-        if (starts[mid] <= offset) {
-            line = mid;
-            lo = mid + 1;
-        }
-        else {
-            hi = mid - 1;
-        }
-    }
+    let line = lineOfPosition(starts, offset);
 
     return { column: offset - starts[line], line };
 }

@@ -53,7 +53,7 @@ let cache = new Map<string, Entry>(),
     scratchEntry: ScratchEntry | null = null;
 
 
-function advance(entry: Entry, changed: string[]): void {
+function advance(entry: Entry | ScratchEntry, changed: string[]): void {
     let snapshot = entry.api.updateSnapshot({ fileChanges: { changed } });
 
     if (!entry.snapshot.isDisposed()) {
@@ -61,7 +61,7 @@ function advance(entry: Entry, changed: string[]): void {
     }
 
     entry.api.clearSourceFileCache();
-    entry.project = resolveProject(snapshot, entry.configFileName);
+    entry.project = resolveProject(snapshot, 'configFileName' in entry ? entry.configFileName : entry.config);
     entry.snapshot = snapshot;
 }
 
@@ -77,15 +77,7 @@ function advanceScratch(id: string, content: string): ScratchEntry {
 
     entry.contents.set(id, content);
 
-    let snapshot = entry.api.updateSnapshot({ fileChanges: { changed: [id] } });
-
-    if (!entry.snapshot.isDisposed()) {
-        entry.snapshot.dispose();
-    }
-
-    entry.api.clearSourceFileCache();
-    entry.project = resolveProject(snapshot, entry.config);
-    entry.snapshot = snapshot;
+    advance(entry, [id]);
 
     return entry;
 }
@@ -122,15 +114,7 @@ function createScratch(file: string): ScratchEntry {
     return { api, config, contents, file, project, snapshot };
 }
 
-function disposeEntry(entry: Entry): void {
-    if (!entry.snapshot.isDisposed()) {
-        entry.snapshot.dispose();
-    }
-
-    entry.api.close();
-}
-
-function disposeScratch(entry: ScratchEntry): void {
+function disposeEntry(entry: Pick<Entry, 'api' | 'snapshot'>): void {
     if (!entry.snapshot.isDisposed()) {
         entry.snapshot.dispose();
     }
@@ -171,13 +155,7 @@ function open(configPath: string, overlay?: FileSystem): OpenProject {
 
     return {
         api,
-        dispose: () => {
-            if (!snapshot.isDisposed()) {
-                snapshot.dispose();
-            }
-
-            api.close();
-        },
+        dispose: () => disposeEntry({ api, snapshot }),
         project,
         snapshot,
     };
@@ -233,11 +211,7 @@ function overlayFileSystem(contents: Map<string, string>): FileSystem {
 }
 
 function recreate(entry: Entry): void {
-    if (!entry.snapshot.isDisposed()) {
-        entry.snapshot.dispose();
-    }
-
-    entry.api.close();
+    disposeEntry(entry);
     entry.api = new API({ cwd: entry.root, fs: overlayFileSystem(entry.contents) });
     entry.snapshot = entry.api.updateSnapshot({ openProjects: [entry.configFileName] });
     entry.project = resolveProject(entry.snapshot, entry.configFileName);
@@ -248,11 +222,7 @@ function reseedScratch(entry: ScratchEntry, file: string): void {
     entry.contents.delete(entry.file);
     entry.contents.set(entry.config, scratchConfig(file));
 
-    if (!entry.snapshot.isDisposed()) {
-        entry.snapshot.dispose();
-    }
-
-    entry.api.close();
+    disposeEntry(entry);
     entry.api = new API({ cwd: process.cwd(), fs: overlayFileSystem(entry.contents) });
     entry.file = file;
     entry.snapshot = entry.api.updateSnapshot({ openProjects: [entry.config] });
@@ -302,7 +272,7 @@ const dispose = (root?: string): void => {
         cache.clear();
 
         if (scratchEntry) {
-            disposeScratch(scratchEntry);
+            disposeEntry(scratchEntry);
             scratchEntry = null;
         }
 

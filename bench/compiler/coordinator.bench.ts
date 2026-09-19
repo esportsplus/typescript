@@ -1,4 +1,4 @@
-import { afterAll, bench, describe } from 'vitest';
+import { afterAll, test, describe } from 'vitest';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { Plugin, TransformContext } from '~/compiler/types';
 import type { SourceFile } from 'typescript/unstable/ast';
@@ -53,71 +53,79 @@ describe('applyImports batching', () => {
         languageService.dispose();
     });
 
-    bench('10 intents, 1 package', () => {
-        let plugin = makePlugin(() => ({
-            imports: [
-                { add: ['a'], package: '@pkg/a' },
-                { add: ['b'], package: '@pkg/a' },
-                { add: ['c'], package: '@pkg/a' },
-                { add: ['d'], package: '@pkg/a' },
-                { add: ['e'], package: '@pkg/a' },
-                { add: ['f'], package: '@pkg/a' },
-                { add: ['g'], package: '@pkg/a' },
-                { add: ['h'], package: '@pkg/a' },
-                { add: ['i'], package: '@pkg/a' },
-                { add: ['j'], package: '@pkg/a' }
-            ]
-        }));
+    test('10 intents, 1 package', async ({ bench }) => {
+        await bench('10 intents, 1 package', () => {
+            let plugin = makePlugin(() => ({
+                imports: [
+                    { add: ['a'], package: '@pkg/a' },
+                    { add: ['b'], package: '@pkg/a' },
+                    { add: ['c'], package: '@pkg/a' },
+                    { add: ['d'], package: '@pkg/a' },
+                    { add: ['e'], package: '@pkg/a' },
+                    { add: ['f'], package: '@pkg/a' },
+                    { add: ['g'], package: '@pkg/a' },
+                    { add: ['h'], package: '@pkg/a' },
+                    { add: ['i'], package: '@pkg/a' },
+                    { add: ['j'], package: '@pkg/a' }
+                ]
+            }));
 
-        coordinator.transform([plugin], code, file, project, '/root', new Map());
+            coordinator.transform([plugin], code, file, project, '/root', new Map());
+        }).run();
     });
 
-    bench('10 intents, 3 packages', () => {
-        let plugin = makePlugin(() => ({
-            imports: [
-                { add: ['a'], package: '@pkg/a' },
-                { add: ['b'], package: '@pkg/a' },
-                { add: ['c'], package: '@pkg/a' },
-                { add: ['d'], package: '@pkg/b' },
-                { add: ['e'], package: '@pkg/b' },
-                { add: ['f'], package: '@pkg/b' },
-                { add: ['g'], package: '@pkg/b' },
-                { add: ['h'], package: '@pkg/c' },
-                { add: ['i'], package: '@pkg/c' },
-                { add: ['j'], package: '@pkg/c' }
-            ]
-        }));
+    test('10 intents, 3 packages', async ({ bench }) => {
+        await bench('10 intents, 3 packages', () => {
+            let plugin = makePlugin(() => ({
+                imports: [
+                    { add: ['a'], package: '@pkg/a' },
+                    { add: ['b'], package: '@pkg/a' },
+                    { add: ['c'], package: '@pkg/a' },
+                    { add: ['d'], package: '@pkg/b' },
+                    { add: ['e'], package: '@pkg/b' },
+                    { add: ['f'], package: '@pkg/b' },
+                    { add: ['g'], package: '@pkg/b' },
+                    { add: ['h'], package: '@pkg/c' },
+                    { add: ['i'], package: '@pkg/c' },
+                    { add: ['j'], package: '@pkg/c' }
+                ]
+            }));
 
-        coordinator.transform([plugin], code, file, project, '/root', new Map());
+            coordinator.transform([plugin], code, file, project, '/root', new Map());
+        }).run();
     });
 
-    bench('10 intents, 10 packages', () => {
-        let plugin = makePlugin(() => ({
-            imports: [
-                { add: ['a'], package: '@pkg/a' },
-                { add: ['b'], package: '@pkg/b' },
-                { add: ['c'], package: '@pkg/c' },
-                { add: ['d'], package: '@pkg/d' },
-                { add: ['e'], package: '@pkg/e' },
-                { add: ['f'], package: '@pkg/f' },
-                { add: ['g'], package: '@pkg/g' },
-                { add: ['h'], package: '@pkg/h' },
-                { add: ['i'], package: '@pkg/i' },
-                { add: ['j'], package: '@pkg/j' }
-            ]
-        }));
+    test('10 intents, 10 packages', async ({ bench }) => {
+        await bench('10 intents, 10 packages', () => {
+            let plugin = makePlugin(() => ({
+                imports: [
+                    { add: ['a'], package: '@pkg/a' },
+                    { add: ['b'], package: '@pkg/b' },
+                    { add: ['c'], package: '@pkg/c' },
+                    { add: ['d'], package: '@pkg/d' },
+                    { add: ['e'], package: '@pkg/e' },
+                    { add: ['f'], package: '@pkg/f' },
+                    { add: ['g'], package: '@pkg/g' },
+                    { add: ['h'], package: '@pkg/h' },
+                    { add: ['i'], package: '@pkg/i' },
+                    { add: ['j'], package: '@pkg/j' }
+                ]
+            }));
 
-        coordinator.transform([plugin], code, file, project, '/root', new Map());
+            coordinator.transform([plugin], code, file, project, '/root', new Map());
+        }).run();
     });
 });
 
 describe('toSourceMapV3', () => {
-    bench('2,000 transformed lines', () => {
-        toSourceMapV3(
-            { generations: [sourceMapGeneration] },
-            sourceMapTransformed,
-            sourceMapOriginal,
-            'fixture.ts',
-        );
+    test('2,000 transformed lines', async ({ bench }) => {
+        await bench('2,000 transformed lines', () => {
+            toSourceMapV3(
+                { generations: [sourceMapGeneration] },
+                sourceMapTransformed,
+                sourceMapOriginal,
+                'fixture.ts',
+            );
+        }).run();
     });
 });

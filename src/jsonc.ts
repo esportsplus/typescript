@@ -3,7 +3,8 @@ const stripJsonc = (text: string): string => {
         inBlockComment = false,
         inLineComment = false,
         inString = false,
-        stripped = '';
+        stripped = '',
+        commas: number[] = [];
 
     for (let i = 0, n = text.length; i < n; i++) {
         let char = text[i],
@@ -64,56 +65,24 @@ const stripJsonc = (text: string): string => {
             continue;
         }
 
+        if (char === ',') {
+            commas.push(stripped.length);
+        }
         stripped += char;
     }
 
-    escaped = false;
-    inString = false;
-
-    let result = '';
-
-    for (let i = 0, n = stripped.length; i < n; i++) {
-        let char = stripped[i];
-
-        if (inString) {
-            result += char;
-
-            if (escaped) {
-                escaped = false;
-            }
-            else if (char === '\\') {
-                escaped = true;
-            }
-            else if (char === '"') {
-                inString = false;
-            }
-
-            continue;
+    let result = '', start = 0;
+    for (const comma of commas) {
+        let next = comma + 1;
+        while (next < stripped.length && /\s/.test(stripped[next]!)) {
+            next++;
         }
-
-        if (char === '"') {
-            inString = true;
-            result += char;
-
-            continue;
+        if (stripped[next] === ']' || stripped[next] === '}') {
+            result += stripped.slice(start, comma);
+            start = comma + 1;
         }
-
-        if (char === ',') {
-            let j = i + 1;
-
-            while (j < n && /\s/.test(stripped[j]!)) {
-                j++;
-            }
-
-            if (stripped[j] === ']' || stripped[j] === '}') {
-                continue;
-            }
-        }
-
-        result += char;
     }
-
-    return result;
+    return result + stripped.slice(start);
 };
 
 export { stripJsonc };

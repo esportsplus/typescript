@@ -108,34 +108,13 @@ function refsSym(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean {
 // object literal or other argument (`this.pending.set(id, { timer })`), which the
 // identifier-only `refsSym` cannot see.
 function refsSymDeep(env: Env, node: ts.Node, sym: ts.Symbol): boolean {
-    let found = false;
-
-    const rec = (n: ts.Node): void => {
-        if (found) {
-            return;
-        }
-
-        // A shorthand property (`{ timer }`) resolves to the property symbol via
-        // getSymbolAtLocation, not the value binding — ask for the value directly.
+    return containsMatch(node, (n) => {
+        // Shorthand properties resolve to the value binding, not the property.
         if (ts.isShorthandPropertyAssignment(n)) {
-            if (env.checker.getShorthandAssignmentValueSymbol(n) === sym) {
-                found = true;
-            }
-
-            return;
+            return env.checker.getShorthandAssignmentValueSymbol(n) === sym;
         }
-
-        if (ts.isIdentifier(n) && env.checker.getSymbolAtLocation(n) === sym) {
-            found = true;
-            return;
-        }
-
-        ts.forEachChild(n, rec);
-    };
-
-    rec(node);
-
-    return found;
+        return ts.isIdentifier(n) && env.checker.getSymbolAtLocation(n) === sym;
+    }, true, (n) => !ts.isShorthandPropertyAssignment(n));
 }
 
 // A receiver whose access chain bottoms out at `this` — a container living on the
@@ -158,6 +137,7 @@ function containsMatch(
     node: ts.Node,
     pred: (n: ts.Node) => boolean,
     descendIntoFunctions = false,
+    descend: (n: ts.Node) => boolean = () => true,
 ): boolean {
     let found = false;
 
@@ -175,7 +155,9 @@ function containsMatch(
             return;
         }
 
-        ts.forEachChild(n, rec);
+        if (descend(n)) {
+            ts.forEachChild(n, rec);
+        }
     };
 
     rec(node);

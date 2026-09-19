@@ -1,3 +1,4 @@
+import { lineOfPosition } from '~/compiler/position';
 import { readFileSync } from 'fs';
 import { computeLineStarts } from 'typescript/unstable/ast/scanner';
 import { type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
@@ -90,24 +91,6 @@ function formatOne(diagnostic: Diagnostic, root: string, sources: Map<string, So
         header = `${location}:${ANSI_YELLOW}${line + 1}${ANSI_RESET}:${ANSI_YELLOW}${character + 1}${ANSI_RESET} - ${color}${category}${ANSI_RESET} ${code}: ${message}`;
 
     return `${header}\n\n${source}\n${underline}`;
-}
-
-function lineOfPosition(lineStarts: readonly number[], position: number): number {
-    let high = lineStarts.length - 1,
-        low = 0;
-
-    while (low <= high) {
-        let middle = (low + high) >> 1;
-
-        if (lineStarts[middle] <= position) {
-            low = middle + 1;
-        }
-        else {
-            high = middle - 1;
-        }
-    }
-
-    return high < 0 ? 0 : high;
 }
 
 function readSourceInfo(fileName: string): SourceInfo {

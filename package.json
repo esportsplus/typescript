@@ -8,17 +8,16 @@
         "tsc-alias": "./bin/tsc-alias"
     },
     "dependencies": {
-        "@esportsplus/cli-passthrough": "^0.0.18",
-        "@esportsplus/utilities": "^0.28.3",
-        "@types/node": "^26.4.1",
-        "tsc-alias": "^1.9.4",
+        "@esportsplus/cli-passthrough": "^0.0.19",
+        "@types/node": "^26.6.2",
+        "tsc-alias": "^1.9.5",
         "typescript": "7.0.2",
         "vscode-languageserver": "^10.1.1",
         "vscode-languageserver-textdocument": "^1.0.14"
     },
     "devDependencies": {
-        "vite": "^8.2.2",
-        "vitest": "^4.1.11"
+        "vite": "^8.3.0",
+        "vitest": "^5.0.1"
     },
     "exports": {
         "./package.json": "./package.json",
@@ -54,9 +53,6 @@
     ],
     "main": "build/index.js",
     "name": "@esportsplus/typescript",
-    "overrides": {
-        "postcss": "8.5.15"
-    },
     "private": false,
     "repository": {
         "type": "git",
