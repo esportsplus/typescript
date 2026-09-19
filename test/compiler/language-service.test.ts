@@ -1,7 +1,8 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SyntaxKind } from 'typescript/unstable/ast';
 
 import fs from 'fs';
+import path from 'path';
 import languageService from '~/compiler/language-service';
 
 
@@ -15,6 +16,64 @@ afterAll(() => {
 
 
 describe('language-service', () => {
+    describe.each(['native', 'relative'])('%s config paths', (variant) => {
+        let directory: string,
+            configPath: string,
+            canonicalConfig: string,
+            fileName: string;
+
+        beforeEach(() => {
+            directory = fs.mkdtempSync(path.join(root, 'test/.language-service-'));
+            canonicalConfig = directory.replace(/\\/g, '/') + '/tsconfig.json';
+            configPath = variant === 'native'
+                ? path.normalize(canonicalConfig)
+                : path.relative(process.cwd(), canonicalConfig);
+            fileName = directory.replace(/\\/g, '/') + '/entry.ts';
+            fs.writeFileSync(canonicalConfig, JSON.stringify({
+                compilerOptions: { noLib: true, types: [] },
+                files: ['entry.ts']
+            }));
+            fs.writeFileSync(fileName, 'export const value = 1;');
+        });
+
+        afterEach(() => {
+            languageService.dispose();
+            if (path.dirname(path.resolve(directory)) !== path.resolve(root, 'test')) {
+                throw new Error('Fixture escaped the test directory');
+            }
+            fs.rmSync(directory, { recursive: true, force: true });
+        });
+
+        it('shares updates with the project opened through its canonical path', () => {
+            languageService.open(canonicalConfig);
+            languageService.update(configPath, fileName, 'export const value = 2;');
+            expect(languageService.open(canonicalConfig).project.program.getSourceFile(fileName)?.text)
+                .toBe('export const value = 2;');
+
+            languageService.updateMany(configPath, new Map([[fileName, 'export const value = 3;']]));
+            expect(languageService.open(configPath).project.program.getSourceFile(fileName)?.text)
+                .toBe('export const value = 3;');
+        });
+
+        it('invalidates the existing overlay so the next snapshot reads disk', () => {
+            languageService.update(canonicalConfig, fileName, 'export const value = 2;');
+            languageService.invalidate(configPath, fileName);
+            let { program } = languageService.updateMany(canonicalConfig, new Map());
+
+            expect(program.getSourceFile(fileName)?.text).toBe('export const value = 1;');
+        });
+
+        it('disposes the existing project and drops its overlay', () => {
+            languageService.update(canonicalConfig, fileName, 'export const value = 2;');
+            let opened = languageService.open(canonicalConfig);
+
+            languageService.dispose(configPath);
+            expect(opened.snapshot.isDisposed()).toBe(true);
+            expect(languageService.open(canonicalConfig).project.program.getSourceFile(fileName)?.text)
+                .toBe('export const value = 1;');
+        });
+    });
+
     describe('update', () => {
         it('returns a checker and program when given valid root + fileName + content', () => {
             let fileName = root + '/src/test-virtual-update.ts',

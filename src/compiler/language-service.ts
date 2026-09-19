@@ -123,6 +123,9 @@ function disposeEntry(entry: Pick<Entry, 'api' | 'snapshot'>): void {
 }
 
 function getEntry(configFileName: string): Entry {
+    // Every caller must address the same project, including relative and Windows paths.
+    configFileName = normalize(path.resolve(configFileName));
+
     let entry = cache.get(configFileName);
 
     if (!entry) {
@@ -279,6 +282,8 @@ const dispose = (root?: string): void => {
         return;
     }
 
+    root = normalize(path.resolve(root));
+
     let entry = cache.get(root);
 
     if (entry) {
@@ -308,6 +313,8 @@ const findConfig = (startDir: string): string | null => {
 };
 
 const invalidate = (configFileName: string, fileName: string): void => {
+    configFileName = normalize(path.resolve(configFileName));
+
     let entry = cache.get(configFileName);
 
     if (!entry) {
