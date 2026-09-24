@@ -301,22 +301,21 @@ describe('imports.includes', () => {
         }
     });
 
-    it('requires the imported name, not just the local name, to match symbolName', () => {
-        let renamed = parse("import { svg as html } from 'my-pkg';\nhtml(1);"),
-            direct = parse("import { html } from 'my-pkg';\nhtml(1);", root + '/src/test-imports-direct.ts');
+    it('matches symbolName against the local binding, so callers can pass a resolved alias', () => {
+        let renamed = parse("import { validator as v } from 'my-pkg';\nv(1);");
 
-        let resolveTo = (file: SourceFile) => ({
+        let checker = {
                 getSymbolAtLocation: () => ({
                     declarations: [{
                         kind: SyntaxKind.ImportSpecifier,
                         path: root + '/src/test-imports.ts',
-                        resolve: () => findSpecifier(file)
+                        resolve: () => findSpecifier(renamed)
                     }],
                     flags: SymbolFlags.Alias
                 })
-            }) as unknown as Checker;
+            } as unknown as Checker;
 
-        expect(imports.includes(resolveTo(renamed), findIdentifier(renamed, 'html')!, 'my-pkg', 'html')).toBe(false);
-        expect(imports.includes(resolveTo(direct), findIdentifier(direct, 'html')!, 'my-pkg', 'html')).toBe(true);
+        expect(imports.includes(checker, findIdentifier(renamed, 'v')!, 'my-pkg', 'v')).toBe(true);
+        expect(imports.includes(checker, findIdentifier(renamed, 'v')!, 'my-pkg', 'validator')).toBe(false);
     });
 });

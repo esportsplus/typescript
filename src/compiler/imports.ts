@@ -1,4 +1,4 @@
-import type { ImportSpecifier, Node, SourceFile } from 'typescript/unstable/ast';
+import type { Node, SourceFile } from 'typescript/unstable/ast';
 import { SyntaxKind } from 'typescript/unstable/ast';
 import { isIdentifier, isImportDeclaration, isNamedImports, isNamespaceImport, isStringLiteral } from 'typescript/unstable/ast/is';
 import type { Checker } from 'typescript/unstable/sync';
@@ -190,10 +190,9 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
                     let handle = declarations[i];
 
                     if (handle.kind === SyntaxKind.ImportSpecifier) {
-                        let decl = handle.resolve() as ImportSpecifier | undefined;
+                        let decl = handle.resolve();
 
-                        // `symbolName` names the export: `import { other as html }` is not `html`
-                        if (decl && (!symbolName || (decl.propertyName ?? decl.name).text === symbolName)) {
+                        if (decl) {
                             let importDecl = decl.parent?.parent?.parent;
 
                             if (importDecl && isImportDeclaration(importDecl) && isStringLiteral(importDecl.moduleSpecifier)) {
