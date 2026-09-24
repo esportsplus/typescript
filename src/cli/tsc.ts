@@ -114,13 +114,16 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         ? project.program
         : languageService.updateMany(tsconfig, new Map([...transformedFiles].map(([fileName, entry]) => [fileName, entry.code]))).program;
 
+    // Declaration diagnostics are gathered here too, so the emit pass below can skip checking
+    // (--noCheck) without losing any error it would have reported
     let diagnostics = [
         ...program.getConfigFileParsingDiagnostics(),
         ...program.getSyntacticDiagnostics(),
         ...program.getBindDiagnostics(),
         ...program.getSemanticDiagnostics(),
         ...program.getGlobalDiagnostics(),
-        ...program.getProgramDiagnostics()
+        ...program.getProgramDiagnostics(),
+        ...(options.declaration === true || options.composite === true ? program.getDeclarationDiagnostics() : [])
     ];
 
     if (diagnostics.length > 0) {
@@ -235,7 +238,7 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
     let tscJs = path.join(path.dirname(require.resolve('typescript/package.json')), 'lib', 'tsc.js');
 
     if (transformedFiles.size === 0) {
-        return spawnTsc(tscJs, ['-p', tsconfig]);
+        return spawnTsc(tscJs, ['-p', tsconfig, '--noCheck']);
     }
 
     let mirror = fs.mkdtempSync(path.join(root, '.esportsplus-tsc-'));
@@ -295,7 +298,7 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
             include: []
         }));
 
-        let code = await spawnTsc(tscJs, ['-p', path.join(mirror, 'tsconfig.json')]);
+        let code = await spawnTsc(tscJs, ['-p', path.join(mirror, 'tsconfig.json'), '--noCheck']);
 
         if (code === 0) {
             if (fs.existsSync(mirrorOut)) {

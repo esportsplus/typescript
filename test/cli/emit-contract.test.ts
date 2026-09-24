@@ -220,6 +220,30 @@ describe('emit contract', () => {
         expect(fs.readFileSync(path.join(buildDir, 'util.js'), 'utf8')).toContain('__TRANSFORMED__');
     });
 
+    // Emit runs with --noCheck, so an error only declaration emit can find must be gathered before it
+    it('a declaration-emit error fails the build before anything is emitted', async () => {
+        let buildDir = path.join(tmpDir, 'build'),
+            errors: string[] = [],
+            tsconfigPath = createFixture(tmpDir, {
+                sources: {
+                    // TS4094: only declaration emit rejects a private member on an exported class expression
+                    'index.ts': 'export const Value = class {\n    private secret = 1;\n};\n'
+                }
+            });
+
+        vi.spyOn(console, 'error').mockImplementation((message: unknown) => {
+            errors.push(String(message));
+        });
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), MARKER_PLUGIN);
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toEqual([1]);
+        expect(errors.join('\n')).toContain('src/index.ts');
+        expect(fs.existsSync(buildDir)).toBe(false);
+    });
+
     it('alias fixture resolves ~/ specifiers for author-written and plugin-injected imports alike', async () => {
         let buildDir = path.join(tmpDir, 'build'),
             tsconfigPath = createFixture(tmpDir, {
