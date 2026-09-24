@@ -198,6 +198,42 @@ describe('language-service', () => {
             expect(second.kind).toBe(SyntaxKind.FunctionDeclaration);
             expect(second.getStart(sourceFile)).toBe(content.indexOf('function'));
         });
+
+        it('keeps each file current while alternating between files', () => {
+            let a = root + '/src/test-virtual-alternate-a.ts',
+                b = root + '/src/test-virtual-alternate-b.ts';
+
+            for (let i = 0; i < 3; i++) {
+                expect(languageService.parse(a, `const a = ${i};`).text).toBe(`const a = ${i};`);
+                expect(languageService.parse(b, `const b = ${i};`).text).toBe(`const b = ${i};`);
+            }
+        });
+    });
+
+    describe('scratch', () => {
+        function declared(result: ReturnType<typeof languageService.scratch>): string {
+            let statement = result.sourceFile.statements[0] as unknown as { declarationList: { declarations: { name: never }[] } };
+
+            return result.checker.typeToString(result.checker.getTypeAtLocation(statement.declarationList.declarations[0].name)!);
+        }
+
+        it('answers type queries for a file after switching away from another', () => {
+            languageService.scratch(root + '/src/test-virtual-scratch-a.ts', 'export const a: string = "a";');
+
+            expect(declared(languageService.scratch(root + '/src/test-virtual-scratch-b.ts', 'export const b = 42 as const;'))).toBe('42');
+        });
+
+        it('sees new content when returning to an earlier file', () => {
+            let a = root + '/src/test-virtual-scratch-return-a.ts';
+
+            languageService.scratch(a, 'export const value = 1;');
+            languageService.scratch(root + '/src/test-virtual-scratch-return-b.ts', 'export const other = 2;');
+
+            let result = languageService.scratch(a, 'export const value = "changed" as const;');
+
+            expect(result.sourceFile.text).toBe('export const value = "changed" as const;');
+            expect(declared(result)).toBe('"changed"');
+        });
     });
 
     describe('findConfig', () => {

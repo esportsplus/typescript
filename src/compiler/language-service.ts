@@ -22,6 +22,7 @@ type ScratchEntry = {
     api: API;
     config: string;
     contents: Map<string, string>;
+    count: number;
     file: string;
     project: Project;
     snapshot: Snapshot;
@@ -67,17 +68,19 @@ function advance(entry: Entry | ScratchEntry, changed: string[]): void {
 
 function advanceScratch(id: string, content: string): ScratchEntry {
     if (!scratchEntry) {
-        scratchEntry = createScratch(id);
-    }
-    else if (scratchEntry.file !== id) {
-        reseedScratch(scratchEntry, id);
+        return scratchEntry = createScratch(id, content);
     }
 
     let entry = scratchEntry;
 
     entry.contents.set(id, content);
 
-    advance(entry, [id]);
+    if (entry.file === id) {
+        advance(entry, [id]);
+    }
+    else {
+        retargetScratch(entry, id);
+    }
 
     return entry;
 }
@@ -101,17 +104,18 @@ function createEntry(configFileName: string): Entry {
     return { api, configFileName, contents, pending: new Set(), project, root, seen: seed(project.program), snapshot };
 }
 
-function createScratch(file: string): ScratchEntry {
-    let config = normalize(process.cwd()) + '/tsconfig.tsparse.json',
+function createScratch(file: string, content: string): ScratchEntry {
+    let config = scratchConfigPath(0),
         contents = new Map<string, string>();
 
     contents.set(config, scratchConfig(file));
+    contents.set(file, content);
 
     let api = new API({ cwd: process.cwd(), fs: overlayFileSystem(contents) }),
         snapshot = api.updateSnapshot({ openProjects: [config] }),
         project = resolveProject(snapshot, config);
 
-    return { api, config, contents, file, project, snapshot };
+    return { api, config, contents, count: 1, file, project, snapshot };
 }
 
 function disposeEntry(entry: Pick<Entry, 'api' | 'snapshot'>): void {
@@ -221,15 +225,33 @@ function recreate(entry: Entry): void {
     entry.seen = seed(entry.project.program);
 }
 
-function reseedScratch(entry: ScratchEntry, file: string): void {
-    entry.contents.delete(entry.file);
-    entry.contents.set(entry.config, scratchConfig(file));
+// A tsgo project's file set is fixed when the project opens, so each new scratch file gets a
+// project of its own. Opening it in the live API process costs ~1ms; respawning the process (the
+// only other way to admit an unseen file) costs ~55ms, which every host that transforms more than
+// one file paid per file. The previous project is closed in the same snapshot update.
+function retargetScratch(entry: ScratchEntry, file: string): void {
+    let config = scratchConfigPath(entry.count++),
+        previous = entry.config;
 
-    disposeEntry(entry);
-    entry.api = new API({ cwd: process.cwd(), fs: overlayFileSystem(entry.contents) });
+    entry.contents.delete(entry.file);
+    entry.contents.set(config, scratchConfig(file));
+
+    let snapshot = entry.api.updateSnapshot({
+            closeProjects: [previous],
+            fileChanges: { changed: [file] },
+            openProjects: [config]
+        });
+
+    if (!entry.snapshot.isDisposed()) {
+        entry.snapshot.dispose();
+    }
+
+    entry.api.clearSourceFileCache();
+    entry.contents.delete(previous);
+    entry.config = config;
     entry.file = file;
-    entry.snapshot = entry.api.updateSnapshot({ openProjects: [entry.config] });
-    entry.project = resolveProject(entry.snapshot, entry.config);
+    entry.project = resolveProject(snapshot, config);
+    entry.snapshot = snapshot;
 }
 
 function resolveProject(snapshot: Snapshot, configFileName: string): Project {
@@ -253,6 +275,10 @@ function scratchConfig(file: string): string {
         },
         files: [file]
     });
+}
+
+function scratchConfigPath(ordinal: number): string {
+    return normalize(process.cwd()) + `/tsconfig.tsparse.${ordinal}.json`;
 }
 
 function seed(program: Program): Set<string> {
