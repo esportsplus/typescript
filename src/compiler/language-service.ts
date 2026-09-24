@@ -11,6 +11,10 @@ type Entry = {
     api: API;
     configFileName: string;
     contents: Map<string, string>;
+    // The config's file list as of the last membership miss; null until needed or after invalidate()
+    members: Set<string> | null;
+    // Files proven not to belong to the project; cleared by invalidate() when the file changes
+    outside: Set<string>;
     pending: Set<string>;
     project: Project;
     root: string;
@@ -101,7 +105,7 @@ function createEntry(configFileName: string): Entry {
         }
     }
 
-    return { api, configFileName, contents, pending: new Set(), project, root, seen: seed(project.program), snapshot };
+    return { api, configFileName, contents, members: null, outside: new Set(), pending: new Set(), project, root, seen: seed(project.program), snapshot };
 }
 
 function createScratch(file: string, content: string): ScratchEntry {
@@ -138,6 +142,14 @@ function getEntry(configFileName: string): Entry {
     }
 
     return entry;
+}
+
+// Path identity for membership checks: Windows file systems are case-insensitive, and hosts
+// (Vite ids, tsconfig file lists) do not agree on drive-letter casing
+function key(fileName: string): string {
+    let id = normalize(fileName);
+
+    return process.platform === 'win32' ? id.toLowerCase() : id;
 }
 
 function normalize(fileName: string): string {
@@ -292,6 +304,53 @@ function seed(program: Program): Set<string> {
 }
 
 
+// Whether a file belongs to the project, so a host can skip files the program can never load
+// (linked or workspace dependencies resolve outside node_modules) instead of recreating the
+// API to admit them. A file the program has not seen may be new since it opened, so the
+// config's current file list decides; negative answers are cached until invalidate().
+// `content` stands in for a file absent from disk (a host's virtual module) while the config's
+// include globs are expanded, so such a file matches exactly as it would on disk.
+const contains = (configFileName: string, fileName: string, content?: string): boolean => {
+    let entry = getEntry(configFileName),
+        id = key(fileName),
+        path = normalize(fileName);
+
+    if (entry.seen.has(path) || entry.members?.has(id)) {
+        return true;
+    }
+
+    if (entry.outside.has(id)) {
+        return false;
+    }
+
+    let staged = content !== undefined && !entry.contents.has(path) && !fs.existsSync(path);
+
+    if (staged) {
+        entry.contents.set(path, content!);
+    }
+
+    let members = new Set<string>(),
+        { fileNames } = entry.api.parseConfigFile(entry.configFileName);
+
+    for (let i = 0, n = fileNames.length; i < n; i++) {
+        members.add(key(fileNames[i]));
+    }
+
+    entry.members = members;
+
+    if (members.has(id)) {
+        return true;
+    }
+
+    if (staged) {
+        entry.contents.delete(path);
+    }
+
+    entry.outside.add(id);
+
+    return false;
+};
+
 const dispose = (root?: string): void => {
     if (root === undefined) {
         for (let entry of cache.values()) {
@@ -350,6 +409,8 @@ const invalidate = (configFileName: string, fileName: string): void => {
     let id = normalize(fileName);
 
     entry.contents.delete(id);
+    entry.members = null;
+    entry.outside.delete(key(fileName));
     entry.pending.add(id);
 };
 
@@ -419,6 +480,6 @@ const updateMany = (configFileName: string, updates: Map<string, string>): Updat
 };
 
 
-export default { dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
-export { dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
+export default { contains, dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
+export { contains, dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
 export type { ScratchResult, UpdateResult };

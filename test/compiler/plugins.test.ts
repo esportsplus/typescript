@@ -12,6 +12,7 @@ import vite from '~/compiler/plugins/vite';
 
 vi.mock('~/compiler/language-service', () => ({
     default: {
+        contains: vi.fn(() => true),
         dispose: vi.fn(),
         findConfig: vi.fn(() => ''),
         invalidate: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('~/compiler/language-service', () => ({
 
 vi.mock('~/compiler/coordinator', () => ({
     default: {
+        accepts: vi.fn(() => true),
         transform: vi.fn((_plugins: Plugin[], code: string, _file: SourceFile, _project: { checker: Checker; program: Program }, _root: string, _ctx: Map<string, unknown>) => ({
             changed: false,
             code,
@@ -112,6 +114,26 @@ describe('plugin.vite', () => {
         expect(result?.map.version).toBe(3);
         expect(result?.map.sources).toContain('src/app.ts');
         expect(typeof result?.map.mappings).toBe('string');
+    });
+
+    it('skips files no plugin pattern matches without syncing them into the language service', () => {
+        vi.mocked(coordinator.accepts).mockReturnValueOnce(false);
+
+        let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+        expect(plugin.transform('let x = 1;', 'src/app.ts')).toBeNull();
+        expect(languageService.update).not.toHaveBeenCalled();
+        expect(coordinator.transform).not.toHaveBeenCalled();
+    });
+
+    it('skips files outside the project (linked dependencies) without syncing them', () => {
+        vi.mocked(languageService.contains).mockReturnValueOnce(false);
+
+        let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+        expect(plugin.transform('let x = reactive(1);', 'G:/linked-dependency/build/index.js')).toBeNull();
+        expect(languageService.update).not.toHaveBeenCalled();
+        expect(coordinator.transform).not.toHaveBeenCalled();
     });
 
     it('returns null (no map) when unchanged', () => {

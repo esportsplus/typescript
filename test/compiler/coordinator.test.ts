@@ -1089,3 +1089,25 @@ describe('coordinator.transform', () => {
         });
     });
 });
+
+describe('coordinator.accepts', () => {
+    it('is false when no plugin pattern occurs in the code', () => {
+        let plugins: Plugin[] = [{ patterns: ['reactive('], transform: () => ({}) }, { patterns: ['html`'], transform: () => ({}) }];
+
+        expect(coordinator.accepts(plugins, 'let x = 1;')).toBe(false);
+    });
+
+    it('is true when any plugin pattern occurs in the code', () => {
+        let plugins: Plugin[] = [{ patterns: ['reactive('], transform: () => ({}) }, { patterns: ['html`'], transform: () => ({}) }];
+
+        expect(coordinator.accepts(plugins, 'let x = html`<b></b>`;')).toBe(true);
+    });
+
+    it('is true for a plugin without patterns, which runs on every file', () => {
+        expect(coordinator.accepts([{ transform: () => ({}) }], 'let x = 1;')).toBe(true);
+    });
+
+    it('is false with no plugins', () => {
+        expect(coordinator.accepts([], 'let x = 1;')).toBe(false);
+    });
+});

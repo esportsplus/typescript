@@ -74,6 +74,48 @@ describe('language-service', () => {
         });
     });
 
+    describe('contains', () => {
+        let directory: string,
+            project: string;
+
+        beforeEach(() => {
+            directory = fs.mkdtempSync(path.join(root, 'test/.language-service-contains-')).replace(/\\/g, '/');
+            project = directory + '/tsconfig.json';
+            fs.mkdirSync(directory + '/src');
+            fs.writeFileSync(project, JSON.stringify({ compilerOptions: { noLib: true, types: [] }, include: ['src'] }));
+            fs.writeFileSync(directory + '/src/entry.ts', 'export const value = 1;');
+        });
+
+        afterEach(() => {
+            languageService.dispose();
+            fs.rmSync(directory, { force: true, recursive: true });
+        });
+
+        it('includes a project source file', () => {
+            expect(languageService.contains(project, directory + '/src/entry.ts')).toBe(true);
+        });
+
+        it('excludes a file outside the config (e.g. a dependency linked from another checkout)', () => {
+            expect(languageService.contains(project, root + '/src/compiler/ast.ts')).toBe(false);
+        });
+
+        it('includes a virtual module the config would match, and excludes one it would not', () => {
+            expect(languageService.contains(project, directory + '/src/virtual.ts', 'export const v = 1;')).toBe(true);
+            expect(languageService.contains(project, directory + '/outside.ts', 'export const v = 1;')).toBe(false);
+        });
+
+        it('admits a file created after a miss once it is invalidated', () => {
+            let created = directory + '/src/created.ts';
+
+            expect(languageService.contains(project, created)).toBe(false);
+
+            fs.writeFileSync(created, 'export const created = 1;');
+            languageService.invalidate(project, created);
+
+            expect(languageService.contains(project, created)).toBe(true);
+        });
+    });
+
     describe('update', () => {
         it('returns a checker and program when given valid root + fileName + content', () => {
             let fileName = root + '/src/test-virtual-update.ts',

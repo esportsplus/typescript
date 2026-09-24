@@ -55,14 +55,20 @@ export default ({ name, onWatchChange, plugins }: VitePluginOptions) => {
             enforce: 'pre',
             name: `${name}/compiler/vite`,
             transform(code: string, id: string) {
-                if (!FILE_REGEX.test(id) || id.includes('node_modules')) {
+                if (!FILE_REGEX.test(id) || id.includes('node_modules') || !coordinator.accepts(plugins, code)) {
                     return null;
                 }
 
                 try {
                     let normalizedId = id.replace(DIRECTORY_SEPARATOR_REGEX, '/'),
-                        configPath = tsconfig ?? languageService.findConfig(root || ''),
-                        { checker, program } = languageService.update(configPath ?? '', normalizedId, code),
+                        configPath = tsconfig ?? languageService.findConfig(root || '');
+
+                    // Dependencies linked from outside node_modules (link:, workspaces) are not project files
+                    if (!languageService.contains(configPath ?? '', normalizedId, code)) {
+                        return null;
+                    }
+
+                    let { checker, program } = languageService.update(configPath ?? '', normalizedId, code),
                         sourceFile = program.getSourceFile(normalizedId) ?? languageService.parse(normalizedId, code);
 
                     let key = root || '',

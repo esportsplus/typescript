@@ -294,6 +294,21 @@ function resolveImports(file: SourceFile, checker: Checker, intents: ImportInten
 }
 
 
+// True when at least one plugin could act on `code`. Plugins run in order on each other's output,
+// so if none matches the original source, none ever runs: hosts use this to skip syncing the file
+// into the language service at all.
+const accepts = (plugins: Plugin[], code: string): boolean => {
+    for (let i = 0, n = plugins.length; i < n; i++) {
+        let patterns = plugins[i].patterns;
+
+        if (!patterns || hasPattern(code, patterns)) {
+            return true;
+        }
+    }
+
+    return false;
+};
+
 const transform = (
     plugins: Plugin[],
     code: string,
@@ -400,5 +415,5 @@ const transform = (
 };
 
 
-export default { transform };
+export default { accepts, transform };
 export type { CoordinatorResult };
