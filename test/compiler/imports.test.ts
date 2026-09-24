@@ -1,10 +1,13 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { SymbolFlags, type Checker } from 'typescript/unstable/sync';
 import type { Identifier, Node, SourceFile } from 'typescript/unstable/ast';
+import { SyntaxKind } from 'typescript/unstable/ast';
 import { isIdentifier, isImportClause, isImportSpecifier, isNamespaceImport } from 'typescript/unstable/ast/is';
 
+import fs from 'fs';
 import imports from '~/compiler/imports';
 import languageService from '~/compiler/language-service';
+import path from 'path';
 
 
 const root = process.cwd().replace(/\\/g, '/');
@@ -22,6 +25,22 @@ function findAll(file: SourceFile, name: string): Identifier[] {
 
 function findIdentifier(file: SourceFile, name: string): Identifier | undefined {
     return findAll(file, name)[0];
+}
+
+function findSpecifier(file: SourceFile): Node | undefined {
+    let found: Node | undefined;
+
+    let visit = (node: Node): void => {
+        if (isImportSpecifier(node)) {
+            found ??= node;
+        }
+
+        node.forEachChild(visit);
+    };
+
+    file.forEachChild(visit);
+
+    return found;
 }
 
 function parse(code: string, fileName = root + '/src/test-imports.ts'): SourceFile {
@@ -238,5 +257,66 @@ describe('imports.includes', () => {
             } as unknown as Checker;
 
         expect(imports.includes(checker, node!, 'my-pkg')).toBe(true);
+    });
+
+    it('matches a linked install by its package.json name, with no node_modules segment in the path', () => {
+        let directory = fs.mkdtempSync(path.join(root, 'test/.imports-linked-')).replace(/\\/g, '/');
+
+        try {
+            fs.writeFileSync(directory + '/package.json', JSON.stringify({ name: 'my-linked-pkg' }));
+            fs.mkdirSync(directory + '/build');
+            fs.writeFileSync(directory + '/build/package.json', JSON.stringify({ type: 'module' }));
+
+            let file = parse("import { foo } from 'my-linked-pkg';\nbar();"),
+                node = findIdentifier(file, 'bar'),
+                checker = {
+                    getSymbolAtLocation: () => ({ declarations: [{ path: directory + '/build/index.d.ts' }], flags: SymbolFlags.None })
+                } as unknown as Checker;
+
+            expect(imports.includes(checker, node!, 'my-linked-pkg')).toBe(true);
+            expect(imports.includes(checker, node!, 'other-pkg')).toBe(false);
+        }
+        finally {
+            fs.rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('never attributes a declaration in the analyzed file to the package, even inside its repository', () => {
+        let directory = fs.mkdtempSync(path.join(root, 'test/.imports-self-')).replace(/\\/g, '/');
+
+        try {
+            fs.writeFileSync(directory + '/package.json', JSON.stringify({ name: 'my-own-pkg' }));
+
+            let fileName = directory + '/component.ts',
+                file = parse("import { html } from 'my-own-pkg';\nhtml(1);", fileName),
+                node = findIdentifier(file, 'html'),
+                checker = {
+                    getSymbolAtLocation: () => ({ declarations: [{ path: fileName }], flags: SymbolFlags.None })
+                } as unknown as Checker;
+
+            expect(imports.includes(checker, node!, 'my-own-pkg', 'html')).toBe(false);
+        }
+        finally {
+            fs.rmSync(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('requires the imported name, not just the local name, to match symbolName', () => {
+        let renamed = parse("import { svg as html } from 'my-pkg';\nhtml(1);"),
+            direct = parse("import { html } from 'my-pkg';\nhtml(1);", root + '/src/test-imports-direct.ts');
+
+        let resolveTo = (file: SourceFile) => ({
+                getSymbolAtLocation: () => ({
+                    declarations: [{
+                        kind: SyntaxKind.ImportSpecifier,
+                        path: root + '/src/test-imports.ts',
+                        resolve: () => findSpecifier(file)
+                    }],
+                    flags: SymbolFlags.Alias
+                })
+            }) as unknown as Checker;
+
+        expect(imports.includes(resolveTo(renamed), findIdentifier(renamed, 'html')!, 'my-pkg', 'html')).toBe(false);
+        expect(imports.includes(resolveTo(direct), findIdentifier(direct, 'html')!, 'my-pkg', 'html')).toBe(true);
     });
 });

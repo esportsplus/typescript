@@ -1,8 +1,11 @@
-import type { Node, SourceFile } from 'typescript/unstable/ast';
+import type { ImportSpecifier, Node, SourceFile } from 'typescript/unstable/ast';
 import { SyntaxKind } from 'typescript/unstable/ast';
 import { isIdentifier, isImportDeclaration, isNamedImports, isNamespaceImport, isStringLiteral } from 'typescript/unstable/ast/is';
 import type { Checker } from 'typescript/unstable/sync';
 import { SymbolFlags } from 'typescript/unstable/sync';
+
+import fs from 'fs';
+import path from 'path';
 
 
 type ImportInfo = {
@@ -24,15 +27,71 @@ type ModifyOptions = {
 };
 
 
-let cache = new WeakMap<SourceFile, Map<string, Set<string>>>();
+const BACKSLASH_REGEX = /\\/g;
 
 
-function fileNameMatchesPackage(fileName: string, pkg: string): boolean {
+let cache = new WeakMap<SourceFile, Map<string, Set<string>>>(),
+    owners = new Map<string, string | null>();
+
+
+// `self` is the file being analyzed: a declaration there is that file's own code, never an import,
+// even when the file itself lives inside the package's repository
+function fileNameMatchesPackage(fileName: string, pkg: string, self: string): boolean {
     // NodeHandle.path is a canonicalized (possibly lower-cased) Path; npm names are lowercase by registry rule, so the substring match is safe without case-folding.
-    let normalized = fileName.replace(/\\/g, '/'),
-        marker = `/node_modules/${pkg}/`;
+    let normalized = fileName.replace(BACKSLASH_REGEX, '/');
 
-    return normalized.includes(marker);
+    if (normalized.includes(`/node_modules/${pkg}/`)) {
+        return true;
+    }
+
+    return normalized.toLowerCase() !== self.replace(BACKSLASH_REGEX, '/').toLowerCase() && owner(normalized) === pkg;
+}
+
+// Name of the nearest named package.json above a file. A linked install (link:, workspace, npm link)
+// or a package's own sources resolve to a real path with no node_modules segment, so the path alone
+// cannot say which package declared a symbol. Cached per directory; manifests without a name (e.g.
+// a nested {"type":"module"}) are skipped.
+function owner(fileName: string): string | null {
+    let directory = path.posix.dirname(fileName),
+        visited: string[] = [],
+        name: string | null | undefined;
+
+    while (true) {
+        name = owners.get(directory);
+
+        if (name !== undefined) {
+            break;
+        }
+
+        visited.push(directory);
+
+        try {
+            let manifest = JSON.parse(fs.readFileSync(directory + '/package.json', 'utf8'));
+
+            if (typeof manifest.name === 'string') {
+                name = manifest.name;
+                break;
+            }
+        }
+        catch {
+            // no (readable) manifest in this directory
+        }
+
+        let parent = path.posix.dirname(directory);
+
+        if (parent === directory) {
+            name = null;
+            break;
+        }
+
+        directory = parent;
+    }
+
+    for (let i = 0, n = visited.length; i < n; i++) {
+        owners.set(visited[i], name ?? null);
+    }
+
+    return name ?? null;
 }
 
 
@@ -131,9 +190,10 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
                     let handle = declarations[i];
 
                     if (handle.kind === SyntaxKind.ImportSpecifier) {
-                        let decl = handle.resolve();
+                        let decl = handle.resolve() as ImportSpecifier | undefined;
 
-                        if (decl) {
+                        // `symbolName` names the export: `import { other as html }` is not `html`
+                        if (decl && (!symbolName || (decl.propertyName ?? decl.name).text === symbolName)) {
                             let importDecl = decl.parent?.parent?.parent;
 
                             if (importDecl && isImportDeclaration(importDecl) && isStringLiteral(importDecl.moduleSpecifier)) {
@@ -142,9 +202,11 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
                                 }
                             }
                         }
+
+                        continue;
                     }
 
-                    if (fileNameMatchesPackage(handle.path, pkg)) {
+                    if (fileNameMatchesPackage(handle.path, pkg, file.fileName)) {
                         return true;
                     }
                 }
@@ -168,7 +230,7 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
         for (let i = 0, n = declarations.length; i < n; i++) {
             let handle = declarations[i];
 
-            if (fileNameMatchesPackage(handle.path, pkg)) {
+            if (fileNameMatchesPackage(handle.path, pkg, file.fileName)) {
                 return true;
             }
         }
@@ -183,7 +245,7 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
 
             if (aliasedDecls) {
                 for (let i = 0, n = aliasedDecls.length; i < n; i++) {
-                    if (fileNameMatchesPackage(aliasedDecls[i].path, pkg)) {
+                    if (fileNameMatchesPackage(aliasedDecls[i].path, pkg, file.fileName)) {
                         return true;
                     }
                 }
