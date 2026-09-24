@@ -4,6 +4,7 @@ export { default as coordinator } from './coordinator';
 export { default as imports } from './imports';
 export { default as languageService } from './language-service';
 export { default as plugin } from './plugins';
+export { default as sourcemap } from './sourcemap';
 export { default as uid } from './uid';
 export type { OffsetAnchor, PositionMapping, SourceMapV3 } from './sourcemap';
 export type { ScratchResult, UpdateResult } from './language-service';
