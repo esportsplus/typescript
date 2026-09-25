@@ -4,8 +4,7 @@ import { isIdentifier, isImportDeclaration, isNamedImports, isNamespaceImport, i
 import type { Checker } from 'typescript/unstable/sync';
 import { SymbolFlags } from 'typescript/unstable/sync';
 
-import fs from 'fs';
-import path from 'path';
+import manifest from './manifest';
 
 
 type ImportInfo = {
@@ -30,8 +29,7 @@ type ModifyOptions = {
 const BACKSLASH_REGEX = /\\/g;
 
 
-let cache = new WeakMap<SourceFile, Map<string, Set<string>>>(),
-    owners = new Map<string, string | null>();
+let cache = new WeakMap<SourceFile, Map<string, Set<string>>>();
 
 
 // `self` is the file being analyzed: a declaration there is that file's own code, never an import,
@@ -44,54 +42,8 @@ function fileNameMatchesPackage(fileName: string, pkg: string, self: string): bo
         return true;
     }
 
-    return normalized.toLowerCase() !== self.replace(BACKSLASH_REGEX, '/').toLowerCase() && owner(normalized) === pkg;
-}
-
-// Name of the nearest named package.json above a file. A linked install (link:, workspace, npm link)
-// or a package's own sources resolve to a real path with no node_modules segment, so the path alone
-// cannot say which package declared a symbol. Cached per directory; manifests without a name (e.g.
-// a nested {"type":"module"}) are skipped.
-function owner(fileName: string): string | null {
-    let directory = path.posix.dirname(fileName),
-        visited: string[] = [],
-        name: string | null | undefined;
-
-    while (true) {
-        name = owners.get(directory);
-
-        if (name !== undefined) {
-            break;
-        }
-
-        visited.push(directory);
-
-        try {
-            let manifest = JSON.parse(fs.readFileSync(directory + '/package.json', 'utf8'));
-
-            if (typeof manifest.name === 'string') {
-                name = manifest.name;
-                break;
-            }
-        }
-        catch {
-            // no (readable) manifest in this directory
-        }
-
-        let parent = path.posix.dirname(directory);
-
-        if (parent === directory) {
-            name = null;
-            break;
-        }
-
-        directory = parent;
-    }
-
-    for (let i = 0, n = visited.length; i < n; i++) {
-        owners.set(visited[i], name ?? null);
-    }
-
-    return name ?? null;
+    // A linked install or a package's own sources carry no node_modules segment
+    return normalized.toLowerCase() !== self.replace(BACKSLASH_REGEX, '/').toLowerCase() && manifest.find(normalized)?.name === pkg;
 }
 
 
