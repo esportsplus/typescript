@@ -122,6 +122,23 @@ function createScratch(file: string, content: string): ScratchEntry {
     return { api, config, contents, count: 1, file, project, snapshot };
 }
 
+// The text the program holds for a file it has seen: the overlay when one was synced, the disk
+// otherwise (invalidate() queues a re-read when the disk changes under an open program)
+function current(entry: Entry, id: string): string | undefined {
+    let content = entry.contents.get(id);
+
+    if (content !== undefined) {
+        return content;
+    }
+
+    try {
+        return fs.readFileSync(id, 'utf8');
+    }
+    catch {
+        return undefined;
+    }
+}
+
 function disposeEntry(entry: Pick<Entry, 'api' | 'snapshot'>): void {
     if (!entry.snapshot.isDisposed()) {
         entry.snapshot.dispose();
@@ -441,8 +458,18 @@ const updateMany = (configFileName: string, updates: Map<string, string>): Updat
     for (let [fileName, content] of updates) {
         let id = normalize(fileName);
 
+        // Every host transforms every project file; one the program already holds verbatim needs
+        // no new snapshot, which keeps a build's per-file cost off the tsgo round-trip
+        if (entry.seen.has(id) && !entry.pending.has(id) && current(entry, id) === content) {
+            continue;
+        }
+
         entry.contents.set(id, content);
         ids.push(id);
+    }
+
+    if (ids.length === 0 && entry.pending.size === 0) {
+        return { checker: entry.project.checker, program: entry.project.program };
     }
 
     if (ids.every(id => entry.seen.has(id))) {

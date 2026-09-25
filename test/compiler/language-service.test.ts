@@ -136,6 +136,15 @@ describe('language-service', () => {
             expect(sourceFile!.text).toBe(content);
         });
 
+        it('keeps the current program when a file is synced with the content it already has', () => {
+            let fileName = root + '/src/test-virtual-unchanged.ts',
+                first = languageService.update(config, fileName, 'let a = 1;'),
+                second = languageService.update(config, fileName, 'let a = 1;');
+
+            expect(second.program).toBe(first.program);
+            expect(languageService.update(config, fileName, 'let a = 2;').program).not.toBe(first.program);
+        });
+
         it('reflects the latest content across repeated updates', () => {
             let fileName = root + '/src/test-virtual-version.ts';
 
