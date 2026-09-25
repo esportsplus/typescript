@@ -30,6 +30,7 @@ vi.mock('~/compiler/coordinator', () => ({
         transform: vi.fn((_plugins: Plugin[], code: string, _file: SourceFile, _project: { checker: Checker; program: Program }, _root: string, _ctx: Map<string, unknown>) => ({
             changed: false,
             code,
+            dependencies: [] as string[],
             map: { generations: [] }
         }))
     }
@@ -102,6 +103,7 @@ describe('plugin.vite', () => {
         vi.mocked(coordinator.transform).mockReturnValueOnce({
             changed: true,
             code: 'TRANSFORMED',
+            dependencies: [],
             map: { generations: [] }
         });
 
@@ -198,22 +200,51 @@ describe('plugin.vite', () => {
         expect(languageService.findConfig).toHaveBeenCalledWith('/project');
     });
 
-    it('catches coordinator.transform() error and returns null', () => {
+    // A file a plugin cannot compile must fail the build rather than ship uncompiled
+    it('propagates a coordinator.transform() error', () => {
         vi.mocked(coordinator.transform).mockImplementationOnce(() => {
             throw new Error('transform failed');
         });
 
-        let consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {}),
-            plugin = vite({ name: 'test-pkg', plugins: [] })(),
-            result = plugin.transform('let x = 1;', 'src/app.ts');
+        let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
-        expect(result).toBeNull();
-        expect(consoleSpy).toHaveBeenCalledWith(
-            expect.stringContaining('test-pkg'),
-            expect.any(Error)
-        );
+        expect(() => plugin.transform('let x = 1;', 'src/app.ts')).toThrow('transform failed');
+    });
 
-        consoleSpy.mockRestore();
+    it('rejects a chunk that still contains a compile-only runtime stub', () => {
+        let plugin = vite({ name: 'test-pkg', plugins: [], uncompiled: ['must be compiled'] })();
+
+        expect(() => plugin.renderChunk('throw new Error("html must be compiled")', { fileName: 'app.js' })).toThrow(/app\.js/);
+        expect(plugin.renderChunk('let compiled = 1;', { fileName: 'app.js' })).toBeNull();
+        expect(vite({ name: 'test-pkg', plugins: [] })().renderChunk('must be compiled', { fileName: 'app.js' })).toBeNull();
+    });
+
+    it('invalidates modules whose compile relied on a changed file', () => {
+        vi.mocked(coordinator.transform).mockReturnValueOnce({
+            changed: false,
+            code: 'let x = 1;',
+            dependencies: ['src/state.ts'],
+            map: { generations: [] }
+        });
+
+        let plugin = vite({ name: 'test-pkg', plugins: [] })(),
+            changed = { id: 'src/state.ts' },
+            dependent = { id: 'src/app.ts' },
+            invalidateModule = vi.fn(),
+            server = {
+                moduleGraph: {
+                    getModulesByFile: (file: string) => file === 'src/app.ts' ? new Set([dependent]) : undefined,
+                    invalidateModule
+                }
+            };
+
+        plugin.transform('let x = 1;', 'src/app.ts');
+
+        let result = plugin.handleHotUpdate({ file: 'src/state.ts', modules: [changed], server, timestamp: 1 } as never);
+
+        expect(result).toEqual([changed, dependent]);
+        expect(invalidateModule).toHaveBeenCalledWith(dependent, expect.any(Set), 1, true);
+        expect(plugin.handleHotUpdate({ file: 'src/other.ts', modules: [], server, timestamp: 2 } as never)).toBeUndefined();
     });
 
     it('falls back to languageService.parse when getSourceFile returns undefined', () => {
