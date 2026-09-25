@@ -59,6 +59,12 @@ type TransformContext = {
 
 type TransformResult = {
     /**
+     * Files outside this one whose declarations the transform relied on (e.g. an Origin's declaration and `through` files).
+     * Hosts re-run this file's transform when one of them changes.
+     */
+    dependencies?: string[];
+
+    /**
      * Import modifications to apply after replacements.
      */
     imports?: ImportIntent[];

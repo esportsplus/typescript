@@ -15,6 +15,7 @@ import uid from './uid';
 type CoordinatorResult = {
     changed: boolean;
     code: string;
+    dependencies: string[];
     map: PositionMapping;
 };
 
@@ -316,15 +317,16 @@ const transform = (
     project: { checker: Checker; configPath?: string; program: Program },
     root: string,
     shared: SharedContext
-) => {
+): CoordinatorResult => {
     if (plugins.length === 0) {
-        return { changed: false, code, map: { generations: [] } };
+        return { changed: false, code, dependencies: [], map: { generations: [] } };
     }
 
     uid.scope(root, file.fileName, code);
 
     let changed = false,
         configPath = project.configPath ?? languageService.findConfig(root) ?? root,
+        dependencies = new Set<string>(),
         currentCode = code,
         currentFile = file,
         currentProject = project,
@@ -340,7 +342,7 @@ const transform = (
             continue;
         }
 
-        let { imports, prepend, replacements } = plugin.transform({
+        let { dependencies: relied, imports, prepend, replacements } = plugin.transform({
                 checker: currentProject.checker,
                 code: currentCode,
                 program: currentProject.program,
@@ -349,6 +351,12 @@ const transform = (
             }),
             importIntents = imports?.length ? resolveImports(currentFile, currentProject.checker, imports) : [],
             pluginChanged = false;
+
+        if (relied) {
+            for (let j = 0, m = relied.length; j < m; j++) {
+                dependencies.add(relied[j]);
+            }
+        }
 
         if (replacements?.length) {
             let before = currentCode,
@@ -411,7 +419,7 @@ const transform = (
         languageService.update(configPath, fileName, code);
     }
 
-    return { changed, code: currentCode, map: { generations } };
+    return { changed, code: currentCode, dependencies: [...dependencies], map: { generations } };
 };
 
 
