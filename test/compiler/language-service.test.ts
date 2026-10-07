@@ -114,6 +114,20 @@ describe('language-service', () => {
 
             expect(languageService.contains(project, created)).toBe(true);
         });
+
+        it('admits a file outside the config that a later snapshot imports', () => {
+            let entry = directory + '/src/entry.ts',
+                linked = directory + '/lib/linked.ts';
+
+            expect(languageService.contains(project, entry)).toBe(true);
+
+            fs.mkdirSync(directory + '/lib');
+            fs.writeFileSync(linked, 'export const linked = 1;');
+            languageService.invalidate(project, linked);
+            languageService.update(project, entry, "import { linked } from '../lib/linked';\nexport const value = linked;");
+
+            expect(languageService.contains(project, linked)).toBe(true);
+        });
     });
 
     describe('update', () => {

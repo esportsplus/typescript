@@ -323,8 +323,9 @@ function seed(program: Program): Set<string> {
 
 // Whether a file belongs to the project, so a host can skip files the program can never load
 // (linked or workspace dependencies resolve outside node_modules) instead of recreating the
-// API to admit them. A file the program has not seen may be new since it opened, so the
-// config's current file list decides; negative answers are cached until invalidate().
+// API to admit them. A file the program has not seen may be new since it opened: one a later
+// snapshot reached through an import belongs, otherwise the config's current file list decides;
+// negative answers are cached until invalidate().
 // `content` stands in for a file absent from disk (a host's virtual module) while the config's
 // include globs are expanded, so such a file matches exactly as it would on disk.
 const contains = (configFileName: string, fileName: string, content?: string): boolean => {
@@ -333,6 +334,12 @@ const contains = (configFileName: string, fileName: string, content?: string): b
         path = normalize(fileName);
 
     if (entry.seen.has(path) || entry.members?.has(id)) {
+        return true;
+    }
+
+    if (entry.project.program.getSourceFile(path)) {
+        entry.outside.delete(id);
+        entry.seen.add(path);
         return true;
     }
 
