@@ -186,7 +186,11 @@ const denotes = (checker: Checker, program: Program, expression: Node, targets: 
         return false;
     }
 
-    return holds(checker, program, origins(checker, program, name.getSourceFile()).get(name) ?? origin(checker, program, name), targets);
+    // The expression is usually an initializer in another file: resolving every read there just to
+    // look this one up would type-check that whole file, so a file not yet resolved is asked once
+    let resolved = cache.get(program)?.get(`origins\0${name.getSourceFile().fileName}`) as Map<Node, Origin> | undefined;
+
+    return holds(checker, program, resolved?.get(name) ?? origin(checker, program, name), targets);
 };
 
 // Declarations of a package's export, one per copy of the package the program loads (two
