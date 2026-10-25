@@ -1,7 +1,7 @@
 import type { SourceFile } from 'typescript/unstable/ast';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
-import type { ModifyOptions } from './imports';
+import type { ImportInfo, ModifyOptions } from './imports';
 import { isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/unstable/ast/is';
 
 import type { OffsetAnchor, PositionMapping } from './sourcemap';
@@ -24,8 +24,22 @@ type EditBatch = {
     edits: Replacement[];
 };
 
+// What applyPrepend and modify() read from a file: its import declarations and where the run of them
+// opening the file ends
+type Layout = {
+    // Start of the first statement that is not an import declaration; the text's length when none is
+    boundary: number;
+    declarations: { info: ImportInfo; module: string | null }[];
+    // End of the last import declaration before any other statement; 0 when none opens the file
+    leading: number;
+};
 
-function applyImports(code: string, file: SourceFile, intents: ImportIntent[]): { batches: EditBatch[]; code: string } {
+
+// An `import` that is not a call or `import.meta`: text that may declare an import
+const IMPORT_DECLARATION = /\bimport\b(?!\s*[(.])/;
+
+
+function applyImports(code: string, layout: Layout, intents: ImportIntent[]): { batches: EditBatch[]; code: string } {
     let merged = new Map<string, { add?: string[]; namespace?: string; remove?: string[] }>();
 
     for (let i = 0, n = intents.length; i < n; i++) {
@@ -56,9 +70,15 @@ function applyImports(code: string, file: SourceFile, intents: ImportIntent[]): 
         keys = [...merged.keys()];
 
     for (let i = 0, n = keys.length; i < n; i++) {
-        let result = modify(code, file, keys[i], merged.get(keys[i])!);
+        let found: ImportInfo[] = [];
 
-        edits.push(...result.edits);
+        for (let j = 0, m = layout.declarations.length; j < m; j++) {
+            if (layout.declarations[j].module === keys[i]) {
+                found.push(layout.declarations[j].info);
+            }
+        }
+
+        edits.push(...modify(code, found, keys[i], merged.get(keys[i])!).edits);
     }
 
     if (edits.length === 0) {
@@ -82,23 +102,12 @@ function applyIntents(code: string, file: SourceFile, intents: ReplacementIntent
     return { code: replaceReverse(code, edits), edits };
 }
 
-function applyPrepend(code: string, file: SourceFile, prepend: string[]): { code: string; edits: Replacement[] } {
+function applyPrepend(code: string, layout: Layout, prepend: string[]): { code: string; edits: Replacement[] } {
     if (prepend.length === 0) {
         return { code, edits: [] };
     }
 
-    let position = 0;
-
-    for (let i = 0, n = file.statements.length; i < n; i++) {
-        let stmt = file.statements[i];
-
-        if (isImportDeclaration(stmt)) {
-            position = stmt.end;
-        }
-        else {
-            break;
-        }
-    }
+    let position = layout.leading;
 
     if (position === 0) {
         let newText = prepend.join('\n') + '\n';
@@ -121,14 +130,13 @@ function hasPattern(code: string, patterns: string[]): boolean {
     return false;
 }
 
-function modify(code: string, file: SourceFile, pkg: string, options: ModifyOptions): { code: string; edits: Replacement[] } {
+function modify(code: string, found: ImportInfo[], pkg: string, options: ModifyOptions): { code: string; edits: Replacement[] } {
     if (!options.add && !options.namespace && !options.remove) {
         return { code, edits: [] };
     }
 
     let { namespace } = options,
-        add = options.add ? new Set(options.add) : null,
-        found = imports.all(file, pkg);
+        add = options.add ? new Set(options.add) : null;
 
     if (namespace && !add && !options.remove && found.some(info => info.namespace === namespace)) {
         return { code, edits: [] };
@@ -224,6 +232,37 @@ function modify(code: string, file: SourceFile, pkg: string, options: ModifyOpti
     return { code: replaceReverse(code, replacements), edits: replacements };
 }
 
+function outline(file: SourceFile): Layout {
+    let boundary = file.text.length,
+        declarations: Layout['declarations'] = [],
+        leading = 0,
+        opening = true;
+
+    for (let i = 0, n = file.statements.length; i < n; i++) {
+        let statement = file.statements[i];
+
+        if (!isImportDeclaration(statement)) {
+            if (opening) {
+                boundary = statement.getStart(file);
+                opening = false;
+            }
+
+            continue;
+        }
+
+        if (opening) {
+            leading = statement.end;
+        }
+
+        declarations.push({
+            info: imports.describe(file, statement),
+            module: isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : null
+        });
+    }
+
+    return { boundary, declarations, leading };
+}
+
 function replaceReverse(code: string, replacements: Replacement[]): string {
     if (replacements.length === 0) {
         return code;
@@ -250,6 +289,61 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
     }
 
     return parts.reverse().join('');
+}
+
+// The layout once `edits` (against the layout's text) are applied, without re-parsing. Null when an edit could
+// change what a parse finds: one reaching the opening imports or the first other statement (whose first
+// token decides its kind), one overlapping an import declaration, or text that may declare an import. The
+// one edit allowed before the boundary is a prepend's insertion at the end of the opening imports.
+function shift(layout: Layout, edits: Replacement[]): Layout | null {
+    let boundary = layout.boundary;
+
+    for (let i = 0, n = edits.length; i < n; i++) {
+        let edit = edits[i];
+
+        if (IMPORT_DECLARATION.test(edit.newText)) {
+            return null;
+        }
+
+        if (edit.start === edit.end && edit.start === layout.leading) {
+            boundary = Math.min(boundary, edit.start);
+            continue;
+        }
+
+        if (edit.start <= layout.boundary) {
+            return null;
+        }
+
+        for (let j = 0, m = layout.declarations.length; j < m; j++) {
+            let { info } = layout.declarations[j];
+
+            if (edit.start < info.end && edit.end > info.start) {
+                return null;
+            }
+        }
+    }
+
+    let declarations: Layout['declarations'] = [];
+
+    for (let i = 0, n = layout.declarations.length; i < n; i++) {
+        let declaration = layout.declarations[i],
+            delta = 0;
+
+        for (let j = 0, m = edits.length; j < m; j++) {
+            let edit = edits[j];
+
+            if (edit.end <= declaration.info.start) {
+                delta += edit.newText.length - (edit.end - edit.start);
+            }
+        }
+
+        declarations.push(delta === 0 ? declaration : {
+            info: { ...declaration.info, end: declaration.info.end + delta, start: declaration.info.start + delta },
+            module: declaration.module
+        });
+    }
+
+    return { boundary, declarations, leading: layout.leading };
 }
 
 function resolveImports(file: SourceFile, checker: Checker, intents: ImportIntent[]): ImportIntent[] {
@@ -333,7 +427,27 @@ const transform = (
         fileName = file.fileName,
         generations: OffsetAnchor[][] = [],
         last = plugins.length - 1,
+        // currentCode is `outlined`'s text with `edited` applied in order; outline() and shift() follow it
+        // between a plugin's steps so it is re-parsed only when they cannot
+        edited: Replacement[][] = [],
+        outlined = currentFile,
         staged = false;
+
+    let layout = (): Layout => {
+        let result: Layout | null = outline(outlined);
+
+        for (let i = 0, n = edited.length; i < n && result; i++) {
+            result = shift(result, edited[i]);
+        }
+
+        if (!result) {
+            currentFile = outlined = languageService.parse(fileName, currentCode);
+            edited = [];
+            result = outline(outlined);
+        }
+
+        return result;
+    };
 
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
@@ -367,34 +481,29 @@ const transform = (
             }
 
             currentCode = result.code;
+            edited.push(result.edits);
             pluginChanged = true;
         }
 
         if (prepend?.length) {
-            if (pluginChanged) {
-                currentFile = languageService.parse(fileName, currentCode);
-            }
-
             let before = currentCode,
-                result = applyPrepend(currentCode, currentFile, prepend);
+                result = applyPrepend(currentCode, layout(), prepend);
 
             if (result.edits.length > 0) {
                 generations.push(sourcemap.buildGeneration(before, result.edits));
             }
 
             currentCode = result.code;
+            edited.push(result.edits);
             pluginChanged = true;
         }
 
         if (importIntents.length > 0) {
-            if (pluginChanged) {
-                currentFile = languageService.parse(fileName, currentCode);
-            }
-
-            let result = applyImports(currentCode, currentFile, importIntents);
+            let result = applyImports(currentCode, layout(), importIntents);
 
             for (let j = 0, m = result.batches.length; j < m; j++) {
                 generations.push(sourcemap.buildGeneration(result.batches[j].before, result.batches[j].edits));
+                edited.push(result.batches[j].edits);
             }
 
             currentCode = result.code;
@@ -414,8 +523,9 @@ const transform = (
                 }
 
                 currentProject = languageService.stage(configPath, fileName, currentCode);
-                currentFile = currentProject.program.getSourceFile(fileName) ??
+                currentFile = outlined = currentProject.program.getSourceFile(fileName) ??
                     languageService.parse(fileName, currentCode);
+                edited = [];
             }
         }
     }

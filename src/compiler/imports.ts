@@ -1,4 +1,4 @@
-import type { Node, SourceFile } from 'typescript/unstable/ast';
+import type { ImportDeclaration, Node, SourceFile } from 'typescript/unstable/ast';
 import { SyntaxKind } from 'typescript/unstable/ast';
 import { isIdentifier, isImportDeclaration, isNamedImports, isNamespaceImport, isStringLiteral } from 'typescript/unstable/ast/is';
 import type { Checker } from 'typescript/unstable/sync';
@@ -54,46 +54,42 @@ const all = (file: SourceFile, pkg: string): ImportInfo[] => {
     for (let i = 0, n = file.statements.length; i < n; i++) {
         let stmt = file.statements[i];
 
-        if (!isImportDeclaration(stmt)) {
-            continue;
+        if (isImportDeclaration(stmt) && isStringLiteral(stmt.moduleSpecifier) && stmt.moduleSpecifier.text === pkg) {
+            imports.push(describe(file, stmt));
         }
-
-        let moduleSpecifier = stmt.moduleSpecifier;
-
-        if (!isStringLiteral(moduleSpecifier) || moduleSpecifier.text !== pkg) {
-            continue;
-        }
-
-        let bindings = stmt.importClause?.namedBindings,
-            declTypeOnly = stmt.importClause?.phaseModifier === SyntaxKind.TypeKeyword,
-            specifiers = new Map<string, string>(),
-            typeOnly = new Set<string>();
-
-        if (bindings && isNamedImports(bindings)) {
-            for (let j = 0, m = bindings.elements.length; j < m; j++) {
-                let element = bindings.elements[j],
-                    name = element.name.text,
-                    propertyName = element.propertyName?.text || name;
-
-                specifiers.set(propertyName, name);
-
-                if (declTypeOnly || element.isTypeOnly) {
-                    typeOnly.add(propertyName);
-                }
-            }
-        }
-
-        imports.push({
-            defaultName: stmt.importClause?.name?.text,
-            end: stmt.end,
-            namespace: bindings && isNamespaceImport(bindings) ? bindings.name.text : undefined,
-            specifiers,
-            start: stmt.getStart(file),
-            typeOnly
-        });
     }
 
     return imports;
+};
+
+const describe = (file: SourceFile, stmt: ImportDeclaration): ImportInfo => {
+    let bindings = stmt.importClause?.namedBindings,
+        declTypeOnly = stmt.importClause?.phaseModifier === SyntaxKind.TypeKeyword,
+        specifiers = new Map<string, string>(),
+        typeOnly = new Set<string>();
+
+    if (bindings && isNamedImports(bindings)) {
+        for (let j = 0, m = bindings.elements.length; j < m; j++) {
+            let element = bindings.elements[j],
+                name = element.name.text,
+                propertyName = element.propertyName?.text || name;
+
+            specifiers.set(propertyName, name);
+
+            if (declTypeOnly || element.isTypeOnly) {
+                typeOnly.add(propertyName);
+            }
+        }
+    }
+
+    return {
+        defaultName: stmt.importClause?.name?.text,
+        end: stmt.end,
+        namespace: bindings && isNamespaceImport(bindings) ? bindings.name.text : undefined,
+        specifiers,
+        start: stmt.getStart(file),
+        typeOnly
+    };
 };
 
 // Check if node's symbol originates from a specific package (with optional symbol name validation)
@@ -208,5 +204,5 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
 };
 
 
-export default { all, includes };
+export default { all, describe, includes };
 export type { ImportInfo, ModifyOptions };
