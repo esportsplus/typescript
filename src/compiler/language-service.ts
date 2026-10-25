@@ -9,8 +9,12 @@ import path from 'path';
 
 type Entry = {
     api: API;
+    // Files whose program text changed since the staging peer last synced with this entry
+    changes: Set<string>;
     configFileName: string;
     contents: Map<string, string>;
+    // Bumped whenever the API is recreated: a staging peer opened on an older file set is stale
+    generation: number;
     // The config's file list as of the last membership miss; null until needed or after invalidate()
     members: Set<string> | null;
     // Files proven not to belong to the project; cleared by invalidate() when the file changes
@@ -20,6 +24,9 @@ type Entry = {
     root: string;
     seen: Set<string>;
     snapshot: Snapshot;
+    staging: Staging | null;
+    // Whether the overlay has held a file absent from disk, so existence checks must consult it
+    virtual: boolean;
 };
 
 type ScratchEntry = {
@@ -30,6 +37,20 @@ type ScratchEntry = {
     file: string;
     project: Project;
     snapshot: Snapshot;
+};
+
+type Session = {
+    api: API;
+    project: Project;
+    snapshot: Snapshot;
+};
+
+// A second program over the same overlay plus one file's intermediate text, so a plugin chain can
+// type-check its later stages without replacing the entry's program (and discarding its checker)
+type Staging = Session & {
+    contents: Map<string, string>;
+    file: string | null;
+    generation: number;
 };
 
 type ScratchResult = {
@@ -58,16 +79,20 @@ let cache = new Map<string, Entry>(),
     scratchEntry: ScratchEntry | null = null;
 
 
-function advance(entry: Entry | ScratchEntry, changed: string[]): void {
-    let snapshot = entry.api.updateSnapshot({ fileChanges: { changed } });
+function absent(entry: Entry, id: string): boolean {
+    return !entry.virtual && !fs.existsSync(id);
+}
 
-    if (!entry.snapshot.isDisposed()) {
-        entry.snapshot.dispose();
+function advance(session: Session, configFileName: string, changed: string[]): void {
+    let snapshot = session.api.updateSnapshot({ fileChanges: { changed } });
+
+    if (!session.snapshot.isDisposed()) {
+        session.snapshot.dispose();
     }
 
-    entry.api.clearSourceFileCache();
-    entry.project = resolveProject(snapshot, 'configFileName' in entry ? entry.configFileName : entry.config);
-    entry.snapshot = snapshot;
+    session.api.clearSourceFileCache();
+    session.project = resolveProject(snapshot, configFileName);
+    session.snapshot = snapshot;
 }
 
 function advanceScratch(id: string, content: string): ScratchEntry {
@@ -80,7 +105,7 @@ function advanceScratch(id: string, content: string): ScratchEntry {
     entry.contents.set(id, content);
 
     if (entry.file === id) {
-        advance(entry, [id]);
+        advance(entry, entry.config, [id]);
     }
     else {
         retargetScratch(entry, id);
@@ -93,7 +118,7 @@ function createEntry(configFileName: string): Entry {
     let root = path.dirname(configFileName);
 
     let contents = new Map<string, string>(),
-        opened = open(configFileName, overlayFileSystem(contents)),
+        opened = open(configFileName, overlayFileSystem(contents, false)),
         { api, project, snapshot } = opened;
 
     for (let diagnostic of project.program.getConfigFileParsingDiagnostics()) {
@@ -105,7 +130,22 @@ function createEntry(configFileName: string): Entry {
         }
     }
 
-    return { api, configFileName, contents, members: null, outside: new Set(), pending: new Set(), project, root, seen: seed(project.program), snapshot };
+    return {
+        api,
+        changes: new Set(),
+        configFileName,
+        contents,
+        generation: 0,
+        members: null,
+        outside: new Set(),
+        pending: new Set(),
+        project,
+        root,
+        seen: seed(project.program),
+        snapshot,
+        staging: null,
+        virtual: false
+    };
 }
 
 function createScratch(file: string, content: string): ScratchEntry {
@@ -115,7 +155,7 @@ function createScratch(file: string, content: string): ScratchEntry {
     contents.set(config, scratchConfig(file));
     contents.set(file, content);
 
-    let api = new API({ cwd: process.cwd(), fs: overlayFileSystem(contents) }),
+    let api = new API({ cwd: process.cwd(), fs: overlayFileSystem(contents, true) }),
         snapshot = api.updateSnapshot({ openProjects: [config] }),
         project = resolveProject(snapshot, config);
 
@@ -145,6 +185,13 @@ function disposeEntry(entry: Pick<Entry, 'api' | 'snapshot'>): void {
     }
 
     entry.api.close();
+}
+
+function disposeStaging(entry: Entry): void {
+    if (entry.staging) {
+        disposeEntry(entry.staging);
+        entry.staging = null;
+    }
 }
 
 function getEntry(configFileName: string): Entry {
@@ -197,15 +244,11 @@ function open(configPath: string, overlay?: FileSystem): OpenProject {
     };
 }
 
-function overlayFileSystem(contents: Map<string, string>): FileSystem {
-    return {
-        fileExists: (fileName) => {
-            if (contents.has(normalize(fileName))) {
-                return true;
-            }
-
-            return undefined;
-        },
+// Every callback is a round-trip from tsgo, and a program whose imports change re-resolves every
+// module, asking whether each candidate path exists. While every overlay file is also on disk the
+// disk gives the same answers, so existence checks are only routed here once one is not.
+function overlayFileSystem(contents: Map<string, string>, virtual: boolean): FileSystem {
+    let overlay: FileSystem = {
         getAccessibleEntries: (directoryName) => {
             let directory = normalize(directoryName),
                 extra: string[] = [];
@@ -244,11 +287,26 @@ function overlayFileSystem(contents: Map<string, string>): FileSystem {
             return undefined;
         }
     };
+
+    if (virtual) {
+        overlay.fileExists = (fileName) => {
+            if (contents.has(normalize(fileName))) {
+                return true;
+            }
+
+            return undefined;
+        };
+    }
+
+    return overlay;
 }
 
 function recreate(entry: Entry): void {
     disposeEntry(entry);
-    entry.api = new API({ cwd: entry.root, fs: overlayFileSystem(entry.contents) });
+    disposeStaging(entry);
+    entry.api = new API({ cwd: entry.root, fs: overlayFileSystem(entry.contents, entry.virtual) });
+    entry.changes.clear();
+    entry.generation++;
     entry.snapshot = entry.api.updateSnapshot({ openProjects: [entry.configFileName] });
     entry.project = resolveProject(entry.snapshot, entry.configFileName);
     entry.seen = seed(entry.project.program);
@@ -363,6 +421,12 @@ const contains = (configFileName: string, fileName: string, content?: string): b
     entry.members = members;
 
     if (members.has(id)) {
+        // Include globs list the overlay without asking whether files exist; an import of this
+        // file resolves only once existence checks are routed to the overlay
+        if (staged) {
+            entry.virtual = true;
+        }
+
         return true;
     }
 
@@ -379,6 +443,7 @@ const dispose = (root?: string): void => {
     if (root === undefined) {
         for (let entry of cache.values()) {
             disposeEntry(entry);
+            disposeStaging(entry);
         }
 
         cache.clear();
@@ -397,6 +462,7 @@ const dispose = (root?: string): void => {
 
     if (entry) {
         disposeEntry(entry);
+        disposeStaging(entry);
         cache.delete(root);
     }
 };
@@ -432,6 +498,7 @@ const invalidate = (configFileName: string, fileName: string): void => {
 
     let id = normalize(fileName);
 
+    entry.changes.add(id);
     entry.contents.delete(id);
     entry.members = null;
     entry.outside.delete(key(fileName));
@@ -454,13 +521,80 @@ const scratch = (fileName: string, content: string): ScratchResult => {
     return { checker: entry.project.checker, program: entry.project.program, sourceFile: source };
 };
 
+// The program for `fileName` holding `content` while every other file keeps the entry's text, without
+// touching the entry's own program: its checker (and everything it has resolved) stays warm for the
+// next file, and `content` never leaks to it. One file is staged at a time; staging another unstages it.
+const stage = (configFileName: string, fileName: string, content: string): UpdateResult => {
+    let entry = getEntry(configFileName),
+        id = normalize(fileName),
+        staging = entry.staging;
+
+    if (staging && staging.generation !== entry.generation) {
+        disposeStaging(entry);
+        staging = null;
+    }
+
+    if (!staging) {
+        let contents = new Map(entry.contents);
+
+        contents.set(id, content);
+
+        let api = new API({ cwd: entry.root, fs: overlayFileSystem(contents, entry.virtual) }),
+            snapshot = api.updateSnapshot({ openProjects: [entry.configFileName] });
+
+        staging = entry.staging = {
+            api,
+            contents,
+            file: id,
+            generation: entry.generation,
+            project: resolveProject(snapshot, entry.configFileName),
+            snapshot
+        };
+    }
+    else {
+        let changed = new Set(entry.changes);
+
+        if (staging.file !== null) {
+            changed.add(staging.file);
+        }
+
+        changed.add(id);
+
+        for (let file of changed) {
+            let value = entry.contents.get(file);
+
+            if (value === undefined) {
+                staging.contents.delete(file);
+            }
+            else {
+                staging.contents.set(file, value);
+            }
+        }
+
+        staging.contents.set(id, content);
+        staging.file = id;
+        advance(staging, entry.configFileName, [...changed]);
+    }
+
+    entry.changes.clear();
+
+    let source = staging.project.program.getSourceFile(id);
+
+    if (!source || source.text !== content) {
+        throw new Error(`${PACKAGE_NAME}: failed to load ${id} into the program`);
+    }
+
+    return { checker: staging.project.checker, program: staging.project.program };
+};
+
 const update = (configFileName: string, fileName: string, content: string): UpdateResult => {
     return updateMany(configFileName, new Map([[fileName, content]]));
 };
 
 const updateMany = (configFileName: string, updates: Map<string, string>): UpdateResult => {
     let entry = getEntry(configFileName),
-        ids: string[] = [];
+        ids: string[] = [],
+        routed = entry.virtual;
 
     for (let [fileName, content] of updates) {
         let id = normalize(fileName);
@@ -471,6 +605,10 @@ const updateMany = (configFileName: string, updates: Map<string, string>): Updat
             continue;
         }
 
+        if (absent(entry, id)) {
+            entry.virtual = true;
+        }
+
         entry.contents.set(id, content);
         ids.push(id);
     }
@@ -479,15 +617,20 @@ const updateMany = (configFileName: string, updates: Map<string, string>): Updat
         return { checker: entry.project.checker, program: entry.project.program };
     }
 
-    if (ids.every(id => entry.seen.has(id))) {
+    // A file absent from disk is only visible once existence checks are routed to the overlay
+    if (routed === entry.virtual && ids.every(id => entry.seen.has(id))) {
         for (let i = 0, n = ids.length; i < n; i++) {
             entry.pending.add(ids[i]);
         }
 
         let changed = [...entry.pending];
 
+        for (let i = 0, n = changed.length; i < n; i++) {
+            entry.changes.add(changed[i]);
+        }
+
         entry.pending.clear();
-        advance(entry, changed);
+        advance(entry, entry.configFileName, changed);
     }
     else {
         // tsgo fixes each project's file-set when its API process opens; incremental
@@ -514,6 +657,6 @@ const updateMany = (configFileName: string, updates: Map<string, string>): Updat
 };
 
 
-export default { contains, dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
-export { contains, dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
+export default { contains, dispose, findConfig, invalidate, open, parse, scratch, stage, update, updateMany };
+export { contains, dispose, findConfig, invalidate, open, parse, scratch, stage, update, updateMany };
 export type { ScratchResult, UpdateResult };

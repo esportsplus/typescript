@@ -404,19 +404,20 @@ const transform = (
         if (pluginChanged) {
             changed = true;
 
+            // Later plugins check the intermediate output on a staged program: the project's own
+            // program is shared by every file the host transforms, and a later file that imports
+            // this one must see its source
             if (i < last) {
-                currentProject = languageService.update(configPath, fileName, currentCode);
+                if (!staged) {
+                    languageService.update(configPath, fileName, code);
+                    staged = true;
+                }
+
+                currentProject = languageService.stage(configPath, fileName, currentCode);
                 currentFile = currentProject.program.getSourceFile(fileName) ??
                     languageService.parse(fileName, currentCode);
-                staged = true;
             }
         }
-    }
-
-    // The language service entry is shared by every file the host transforms; a later file that
-    // imports this one must see its source, not the intermediate output handed to later plugins.
-    if (staged) {
-        languageService.update(configPath, fileName, code);
     }
 
     return { changed, code: currentCode, dependencies: [...dependencies], map: { generations } };
