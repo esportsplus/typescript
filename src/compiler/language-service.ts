@@ -39,6 +39,12 @@ type ScratchEntry = {
     snapshot: Snapshot;
 };
 
+type ScratchResult = {
+    checker: Checker;
+    program: Program;
+    sourceFile: SourceFile;
+};
+
 type Session = {
     api: API;
     project: Project;
@@ -51,12 +57,6 @@ type Staging = Session & {
     contents: Map<string, string>;
     file: string | null;
     generation: number;
-};
-
-type ScratchResult = {
-    checker: Checker;
-    program: Program;
-    sourceFile: SourceFile;
 };
 
 type UpdateResult = {

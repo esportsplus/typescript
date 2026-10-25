@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SyntaxKind } from 'typescript/unstable/ast';
+import { isImportDeclaration } from 'typescript/unstable/ast/is';
 
 import fs from 'fs';
 import path from 'path';
@@ -334,7 +335,7 @@ describe('language-service', () => {
                 ])),
                 declaration = program.getSourceFile(entry)!.statements[0];
 
-            expect(checker.getSymbolAtLocation((declaration as { moduleSpecifier: Parameters<typeof checker.getSymbolAtLocation>[0] }).moduleSpecifier)).toBeDefined();
+            expect(isImportDeclaration(declaration) && checker.getSymbolAtLocation(declaration.moduleSpecifier)).toBeTruthy();
         });
 
         it('resolves an import of an overlay-only file from a staged program', () => {
@@ -349,7 +350,7 @@ describe('language-service', () => {
             let { checker, program } = languageService.stage(project, entry, "import { v } from '../lib/virtual';\nexport const value = v + 1;"),
                 declaration = program.getSourceFile(entry)!.statements[0];
 
-            expect(checker.getSymbolAtLocation((declaration as { moduleSpecifier: Parameters<typeof checker.getSymbolAtLocation>[0] }).moduleSpecifier)).toBeDefined();
+            expect(isImportDeclaration(declaration) && checker.getSymbolAtLocation(declaration.moduleSpecifier)).toBeTruthy();
         });
     });
 

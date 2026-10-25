@@ -291,6 +291,48 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
     return parts.reverse().join('');
 }
 
+function resolveImports(file: SourceFile, checker: Checker, intents: ImportIntent[]): ImportIntent[] {
+    let resolved = [...intents];
+
+    for (let i = 0, n = intents.length; i < n; i++) {
+        let intent = intents[i];
+
+        if (!intent.remove?.length) {
+            continue;
+        }
+
+        let remove = new Set(intent.remove);
+
+        for (let statement of file.statements) {
+            if (!isImportDeclaration(statement) || !isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text === intent.package) {
+                continue;
+            }
+
+            let bindings = statement.importClause?.namedBindings;
+
+            if (!bindings || !isNamedImports(bindings)) {
+                continue;
+            }
+
+            let names: string[] = [];
+
+            for (let element of bindings.elements) {
+                let name = element.name.text;
+
+                if ((remove.has(name) || remove.has(element.propertyName?.text ?? name)) && imports.includes(checker, element.name, intent.package)) {
+                    names.push(name);
+                }
+            }
+
+            if (names.length > 0) {
+                resolved.push({ package: statement.moduleSpecifier.text, remove: names });
+            }
+        }
+    }
+
+    return resolved;
+}
+
 // The layout once `edits` (against the layout's text) are applied, without re-parsing. Null when an edit could
 // change what a parse finds: one reaching the opening imports or the first other statement (whose first
 // token decides its kind), one overlapping an import declaration, or text that may declare an import. The
@@ -344,48 +386,6 @@ function shift(layout: Layout, edits: Replacement[]): Layout | null {
     }
 
     return { boundary, declarations, leading: layout.leading };
-}
-
-function resolveImports(file: SourceFile, checker: Checker, intents: ImportIntent[]): ImportIntent[] {
-    let resolved = [...intents];
-
-    for (let i = 0, n = intents.length; i < n; i++) {
-        let intent = intents[i];
-
-        if (!intent.remove?.length) {
-            continue;
-        }
-
-        let remove = new Set(intent.remove);
-
-        for (let statement of file.statements) {
-            if (!isImportDeclaration(statement) || !isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text === intent.package) {
-                continue;
-            }
-
-            let bindings = statement.importClause?.namedBindings;
-
-            if (!bindings || !isNamedImports(bindings)) {
-                continue;
-            }
-
-            let names: string[] = [];
-
-            for (let element of bindings.elements) {
-                let name = element.name.text;
-
-                if ((remove.has(name) || remove.has(element.propertyName?.text ?? name)) && imports.includes(checker, element.name, intent.package)) {
-                    names.push(name);
-                }
-            }
-
-            if (names.length > 0) {
-                resolved.push({ package: statement.moduleSpecifier.text, remove: names });
-            }
-        }
-    }
-
-    return resolved;
 }
 
 
