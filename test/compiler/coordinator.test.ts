@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { ImportIntent, Plugin, ReplacementIntent, SharedContext, TransformContext } from '~/compiler/types';
 import { isCallExpression, isIdentifier, isImportDeclaration, isNamedImports } from 'typescript/unstable/ast/is';
@@ -829,7 +829,7 @@ describe('coordinator.transform', () => {
             file = parse(code),
             project = makeProject(file);
 
-        vi.spyOn(languageService, 'update').mockReturnValueOnce({
+        vi.spyOn(languageService, 'stage').mockReturnValueOnce({
             checker: {} as unknown as Checker,
             program: { getSourceFile: () => undefined } as unknown as Program
         });
@@ -847,6 +847,82 @@ describe('coordinator.transform', () => {
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const A = 1;');
         expect(result.code).toContain('const B = 2;');
+    });
+
+    it('checks later plugins against a staged program, leaving the project program in place', () => {
+        let code = 'let x = 1;',
+            file = parse(code),
+            project = { ...makeProject(file), configPath: root + '/tsconfig.json' },
+            before = languageService.update(root + '/tsconfig.json', fileName, code).program,
+            seen: string[] = [],
+            plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
+            plugin2 = makePlugin((ctx) => {
+                seen.push(ctx.program.getSourceFile(fileName)!.text);
+                return {};
+            });
+
+        coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
+
+        expect(seen).toEqual(['const A = 1;\nlet x = 1;']);
+        expect(languageService.open(root + '/tsconfig.json').project.program).toBe(before);
+    });
+
+    describe('import layout', () => {
+        afterEach(() => {
+            vi.restoreAllMocks();
+        });
+
+        function replacing(name: string, text: string, rest: Omit<ReturnType<Plugin['transform']>, 'replacements'>) {
+            return makePlugin((ctx) => {
+                let node: Node | undefined;
+
+                ctx.sourceFile.forEachChild(function visit(n) {
+                    if (isIdentifier(n) && n.text === name) {
+                        node = n;
+                    }
+
+                    n.forEachChild(visit);
+                });
+
+                return { ...rest, replacements: [{ generate: () => text, node: node! }] };
+            });
+        }
+
+        it('follows an import declared after other statements through the edits before it', () => {
+            let code = "import { a } from 'x';\nlet v = OLD;\nimport { b } from 'y';\nb(v, a);",
+                file = parse(code),
+                reparse = vi.spyOn(languageService, 'parse'),
+                plugin = replacing('OLD', 'A_LONGER_REPLACEMENT', {
+                    imports: [{ add: ['c'], package: 'y' }],
+                    prepend: ['const P = 1;']
+                }),
+                result = coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
+
+            expect(result.code).toBe("import { a } from 'x';\nconst P = 1;\n\nlet v = A_LONGER_REPLACEMENT;\nimport { b, c } from 'y';\nb(v, a);");
+            expect(reparse).not.toHaveBeenCalled();
+        });
+
+        it('re-parses when a replacement may itself declare an import', () => {
+            let code = "import { b } from 'y';\nOLD;\nb();",
+                file = parse(code),
+                reparse = vi.spyOn(languageService, 'parse'),
+                plugin = replacing('OLD', "0;\nimport { z } from 'y'", { imports: [{ add: ['c'], package: 'y' }] }),
+                result = coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
+
+            expect(result.code).toContain("import { b, c, z } from 'y';");
+            expect(reparse).toHaveBeenCalledTimes(1);
+        });
+
+        it('re-parses when a replacement starts the first statement after the imports', () => {
+            let code = "import { b } from 'y';\nOLD();",
+                file = parse(code),
+                reparse = vi.spyOn(languageService, 'parse'),
+                plugin = replacing('OLD', 'NEW', { imports: [{ add: ['c'], package: 'y' }] }),
+                result = coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
+
+            expect(result.code).toBe("import { b, c } from 'y';\nNEW();");
+            expect(reparse).toHaveBeenCalledTimes(1);
+        });
     });
 
     // F-003: applyImports batching

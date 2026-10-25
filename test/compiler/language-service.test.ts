@@ -237,6 +237,122 @@ describe('language-service', () => {
         });
     });
 
+    describe('stage', () => {
+        let directory: string,
+            first: string,
+            project: string,
+            second: string;
+
+        beforeEach(() => {
+            directory = fs.mkdtempSync(path.join(root, 'test/.language-service-stage-')).replace(/\\/g, '/');
+            first = directory + '/src/first.ts';
+            project = directory + '/tsconfig.json';
+            second = directory + '/src/second.ts';
+            fs.mkdirSync(directory + '/src');
+            fs.writeFileSync(project, JSON.stringify({ compilerOptions: { noLib: true, types: [] }, include: ['src'] }));
+            fs.writeFileSync(first, 'export const value = 1;');
+            fs.writeFileSync(second, "import { value } from './first';\nexport const doubled = value * 2;");
+        });
+
+        afterEach(() => {
+            languageService.dispose();
+            fs.rmSync(directory, { force: true, recursive: true });
+        });
+
+        it('checks the staged text without replacing the project program', () => {
+            let { program } = languageService.update(project, first, 'export const value = 1;'),
+                staged = languageService.stage(project, first, "export const value = 'staged';");
+
+            expect(staged.program.getSourceFile(first)?.text).toBe("export const value = 'staged';");
+            expect(languageService.open(project).project.program).toBe(program);
+            expect(program.getSourceFile(first)?.text).toBe('export const value = 1;');
+        });
+
+        it('unstages the previous file when staging another', () => {
+            languageService.stage(project, first, "export const value = 'staged';");
+
+            let { program } = languageService.stage(project, second, "import { value } from './first';\nexport const doubled = value;");
+
+            expect(program.getSourceFile(first)?.text).toBe('export const value = 1;');
+            expect(program.getSourceFile(second)?.text).toBe("import { value } from './first';\nexport const doubled = value;");
+        });
+
+        it('sees the project overlay and files invalidated since the last stage', () => {
+            languageService.update(project, second, 'export const doubled = 4;');
+            languageService.stage(project, first, 'export const value = 2;');
+
+            fs.writeFileSync(first, 'export const value = 3;');
+            languageService.invalidate(project, first);
+
+            let { program } = languageService.stage(project, second, 'export const doubled = 6;');
+
+            expect(program.getSourceFile(first)?.text).toBe('export const value = 3;');
+
+            ({ program } = languageService.stage(project, first, 'export const value = 5;'));
+
+            expect(program.getSourceFile(second)?.text).toBe('export const doubled = 4;');
+        });
+
+        it('stages onto a project recreated to admit a new file', () => {
+            languageService.stage(project, first, 'export const value = 2;');
+
+            let added = directory + '/src/added.ts';
+
+            languageService.update(project, added, 'export const added = 1;');
+
+            let { program } = languageService.stage(project, first, "import { added } from './added';\nexport const value = added;");
+
+            expect(program.getSourceFile(added)?.text).toBe('export const added = 1;');
+        });
+    });
+
+    describe('overlay-only files', () => {
+        let directory: string,
+            project: string;
+
+        beforeEach(() => {
+            directory = fs.mkdtempSync(path.join(root, 'test/.language-service-virtual-')).replace(/\\/g, '/');
+            project = directory + '/tsconfig.json';
+            fs.mkdirSync(directory + '/lib');
+            fs.mkdirSync(directory + '/src');
+            fs.writeFileSync(project, JSON.stringify({ compilerOptions: { noLib: true, types: [] }, include: ['src'] }));
+            fs.writeFileSync(directory + '/src/entry.ts', 'export const value = 1;');
+        });
+
+        afterEach(() => {
+            languageService.dispose();
+            fs.rmSync(directory, { force: true, recursive: true });
+        });
+
+        it('resolves an import of a file that exists only in the overlay', () => {
+            let entry = directory + '/src/entry.ts',
+                virtual = directory + '/lib/virtual.ts';
+
+            let { checker, program } = languageService.updateMany(project, new Map([
+                    [virtual, 'export const v = 1;'],
+                    [entry, "import { v } from '../lib/virtual';\nexport const value = v;"]
+                ])),
+                declaration = program.getSourceFile(entry)!.statements[0];
+
+            expect(checker.getSymbolAtLocation((declaration as { moduleSpecifier: Parameters<typeof checker.getSymbolAtLocation>[0] }).moduleSpecifier)).toBeDefined();
+        });
+
+        it('resolves an import of an overlay-only file from a staged program', () => {
+            let entry = directory + '/src/entry.ts',
+                virtual = directory + '/lib/virtual.ts';
+
+            languageService.updateMany(project, new Map([
+                [virtual, 'export const v = 1;'],
+                [entry, "import { v } from '../lib/virtual';\nexport const value = v;"]
+            ]));
+
+            let { checker, program } = languageService.stage(project, entry, "import { v } from '../lib/virtual';\nexport const value = v + 1;"),
+                declaration = program.getSourceFile(entry)!.statements[0];
+
+            expect(checker.getSymbolAtLocation((declaration as { moduleSpecifier: Parameters<typeof checker.getSymbolAtLocation>[0] }).moduleSpecifier)).toBeDefined();
+        });
+    });
+
     describe('parse', () => {
         it('returns a SourceFile whose text round-trips', () => {
             let fileName = root + '/src/test-virtual-parse.ts',
