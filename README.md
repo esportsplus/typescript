@@ -123,7 +123,11 @@ Each channel's `severity` is `"error"`, `"warn"`, `"info"`, or `"off"` — `erro
 
 ### CLI / build
 
-The `tsc` passthrough runs analyze after a successful compile and prints findings to stderr. It exits non-zero (`1`) when any finding is in a channel whose `severity` is `"error"`; `warn` channels never fail the build. A rejected or removed config key is a hard error and also exits `1`.
+The `tsc` wrapper checks each project once: it opens one API program, runs analyze and gathers the compiler's diagnostics from it, then emits with `tsc.js --noCheck` (a project with transformer plugins first transforms its files and checks the transformed program). `tsc.js` checks on its own only when the invocation is something the API program cannot honor: no tsconfig, informational flags, `--watch`, or compiler flags on the command line. Findings print to stderr.
+
+Analyze's findings are cached under `node_modules/.cache/@esportsplus/typescript/guard/`, one entry per tsconfig, keyed by every file the program reads, the guard config, the lockfile and this package's own build; any change re-runs the whole analysis, an unchanged project costs a hash. `ESPORTSPLUS_ANALYZE_CACHE=0` disables the cache; `ESPORTSPLUS_TIMINGS=1` prints how long each phase took (open, analyze per channel, transform, diagnostics, emit).
+
+The wrapper exits non-zero (`1`) when any finding is in a channel whose `severity` is `"error"`; `warn` channels never fail the build. A rejected or removed config key is a hard error and also exits `1`.
 
 ```bash
 tsc   # compiles, then reports analyze findings

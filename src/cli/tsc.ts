@@ -1,5 +1,6 @@
 import type { Plugin, SharedContext } from '../compiler/types';
 import type { PositionMapping } from '../compiler/sourcemap';
+import type { Diagnostic as AnalyzeDiagnostic } from '../guard/kernel/types';
 import { API, DiagnosticCategory, type Checker, type Program, type Snapshot } from 'typescript/unstable/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
@@ -15,6 +16,7 @@ import sourcemap from '../compiler/sourcemap';
 import specifiers from './specifiers';
 import timing from '../timing';
 import { analyze, analyzeProgram } from '../guard/kernel/analyze';
+import analyzed from '../guard/kernel/cache';
 import { formatDiagnostics } from '../guard/kernel/format';
 import { loadConfigFromTsconfig } from '../guard/kernel/config';
 import { stripJsonc } from '../jsonc';
@@ -529,10 +531,14 @@ function runAnalyze(tsconfig: string, program?: Program, checker?: Checker): voi
         return;
     }
 
-    let result;
+    let diagnostics: ReadonlyArray<AnalyzeDiagnostic>,
+        stop = timing('analyze findings (cache lookup included)');
 
     try {
-        result = program && checker ? analyzeProgram(program, checker, config) : analyze(config);
+        diagnostics = program && checker
+            ? analyzed.findings(config, program.getSourceFileNames(), () => [...analyzeProgram(program, checker, config).diagnostics])
+            : analyze(config).diagnostics;
+        stop();
     }
     catch (error) {
         console.error(`${PACKAGE_NAME}: analyze failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -540,16 +546,16 @@ function runAnalyze(tsconfig: string, program?: Program, checker?: Checker): voi
         return;
     }
 
-    if (result.diagnostics.length === 0) {
+    if (diagnostics.length === 0) {
         return;
     }
 
-    console.error(formatDiagnostics(result.diagnostics, config.projectRoot));
+    console.error(formatDiagnostics(diagnostics, config.projectRoot));
 
     // Fail the build only when a finding belongs to a channel configured
     // `severity: "error"`; `warn` channels report without gating. Kept outside the
     // analyze try so the exit is never swallowed as an "analyze failed".
-    if (result.diagnostics.some((diagnostic) => config.channels[diagnostic.channel]?.severity === 'error')) {
+    if (diagnostics.some((diagnostic) => config.channels[diagnostic.channel]?.severity === 'error')) {
         process.exit(1);
     }
 }
