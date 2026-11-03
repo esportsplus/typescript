@@ -12,9 +12,12 @@ const BATCHED = new Set<PropertyKey>([
 
 // Pure queries: answers are fixed for the program snapshot a transform runs against
 const CACHED = new Set<PropertyKey>([
+    'getAliasedSymbol',
+    'getApparentType',
     'getBaseConstraintOfType',
     'getDeclaredTypeOfSymbol',
     'getNonNullableType',
+    'getPropertiesOfType',
     'getPropertyOfType',
     'getReturnTypeOfSignature',
     'getShorthandAssignmentValueSymbol',
@@ -28,12 +31,16 @@ const CACHED = new Set<PropertyKey>([
     'resolveName'
 ]);
 
-// Queries about a type, keyed by its id: within one program snapshot tsgo gives a type one id
-// however it was reached (a node, another query), so equal types share an entry
+// Queries about a type, symbol or signature, keyed by its id: within one program snapshot tsgo gives
+// each one id however it was reached (a node, another query), so equal objects share an entry
 const TYPED = new Set<PropertyKey>([
+    'getAliasedSymbol',
+    'getApparentType',
     'getBaseConstraintOfType',
     'getNonNullableType',
+    'getPropertiesOfType',
     'getPropertyOfType',
+    'getReturnTypeOfSignature',
     'getSignaturesOfType',
     'getTypeArguments',
     'isArrayType',

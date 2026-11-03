@@ -31,10 +31,13 @@ function fake() {
         };
 
     let double = {
+            getAliasedSymbol: method('getAliasedSymbol'),
+            getApparentType: method('getApparentType'),
             getBaseConstraintOfType: method('getBaseConstraintOfType'),
             getDeclaredTypeOfSymbol: method('getDeclaredTypeOfSymbol'),
             getImmediateAliasedSymbol: method('getImmediateAliasedSymbol'),
             getNonNullableType: method('getNonNullableType'),
+            getPropertiesOfType: method('getPropertiesOfType'),
             getPropertyOfType: method('getPropertyOfType'),
             getReturnTypeOfSignature: method('getReturnTypeOfSignature'),
             getShorthandAssignmentValueSymbol: method('getShorthandAssignmentValueSymbol'),
@@ -58,7 +61,10 @@ function wrap(double: Fake, program?: Program): Fake {
 
 describe('compiler/checker', () => {
     it.each([
+        'getAliasedSymbol',
+        'getApparentType',
         'getDeclaredTypeOfSymbol',
+        'getPropertiesOfType',
         'getReturnTypeOfSignature',
         'getShorthandAssignmentValueSymbol',
         'getSignaturesOfType',
@@ -224,12 +230,16 @@ describe('compiler/checker', () => {
 
 describe('compiler/checker type-keyed queries', () => {
     it.each([
+        'getAliasedSymbol',
+        'getApparentType',
         'getBaseConstraintOfType',
         'getNonNullableType',
+        'getPropertiesOfType',
+        'getReturnTypeOfSignature',
         'getTypeArguments',
         'isArrayType',
         'isTupleType'
-    ])('answers %s for any object carrying the same type id from one round-trip', (name) => {
+    ])('answers %s for any object carrying the same id from one round-trip', (name) => {
         let { calls, checker: double } = fake(),
             memo = wrap(double);
 
