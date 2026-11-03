@@ -1,0 +1,1061 @@
+{
+    "findings": [
+        {
+            "channel": "resources",
+            "location": {
+                "column": 17,
+                "end": 4214,
+                "fileName": "test/async-computed.test.ts",
+                "line": 138,
+                "pos": 4106
+            },
+            "message": "`Listener` resource can leak — no matching `removeEventListener` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 9052,
+                            "fileName": "test/system.test.ts",
+                            "newText": "using",
+                            "pos": 9049
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 9183,
+                            "fileName": "test/system.test.ts",
+                            "newText": "        try {\n            let returned = onCleanup(fn);\n\n            expect(returned).toBe(fn);\n            expect(fn).not.toHaveBeenCalled();\n        }\n        finally {\n            fn[Symbol.dispose]();\n        }",
+                            "pos": 9067
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 18,
+                "end": 9065,
+                "fileName": "test/system.test.ts",
+                "line": 421,
+                "pos": 9058
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 13586,
+                            "fileName": "test/system.test.ts",
+                            "newText": "using",
+                            "pos": 13583
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 14038,
+                            "fileName": "test/system.test.ts",
+                            "newText": "        try {\n            root((dispose) => {\n                stop = dispose;\n\n                try {\n                    root((_inner) => {\n                        throw new Error('reactivity: inner boom');\n                    });\n                }\n                catch {\n                }\n\n                onCleanup(spy);\n            });\n\n            expect(spy).not.toHaveBeenCalled();\n\n            stop!();\n\n            expect(spy).toHaveBeenCalledTimes(1);\n        }\n        finally {\n            spy[Symbol.dispose]();\n        }",
+                            "pos": 13647
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 19,
+                "end": 13600,
+                "fileName": "test/system.test.ts",
+                "line": 580,
+                "pos": 13593
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 24051,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 24048
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 24324,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                arr.sort((a, b) => b - a);\n\n                expect(calls).toBe(1);\n                expect([...arr]).toEqual([3, 2, 1]);\n                expect('sort' in arr.listeners).toBe(false);\n                expect(dispatch).not.toHaveBeenCalled();\n            }\n            finally {\n                dispatch[Symbol.dispose]();\n            }",
+                            "pos": 24091
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 24088,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 829,
+                "pos": 24063
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 25316,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 25313
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 25783,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let captured = await captureUncaught(() => {\n                    arr.on('push', fn1);\n                    arr.push(1); // fn1 throws and gets nulled\n                });\n\n                expect(captured.length).toBe(1);\n\n                arr.on('push', fn2);\n                arr.push(2);\n\n                expect(fn2).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                fn2[Symbol.dispose]();\n            }",
+                            "pos": 25459
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 25456,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 869,
+                "pos": 25449
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 25913,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 25910
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 26971,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let captured = await captureUncaught(() => {\n                    arr.on('push', err1);\n                    arr.on('push', err2);\n                    arr.on('push', fn3);\n                    arr.push(1); // err1 and err2 throw, slots 0 and 1 nulled\n                });\n\n                expect(fn3).toHaveBeenCalledTimes(1);\n                expect(captured.length).toBe(1);\n                expect(captured[0]).toBeInstanceOf(AggregateError);\n                expect((captured[0] as AggregateError).errors.length).toBe(2);\n\n                let fn4 = vi.fn(),\n                    fn5 = vi.fn();\n\n                arr.on('push', fn4); // fills hole at slot 0\n                arr.on('push', fn5); // fills hole at slot 1\n                arr.push(2);\n\n                expect(fn3).toHaveBeenCalledTimes(2);\n                expect(fn4).toHaveBeenCalledTimes(1);\n                expect(fn5).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                fn3[Symbol.dispose]();\n            }",
+                            "pos": 26123
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 26120,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 888,
+                "pos": 26113
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 26634,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 26631
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 26971,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                arr.on('push', fn4); // fills hole at slot 0\n                arr.on('push', fn5); // fills hole at slot 1\n                arr.push(2);\n\n                expect(fn3).toHaveBeenCalledTimes(2);\n                expect(fn4).toHaveBeenCalledTimes(1);\n                expect(fn5).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                fn4[Symbol.dispose]();\n            }",
+                            "pos": 26682
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 26648,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 902,
+                "pos": 26641
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 26634,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 26631
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 26971,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                arr.on('push', fn4); // fills hole at slot 0\n                arr.on('push', fn5); // fills hole at slot 1\n                arr.push(2);\n\n                expect(fn3).toHaveBeenCalledTimes(2);\n                expect(fn4).toHaveBeenCalledTimes(1);\n                expect(fn5).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                fn5[Symbol.dispose]();\n            }",
+                            "pos": 26682
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 26679,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 903,
+                "pos": 26672
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 27071,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 27068
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 27741,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let captured = await captureUncaught(() => {\n                    arr.on('push', fn1);\n                    arr.on('push', err2);\n\n                    // Before dispatch: listeners = [fn1, err2] (length 2)\n                    arr.push(1); // err2 throws → nulled → trailing null cleaned\n                });\n\n                // Trailing null should be cleaned, so internal array length is 1\n                expect(arr.listeners['push']!.length).toBe(1);\n                expect(fn1).toHaveBeenCalledTimes(1);\n                expect(captured.length).toBe(1);\n            }\n            finally {\n                fn1[Symbol.dispose]();\n            }",
+                            "pos": 27212
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 27136,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 916,
+                "pos": 27129
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 27854,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 27851
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 28973,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let captured = await captureUncaught(() => {\n                    arr.on('push', fn1);\n                    arr.on('push', fn2);\n                    arr.on('push', fn3);\n\n                    // Dispatch: fn2 and fn3 throw → nulled → trailing nulls cleaned\n                    // listeners = [fn1, null, null] → cleanup → [fn1]\n                    arr.push(1);\n                });\n\n                expect(fn1).toHaveBeenCalledTimes(1);\n                expect(arr.listeners['push']!.length).toBe(1);\n                expect(captured[0]).toBeInstanceOf(AggregateError);\n\n                // Register fn4 — should append at index 1 (no holes left)\n                let fn4 = vi.fn();\n\n                arr.on('push', fn4);\n\n                expect(arr.listeners['push']!.length).toBe(2);\n\n                // Both fn1 and fn4 called on next push\n                arr.push(2);\n\n                expect(fn1).toHaveBeenCalledTimes(2);\n                expect(fn4).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                fn1[Symbol.dispose]();\n            }",
+                            "pos": 28062
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 27919,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 935,
+                "pos": 27912
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 28685,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 28682
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 28973,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                arr.on('push', fn4);\n\n                expect(arr.listeners['push']!.length).toBe(2);\n\n                // Both fn1 and fn4 called on next push\n                arr.push(2);\n\n                expect(fn1).toHaveBeenCalledTimes(2);\n                expect(fn4).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                fn4[Symbol.dispose]();\n            }",
+                            "pos": 28702
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 28699,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 954,
+                "pos": 28692
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 32641,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 32638
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 33212,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b, c]);\n\n                arr.dispose();\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyC).toHaveBeenCalledTimes(1);\n                expect(arr.length).toBe(0);\n            }\n            finally {\n                spyA[Symbol.dispose]();\n            }",
+                            "pos": 32918
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 32821,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1106,
+                "pos": 32799
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 32641,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 32638
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 33212,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b, c]);\n\n                arr.dispose();\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyC).toHaveBeenCalledTimes(1);\n                expect(arr.length).toBe(0);\n            }\n            finally {\n                spyB[Symbol.dispose]();\n            }",
+                            "pos": 32918
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 32868,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1107,
+                "pos": 32846
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 32641,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 32638
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 33212,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b, c]);\n\n                arr.dispose();\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyC).toHaveBeenCalledTimes(1);\n                expect(arr.length).toBe(0);\n            }\n            finally {\n                spyC[Symbol.dispose]();\n            }",
+                            "pos": 32918
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 32915,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1108,
+                "pos": 32893
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 33316,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 33313
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 33734,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.clear();\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(arr.length).toBe(0);\n            }\n            finally {\n                spyA[Symbol.dispose]();\n            }",
+                            "pos": 33496
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 33446,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1123,
+                "pos": 33424
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 33316,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 33313
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 33734,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.clear();\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(arr.length).toBe(0);\n            }\n            finally {\n                spyB[Symbol.dispose]();\n            }",
+                            "pos": 33496
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 33493,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1124,
+                "pos": 33471
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 33831,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 33828
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 34245,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.pop();\n\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyA).not.toHaveBeenCalled();\n                expect(arr.length).toBe(1);\n            }\n            finally {\n                spyA[Symbol.dispose]();\n            }",
+                            "pos": 34011
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 33961,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1138,
+                "pos": 33939
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 33831,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 33828
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 34245,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.pop();\n\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyA).not.toHaveBeenCalled();\n                expect(arr.length).toBe(1);\n            }\n            finally {\n                spyB[Symbol.dispose]();\n            }",
+                            "pos": 34011
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 34008,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1139,
+                "pos": 33986
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 34344,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 34341
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 34760,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.shift();\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).not.toHaveBeenCalled();\n                expect(arr.length).toBe(1);\n            }\n            finally {\n                spyA[Symbol.dispose]();\n            }",
+                            "pos": 34524
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 34474,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1153,
+                "pos": 34452
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 34344,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 34341
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 34760,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.shift();\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).not.toHaveBeenCalled();\n                expect(arr.length).toBe(1);\n            }\n            finally {\n                spyB[Symbol.dispose]();\n            }",
+                            "pos": 34524
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 34521,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1154,
+                "pos": 34499
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 34869,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 34866
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 35590,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b, c, d]);\n\n                arr.splice(1, 2);\n\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyC).toHaveBeenCalledTimes(1);\n                expect(spyA).not.toHaveBeenCalled();\n                expect(spyD).not.toHaveBeenCalled();\n                expect(arr.length).toBe(2);\n            }\n            finally {\n                spyA[Symbol.dispose]();\n            }",
+                            "pos": 35243
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 35099,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1170,
+                "pos": 35077
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 34869,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 34866
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 35590,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b, c, d]);\n\n                arr.splice(1, 2);\n\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyC).toHaveBeenCalledTimes(1);\n                expect(spyA).not.toHaveBeenCalled();\n                expect(spyD).not.toHaveBeenCalled();\n                expect(arr.length).toBe(2);\n            }\n            finally {\n                spyB[Symbol.dispose]();\n            }",
+                            "pos": 35243
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 35146,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1171,
+                "pos": 35124
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 34869,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 34866
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 35590,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b, c, d]);\n\n                arr.splice(1, 2);\n\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyC).toHaveBeenCalledTimes(1);\n                expect(spyA).not.toHaveBeenCalled();\n                expect(spyD).not.toHaveBeenCalled();\n                expect(arr.length).toBe(2);\n            }\n            finally {\n                spyC[Symbol.dispose]();\n            }",
+                            "pos": 35243
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 35193,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1172,
+                "pos": 35171
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 34869,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 34866
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 35590,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b, c, d]);\n\n                arr.splice(1, 2);\n\n                expect(spyB).toHaveBeenCalledTimes(1);\n                expect(spyC).toHaveBeenCalledTimes(1);\n                expect(spyA).not.toHaveBeenCalled();\n                expect(spyD).not.toHaveBeenCalled();\n                expect(arr.length).toBe(2);\n            }\n            finally {\n                spyD[Symbol.dispose]();\n            }",
+                            "pos": 35243
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 35240,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1173,
+                "pos": 35218
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 35692,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 35689
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 36293,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.splice(0, 1, replacement);\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).not.toHaveBeenCalled();\n                expect(spyR).not.toHaveBeenCalled();\n                expect(arr.length).toBe(2);\n            }\n            finally {\n                spyA[Symbol.dispose]();\n            }",
+                            "pos": 35990
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 35883,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1190,
+                "pos": 35861
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 35692,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 35689
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 36293,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.splice(0, 1, replacement);\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).not.toHaveBeenCalled();\n                expect(spyR).not.toHaveBeenCalled();\n                expect(arr.length).toBe(2);\n            }\n            finally {\n                spyB[Symbol.dispose]();\n            }",
+                            "pos": 35990
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 35930,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1191,
+                "pos": 35908
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 35692,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 35689
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 36293,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                let arr = new ReactiveArray<ReactiveObject<any>>([a, b]);\n\n                arr.splice(0, 1, replacement);\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).not.toHaveBeenCalled();\n                expect(spyR).not.toHaveBeenCalled();\n                expect(arr.length).toBe(2);\n            }\n            finally {\n                spyR[Symbol.dispose]();\n            }",
+                            "pos": 35990
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 35987,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1192,
+                "pos": 35955
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 36388,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 36385
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 36799,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                arr.$set(0, b);\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).not.toHaveBeenCalled();\n                expect(arr[0]).toBe(b);\n            }\n            finally {\n                spyA[Symbol.dispose]();\n            }",
+                            "pos": 36635
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 36518,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1207,
+                "pos": 36496
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 36388,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "using",
+                            "pos": 36385
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 36799,
+                            "fileName": "test/reactive/array.test.ts",
+                            "newText": "            try {\n                arr.$set(0, b);\n\n                expect(spyA).toHaveBeenCalledTimes(1);\n                expect(spyB).not.toHaveBeenCalled();\n                expect(arr[0]).toBe(b);\n            }\n            finally {\n                spyB[Symbol.dispose]();\n            }",
+                            "pos": 36635
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 36565,
+                "fileName": "test/reactive/array.test.ts",
+                "line": 1208,
+                "pos": 36543
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 12595,
+                            "fileName": "test/reactive/reactive.test.ts",
+                            "newText": "using",
+                            "pos": 12592
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 12860,
+                            "fileName": "test/reactive/reactive.test.ts",
+                            "newText": "            try {\n                stop();\r\n    \r\n                expect(spy).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                spy[Symbol.dispose]();\n            }",
+                            "pos": 12788
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 12683,
+                "fileName": "test/reactive/reactive.test.ts",
+                "line": 421,
+                "pos": 12657
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        }
+    ],
+    "fingerprint": "eb3c315eb86fe45aceb8db0b826827ac7ac79f881e78319b599dd81f98f79eb2"
+}
