@@ -61,6 +61,9 @@ type Env  = {
     readonly peerThrows: (fnId: string) => boolean;
     readonly logDegrade: (message: string) => void;
     readonly paramSymbols: Map<ts.Symbol, number> | undefined;
+    // `hasDispose` answers by type id, async members included and not; fixed for
+    // the program snapshot.
+    readonly disposable: readonly [Map<number, boolean>, Map<number, boolean>];
 };
 
 type Outcome = 'safe' | 'leak' | 'degrade';
@@ -278,16 +281,28 @@ function hasDispose(
         return false;
     }
 
+    const cache = env.disposable[includeAsync ? 1 : 0];
+    const cached = cache.get(type.id);
+
+    if (cached !== undefined) {
+        return cached;
+    }
+
+    let result = false;
+
     for (const prop of env.checker.getPropertiesOfType(type)) {
         if (
             prop.name.startsWith('__@dispose') ||
             (includeAsync && prop.name.startsWith('__@asyncDispose'))
         ) {
-            return true;
+            result = true;
+            break;
         }
     }
 
-    return false;
+    cache.set(type.id, result);
+
+    return result;
 }
 
 function parsePairKey(raw: unknown): ReadonlyArray<number> | undefined {
@@ -1168,6 +1183,7 @@ function makeEnv(
     peerSummaryValue: (channel: string, fnId: string) => unknown,
     logDegrade: (message: string) => void,
     includeParamSymbols: boolean,
+    disposable: Env['disposable'],
 ): Env {
     const resolveExceptions = (
         call: ts.CallExpression | ts.NewExpression,
@@ -1180,6 +1196,7 @@ function makeEnv(
 
     return {
         checker,
+        disposable,
         fn,
         logDegrade,
         paramSymbols: includeParamSymbols ? paramSymbols(checker, fn.node) : undefined,
@@ -1402,6 +1419,7 @@ const createResourcesChannel = (
             prefetchOperands(checker, fn.sourceFile);
         }
     };
+    const disposable: Env['disposable'] = [new Map(), new Map()];
 
     return {
         bottom,
@@ -1418,6 +1436,7 @@ const createResourcesChannel = (
                 ctx.peerSummaryValue,
                 onDegrade,
                 false,
+                disposable,
             );
             const out: Diagnostic[] = [];
 
@@ -1463,6 +1482,7 @@ const createResourcesChannel = (
                 ctx.peerSummaryValue,
                 onDegrade,
                 true,
+                disposable,
             );
 
             return {

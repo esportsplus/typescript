@@ -33,27 +33,38 @@ type Env  = {
     readonly heldSignalNames: (fn: FunctionInfo) => ReadonlySet<string>;
     // Names bound to an AbortSignal the current function holds (A3).
     readonly held: ReadonlySet<string>;
+    readonly promiseTypes: Map<number, boolean>;
 };
 // Promise typing
 
+// `cache` holds the answer per type id, fixed for the program snapshot.
 function isPromiseType(
     checker: ts.TypeChecker,
     type: ts.Type | undefined,
+    cache: Map<number, boolean>,
 ): boolean {
     if (!type) {
         return false;
     }
+    const cached = cache.get(type.id);
+    if (cached !== undefined) {
+        return cached;
+    }
+    let result = false;
     for (const c of constituents(type)) {
         const sym = c.getSymbol() ?? c.getAliasSymbol();
         if (sym && sym.name === 'Promise') {
-            return true;
+            result = true;
+            break;
         }
         const apparent = checker.getApparentType(c) ?? c;
         if (checker.getPropertyOfType(apparent, 'then')) {
-            return true;
+            result = true;
+            break;
         }
     }
-    return false;
+    cache.set(type.id, result);
+    return result;
 }
 
 // Whether the nearest enclosing function is async — `await` is only a valid fix
@@ -71,7 +82,11 @@ function enclosingAsync(node: ts.Node): boolean {
 
 // Whether invoking this function yields a promise the caller must own. An async
 // function always does; otherwise its inferred signature return type decides.
-function returnsPromise(checker: ts.TypeChecker, node: FunctionLike): boolean {
+function returnsPromise(
+    checker: ts.TypeChecker,
+    node: FunctionLike,
+    promiseTypes: Map<number, boolean>,
+): boolean {
     if (hasModifier(node, ts.SyntaxKind.AsyncKeyword)) {
         return true;
     }
@@ -83,7 +98,11 @@ function returnsPromise(checker: ts.TypeChecker, node: FunctionLike): boolean {
     if (!sig) {
         return false;
     }
-    return isPromiseType(checker, checker.getReturnTypeOfSignature(sig));
+    return isPromiseType(
+        checker,
+        checker.getReturnTypeOfSignature(sig),
+        promiseTypes,
+    );
 }
 
 // A call produces an owned-relevant promise. App targets answer from their
@@ -97,7 +116,11 @@ function producesPromise(
     if (res.targets.length > 0) {
         return res.targets.some((t) => env.summaryOf(t).value.returnsPromise);
     }
-    return isPromiseType(env.checker, env.checker.getTypeAtLocation(call));
+    return isPromiseType(
+        env.checker,
+        env.checker.getTypeAtLocation(call),
+        env.promiseTypes,
+    );
 }
 // Callee identity
 
@@ -525,6 +548,21 @@ function createAsyncChannel(): Channel<AsyncValue> {
         }
         return held;
     };
+    const promiseTypes = new Map<number, boolean>();
+    // A function's answer is fixed for the snapshot; transfer asks it every
+    // fixpoint round.
+    const returnsByFunction = new Map<FunctionInfo, boolean>();
+    const getReturnsPromise = (
+        checker: ts.TypeChecker,
+        fn: FunctionInfo,
+    ): boolean => {
+        let returns = returnsByFunction.get(fn);
+        if (returns === undefined) {
+            returns = returnsPromise(checker, fn.node, promiseTypes);
+            returnsByFunction.set(fn, returns);
+        }
+        return returns;
+    };
     return {
         bottom,
         diagnose(ctx: DiagnoseContext<AsyncValue>): ReadonlyArray<Diagnostic> {
@@ -536,6 +574,7 @@ function createAsyncChannel(): Channel<AsyncValue> {
                 checker: ctx.checker,
                 held: getHeldSignalNames(ctx.checker, ctx.fn),
                 heldSignalNames: (fn) => getHeldSignalNames(ctx.checker, fn),
+                promiseTypes,
                 resolveCall: ctx.resolveCall,
                 summaryOf: ctx.summaryOf,
             };
@@ -546,7 +585,7 @@ function createAsyncChannel(): Channel<AsyncValue> {
         equals,
         name: 'async',
         transfer(ctx: TransferContext<AsyncValue>): Summary<AsyncValue> {
-            const value = returnsPromise(ctx.checker, ctx.fn.node)
+            const value = getReturnsPromise(ctx.checker, ctx.fn)
                 ? promise()
                 : bottom();
             return { fromCallbacks: new Set(), value };
