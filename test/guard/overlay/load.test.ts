@@ -82,7 +82,7 @@ describe("overlay lookup — global fallback for node-declared globals", () => {
 
             const checker = built.checker;
             let sym: ts.Symbol | undefined;
-            for (const sf of ts.getSourceFiles(built.program)) {
+            for (const sf of ts.getEntrySourceFiles(built.program)) {
                 if (!sf.fileName.endsWith("/a.ts") && !sf.fileName.endsWith("\\a.ts")) {
                     continue;
                 }

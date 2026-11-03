@@ -26,8 +26,8 @@ function buildCallGraph(
     checker: ts.TypeChecker,
     overlays: OverlaySet,
 ): CallGraph {
-    const sourceFiles = ts.getSourceFiles(program);
-    const analyzableFiles = new Set(entryFiles());
+    const entryFiles = ts.getEntrySourceFiles(program);
+    const analyzableFiles = new Set(entryFiles);
     const reached = new Map<FunctionLike, FunctionInfo>();
     const worklist: FunctionInfo[] = [];
 
@@ -273,18 +273,6 @@ function buildCallGraph(
         return out;
     }
 
-    // Whole-project analysis: every in-project, non-declaration source file (the
-    // native Program does not expose the tsconfig root set, so filter its files to
-    // the project tree). Every function is an entry, so any uncaught effect is
-    // reported wherever it is.
-    function entryFiles(): ReadonlyArray<ts.SourceFile> {
-        return sourceFiles.filter(
-            (sf) =>
-                !sf.isDeclarationFile &&
-                !sf.fileName.replace(/\\/g, '/').includes('/node_modules/'),
-        );
-    }
-
     // --- prefetch -----------------------------------------------------------
 
     // Identifier binding names a parameter declares, destructured object
@@ -336,7 +324,9 @@ function buildCallGraph(
 
     // --- build --------------------------------------------------------------
 
-    for (const sf of entryFiles()) {
+    // Whole-project analysis: every function of every entry file is an entry, so
+    // any uncaught effect is reported wherever it is.
+    for (const sf of entryFiles) {
         const fns: FunctionInfo[] = [];
         for (const node of allFunctionLikesIn(sf)) {
             const info = intern(node);

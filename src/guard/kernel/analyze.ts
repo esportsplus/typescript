@@ -127,7 +127,7 @@ function runAnalysis(
         }
     }
 
-    total(`${ts.getSourceFiles(program).length} files`);
+    total(`${program.getSourceFileNames().length} files`);
 
     return { diagnostics };
 }

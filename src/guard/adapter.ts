@@ -44,12 +44,21 @@ function isClassLike(node: Node): boolean {
     );
 }
 
-// Native `Program` exposes file names, not materialized SourceFiles; materialize.
-function getSourceFiles(program: Program): SourceFile[] {
+// The program's in-project, non-declaration files (the native Program does not
+// expose the tsconfig root set). It exposes file names, not SourceFiles, and each
+// materialization is a round-trip, so names that cannot be an entry are dropped
+// first; `isDeclarationFile` still decides for the rest (`x.d.css.ts`).
+function getEntrySourceFiles(program: Program): SourceFile[] {
     const out: SourceFile[] = [];
     for (const name of program.getSourceFileNames()) {
+        if (
+            /\.d\.[cm]?ts$/.test(name) ||
+            name.replace(/\\/g, '/').includes('/node_modules/')
+        ) {
+            continue;
+        }
         const sf = program.getSourceFile(name);
-        if (sf) {
+        if (sf && !sf.isDeclarationFile) {
             out.push(sf);
         }
     }
@@ -76,4 +85,4 @@ function unionTypes(type: Type): readonly Type[] | undefined {
 }
 
 
-export { forEachChild, getSourceFiles, isClassLike, symbolDeclarations, unionTypes };
+export { forEachChild, getEntrySourceFiles, isClassLike, symbolDeclarations, unionTypes };
