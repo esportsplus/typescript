@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import type { Checker, Program } from 'typescript/unstable/sync';
+import { afterAll, describe, expect, it } from 'vitest';
+import { isIdentifier } from 'typescript/unstable/ast/is';
+import type { Node } from 'typescript/unstable/ast';
+import type { Checker, Program, Type } from 'typescript/unstable/sync';
 
 import checker from '~/compiler/checker';
+import fs from 'fs';
+import languageService from '~/compiler/language-service';
+import path from 'path';
 
 
 // Test doubles stand in for a checker, so the wrapper is seen through their own loose type
@@ -26,14 +31,19 @@ function fake() {
         };
 
     let double = {
+            getBaseConstraintOfType: method('getBaseConstraintOfType'),
             getDeclaredTypeOfSymbol: method('getDeclaredTypeOfSymbol'),
             getImmediateAliasedSymbol: method('getImmediateAliasedSymbol'),
+            getNonNullableType: method('getNonNullableType'),
+            getPropertyOfType: method('getPropertyOfType'),
             getReturnTypeOfSignature: method('getReturnTypeOfSignature'),
             getShorthandAssignmentValueSymbol: method('getShorthandAssignmentValueSymbol'),
             getSignaturesOfType: method('getSignaturesOfType'),
             getSymbolAtLocation: method('getSymbolAtLocation'),
             getTypeArguments: method('getTypeArguments'),
             getTypeAtLocation: method('getTypeAtLocation'),
+            isArrayType: method('isArrayType'),
+            isTupleType: method('isTupleType'),
             isTypeAssignableTo: method('isTypeAssignableTo'),
             resolveName: method('resolveName')
         };
@@ -209,5 +219,131 @@ describe('compiler/checker', () => {
             expect(memo[name]([b, a])).toEqual([first[1], first[0]]);
             expect(batches).toHaveLength(1);
         });
+    });
+});
+
+describe('compiler/checker type-keyed queries', () => {
+    it.each([
+        'getBaseConstraintOfType',
+        'getNonNullableType',
+        'getTypeArguments',
+        'isArrayType',
+        'isTupleType'
+    ])('answers %s for any object carrying the same type id from one round-trip', (name) => {
+        let { calls, checker: double } = fake(),
+            memo = wrap(double);
+
+        let first = memo[name]({ id: 7 });
+
+        expect(memo[name]({ id: 7 })).toBe(first);
+        expect(memo[name]({ id: 8 })).not.toBe(first);
+        expect(calls[name]).toBe(2);
+    });
+
+    it('keys getPropertyOfType and getSignaturesOfType on the type id and the second argument', () => {
+        let { calls, checker: double } = fake(),
+            memo = wrap(double);
+
+        let length = memo.getPropertyOfType({ id: 1 }, 'length');
+
+        expect(memo.getPropertyOfType({ id: 1 }, 'length')).toBe(length);
+        expect(memo.getPropertyOfType({ id: 1 }, 'push')).not.toBe(length);
+        expect(memo.getSignaturesOfType({ id: 1 }, 0)).toBe(memo.getSignaturesOfType({ id: 1 }, 0));
+        expect(memo.getSignaturesOfType({ id: 1 }, 1)).not.toBe(memo.getSignaturesOfType({ id: 1 }, 0));
+        expect(calls.getPropertyOfType).toBe(2);
+        expect(calls.getSignaturesOfType).toBe(2);
+    });
+
+    it('keys isTypeAssignableTo on both type ids', () => {
+        let { calls, checker: double } = fake(),
+            memo = wrap(double);
+
+        memo.isTypeAssignableTo({ id: 1 }, { id: 2 });
+        memo.isTypeAssignableTo({ id: 1 }, { id: 2 });
+        memo.isTypeAssignableTo({ id: 2 }, { id: 1 });
+
+        expect(calls.isTypeAssignableTo).toBe(2);
+    });
+});
+
+// Round-trips counted against a real tsgo program: every call reaching the checker under the cache
+describe('compiler/checker round-trips', () => {
+    let fixture = fs.mkdtempSync(path.join(process.cwd(), 'test/.checker-')).replace(/\\/g, '/');
+
+    afterAll(() => {
+        languageService.dispose();
+        fs.rmSync(fixture, { force: true, recursive: true });
+    });
+
+    it('sends each distinct type-keyed question once per program', () => {
+        let source = [
+                'export let a: number[] = [];',
+                'export let b: number[] = [];',
+                'export let c = a;',
+                'export let o: { x: number } | null = null;',
+                'export let p = o;',
+                'export function f<K extends string>(k: K) { return k; }'
+            ].join('\n'),
+            calls = 0;
+
+        fs.mkdirSync(fixture + '/src', { recursive: true });
+        fs.writeFileSync(fixture + '/src/a.ts', source);
+        fs.writeFileSync(fixture + '/tsconfig.json', JSON.stringify({ compilerOptions: { lib: ['es2024'], strict: true, types: [] }, include: ['src'] }));
+
+        let { checker: raw, program } = languageService.update(fixture + '/tsconfig.json', fixture + '/src/a.ts', source),
+            counting = new Proxy(raw, {
+                get(target, key) {
+                    let value = Reflect.get(target, key);
+
+                    return typeof value === 'function'
+                        ? (...args: unknown[]) => {
+                            calls++;
+
+                            return (value as (...args: unknown[]) => unknown).apply(target, args);
+                        }
+                        : value;
+                }
+            }),
+            memo = checker.cached(counting, program),
+            reads: Node[] = [];
+
+        program.getSourceFile(fixture + '/src/a.ts')!.forEachChild(function visit(node) {
+            if (isIdentifier(node)) {
+                reads.push(node);
+            }
+
+            node.forEachChild(visit);
+        });
+
+        let ask = (): void => {
+            let types = memo.getTypeAtLocation(reads) as (Type | undefined)[];
+
+            for (let i = 0, n = types.length; i < n; i++) {
+                let type = types[i];
+
+                if (!type) {
+                    continue;
+                }
+
+                memo.isArrayType(type);
+                memo.isTupleType(type);
+                memo.getPropertyOfType(type, 'length');
+                memo.getNonNullableType(type);
+                memo.getBaseConstraintOfType(type);
+                memo.getSignaturesOfType(type, 0);
+            }
+        };
+
+        ask();
+
+        let first = calls,
+            distinct = new Set((memo.getTypeAtLocation(reads) as (Type | undefined)[]).filter(Boolean).map(type => type!.id)).size;
+
+        ask();
+
+        // One batched getTypeAtLocation, then six questions per distinct type
+        expect(first).toBe(1 + 6 * distinct);
+        expect(calls).toBe(first);
+        expect(distinct).toBeLessThan(reads.length);
     });
 });

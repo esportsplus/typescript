@@ -169,7 +169,7 @@ startServer(); // stdio LSP server
 | Export | Description |
 |---|---|
 | `ast` | AST utilities — expression names, property paths, node testing |
-| `checker` | `checker.cached(checker, program?)`: memoizing checker proxy, one cache per program; `getSymbolAtLocation(nodes[])` / `getTypeAtLocation(nodes[])` send only cache misses. `coordinator.transform` already hands plugins this proxy as `ctx.checker` |
+| `checker` | `checker.cached(checker, program?)`: memoizing checker proxy, one cache per program; type-keyed queries (`isArrayType`, `isTupleType`, `getPropertyOfType`, `getNonNullableType`, `getBaseConstraintOfType`, `getSignaturesOfType`, `getTypeArguments`, `isTypeAssignableTo`) are keyed by `type.id`, stable within a snapshot; `getSymbolAtLocation(nodes[])` / `getTypeAtLocation(nodes[])` send only cache misses. `coordinator.transform` already hands plugins this proxy as `ctx.checker` |
 | `code` | Template literal code generation with escaping |
 | `coordinator` | Multi-plugin transformation orchestrator |
 | `imports` | Import detection and modification (WeakMap cached) |

@@ -12,15 +12,33 @@ const BATCHED = new Set<PropertyKey>([
 
 // Pure queries: answers are fixed for the program snapshot a transform runs against
 const CACHED = new Set<PropertyKey>([
+    'getBaseConstraintOfType',
     'getDeclaredTypeOfSymbol',
+    'getNonNullableType',
+    'getPropertyOfType',
     'getReturnTypeOfSignature',
     'getShorthandAssignmentValueSymbol',
     'getSignaturesOfType',
     'getSymbolAtLocation',
     'getTypeArguments',
     'getTypeAtLocation',
+    'isArrayType',
+    'isTupleType',
     'isTypeAssignableTo',
     'resolveName'
+]);
+
+// Queries about a type, keyed by its id: within one program snapshot tsgo gives a type one id
+// however it was reached (a node, another query), so equal types share an entry
+const TYPED = new Set<PropertyKey>([
+    'getBaseConstraintOfType',
+    'getNonNullableType',
+    'getPropertyOfType',
+    'getSignaturesOfType',
+    'getTypeArguments',
+    'isArrayType',
+    'isTupleType',
+    'isTypeAssignableTo'
 ]);
 
 
@@ -28,10 +46,17 @@ const CACHED = new Set<PropertyKey>([
 let programs = new WeakMap<Program, { checker: Checker; proxy: Checker }>();
 
 
+// A type argument's identity: its id rather than the object holding it
+function identity(value: unknown): unknown {
+    return typeof value === 'object' && value !== null && typeof (value as { id?: unknown }).id === 'number'
+        ? `#${(value as { id: number }).id}`
+        : value;
+}
+
 // Keyed on (first argument, second argument); a call passing more arguments (e.g. resolveName's
 // optional location) is answered by the checker directly rather than risk a wrong cache hit. A
 // batched query's array form shares the single form's entries and sends only the misses.
-function memoize(query: Query, batched: boolean): Query {
+function memoize(query: Query, batched: boolean, typed: boolean): Query {
     let results = new Map<unknown, Map<unknown, unknown>>();
 
     let bucket = (key: unknown): Map<unknown, unknown> => {
@@ -50,7 +75,7 @@ function memoize(query: Query, batched: boolean): Query {
             return query(...args);
         }
 
-        let entries = bucket(args[1]);
+        let entries = bucket(typed ? identity(args[1]) : args[1]);
 
         if (batched && Array.isArray(args[0])) {
             let items = args[0] as unknown[],
@@ -79,13 +104,15 @@ function memoize(query: Query, batched: boolean): Query {
             return result;
         }
 
-        if (entries.has(args[0])) {
-            return entries.get(args[0]);
+        let first = typed ? identity(args[0]) : args[0];
+
+        if (entries.has(first)) {
+            return entries.get(first);
         }
 
         let result = query(...args);
 
-        entries.set(args[0], result);
+        entries.set(first, result);
 
         return result;
     };
@@ -108,7 +135,7 @@ function proxy(checker: Checker): Checker {
                 method = value.bind(target) as Query;
 
                 if (CACHED.has(key)) {
-                    method = memoize(method, BATCHED.has(key));
+                    method = memoize(method, BATCHED.has(key), TYPED.has(key));
                 }
 
                 methods.set(key, method);
