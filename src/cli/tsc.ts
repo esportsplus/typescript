@@ -20,6 +20,14 @@ import { stripJsonc } from '../jsonc';
 import { readPlugins } from '../tsconfig';
 
 
+type Flags = {
+    // Compiler flags only tsc.js applies (the API program is opened from the tsconfig alone)
+    forwarded: boolean;
+    informational: boolean;
+    noEmit: boolean;
+    watch: boolean;
+};
+
 type PluginConfig = {
     transform: string;
 };
@@ -46,6 +54,8 @@ const EMITTED_PREFIX = 'TSFILE: ';
 const INFORMATIONAL_FLAGS = new Set(['--help', '--init', '--showConfig', '--version', '-h', '-v']);
 
 const NO_EMIT_FLAGS = new Set(['--noEmit', '-noEmit']);
+
+const PROJECT_FLAGS = new Set(['--project', '-p']);
 
 const WATCH_FLAGS = new Set(['--watch', '-w']);
 
@@ -105,13 +115,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         process.exit(1);
     }
 
-    for (let i = 0, n = fileNames.length; i < n; i++) {
-        // Coordinated plugins can replace the shared language-service snapshot.
-        // Fetch the live project before reading the next source file.
-        if (owned) {
-            project = languageService.open(tsconfig).project;
-        }
-
+    for (let i = 0, n = plugins.length > 0 ? fileNames.length : 0; i < n; i++) {
         let fileName = fileNames[i],
             sourceFile = project.program.getSourceFile(fileName);
 
@@ -158,7 +162,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         process.exit(1);
     }
 
-    if (noEmit) {
+    if (noEmit || options.noEmit === true) {
         teardown(snapshot, tsconfig, owned);
         process.exit(0);
     }
@@ -169,26 +173,33 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     process.exit(code);
 }
 
-function classifyFlags(args: string[]): { informational: boolean, noEmit: boolean, watch: boolean } {
-    let informational = false,
-        noEmit = false,
-        watch = false;
+function classifyFlags(args: string[]): Flags {
+    let flags: Flags = { forwarded: false, informational: false, noEmit: false, watch: false };
 
     for (let i = 0, n = args.length; i < n; i++) {
         let arg = args[i];
 
-        if (INFORMATIONAL_FLAGS.has(arg)) {
-            informational = true;
+        if (PROJECT_FLAGS.has(arg)) {
+            i++;
+        }
+        else if (arg.startsWith('--project=')) {
+            continue;
+        }
+        else if (INFORMATIONAL_FLAGS.has(arg)) {
+            flags.informational = true;
         }
         else if (NO_EMIT_FLAGS.has(arg)) {
-            noEmit = true;
+            flags.noEmit = true;
         }
         else if (WATCH_FLAGS.has(arg)) {
-            watch = true;
+            flags.watch = true;
+        }
+        else {
+            flags.forwarded = true;
         }
     }
 
-    return { informational, noEmit, watch };
+    return flags;
 }
 
 function collectMaps(dir: string, results: string[]): void {
@@ -264,7 +275,8 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
     let mirror = fs.mkdtempSync(path.join(root, '.esportsplus-tsc-'));
 
     try {
-        let declaration = options.declaration === true,
+        let created = new Set<string>(),
+            declaration = options.declaration === true,
             files: string[] = [],
             mirrorDecl = path.join(mirror, '__decl'),
             mirrorOut = path.join(mirror, '__emit'),
@@ -284,12 +296,16 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
             }
 
             let target = path.join(mirror, relative),
+                directory = path.dirname(target),
                 transformed = transformedFiles.get(normalizePath(fileNames[i]));
 
-            fs.mkdirSync(path.dirname(target), { recursive: true });
+            if (!created.has(directory)) {
+                fs.mkdirSync(directory, { recursive: true });
+                created.add(directory);
+            }
 
             if (transformed === undefined) {
-                fs.copyFileSync(source, target);
+                link(source, target);
             }
             else {
                 fs.writeFileSync(target, transformed.code);
@@ -356,6 +372,17 @@ function isPlugin(value: unknown): value is Plugin {
     return typeof value === 'object' && value !== null && 'transform' in value && typeof (value as Plugin).transform === 'function';
 }
 
+// The mirror only needs untransformed sources readable at their mirrored path: a hard link shares
+// the file without copying it; a file system without hard links gets a copy
+function link(source: string, target: string): void {
+    try {
+        fs.linkSync(source, target);
+    }
+    catch {
+        fs.copyFileSync(source, target);
+    }
+}
+
 async function loadPlugins(configs: PluginConfig[], root: string): Promise<Plugin[]> {
     let plugins: Plugin[] = [],
         promises: Promise<void>[] = [];
@@ -405,39 +432,36 @@ async function loadPlugins(configs: PluginConfig[], root: string): Promise<Plugi
     return plugins;
 }
 
+// Every real invocation checks the project once, through the API program analyze also reads, then
+// emits with tsc.js --noCheck. tsc.js runs on its own (checking again) only for what the API program
+// cannot honor: no tsconfig, informational flags, watch mode, or compiler flags on the command line.
 function main(): void {
     let args = process.argv.slice(2),
+        flags = classifyFlags(args),
         tsconfig = projectPath(args) ?? languageService.findConfig(process.cwd());
 
-    if (!tsconfig) {
+    if (!tsconfig || flags.informational) {
         return passthrough(false);
     }
 
-    let flags = classifyFlags(args);
-
-    // Run analyze for any project whose tsconfig carries a `analyze` plugin entry,
-    // on every real (non-informational, non-watch) tsc invocation. Findings are
-    // printed but do not fail the build — the compiler's own result stands.
     let pluginConfigs = resolvePluginConfigs(tsconfig);
 
-    if (pluginConfigs.length === 0) {
-        if (!flags.informational && !flags.watch) {
-            runAnalyze(tsconfig);
-        }
-
-        return passthrough(!flags.informational && !flags.noEmit && !flags.watch);
-    }
-
-    if (flags.informational) {
-        return passthrough(false);
-    }
-
-    if (flags.watch) {
+    if (flags.watch && pluginConfigs.length > 0) {
         console.error(`${PACKAGE_NAME}: --watch is not supported on the transformer plugin path; run a one-shot build or use real tsc directly`);
         process.exit(1);
     }
 
-    console.log(`${PACKAGE_NAME}: found ${pluginConfigs.length} transformer plugin(s), using coordinated build...`);
+    if (pluginConfigs.length === 0 && (flags.watch || flags.forwarded)) {
+        if (!flags.watch) {
+            runAnalyze(tsconfig);
+        }
+
+        return passthrough(!flags.noEmit && !flags.watch);
+    }
+
+    if (pluginConfigs.length > 0) {
+        console.log(`${PACKAGE_NAME}: found ${pluginConfigs.length} transformer plugin(s), using coordinated build...`);
+    }
 
     build(tsconfig, pluginConfigs, undefined, flags.noEmit).catch((err) => {
         console.error(`${PACKAGE_NAME}: ${err}`);

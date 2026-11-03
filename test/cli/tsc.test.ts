@@ -169,23 +169,30 @@ describe('loadPlugins', () => {
 describe('classifyFlags', () => {
     it('flags every informational spelling as informational', () => {
         for (let arg of ['--help', '-h', '--version', '-v', '--init', '--showConfig']) {
-            expect(classifyFlags([arg])).toEqual({ informational: true, noEmit: false, watch: false });
+            expect(classifyFlags([arg])).toEqual({ forwarded: false, informational: true, noEmit: false, watch: false });
         }
     });
 
     it('flags both --noEmit spellings as noEmit', () => {
-        expect(classifyFlags(['--noEmit'])).toEqual({ informational: false, noEmit: true, watch: false });
-        expect(classifyFlags(['-noEmit'])).toEqual({ informational: false, noEmit: true, watch: false });
+        expect(classifyFlags(['--noEmit'])).toEqual({ forwarded: false, informational: false, noEmit: true, watch: false });
+        expect(classifyFlags(['-noEmit'])).toEqual({ forwarded: false, informational: false, noEmit: true, watch: false });
     });
 
     it('flags both watch spellings as watch', () => {
-        expect(classifyFlags(['--watch'])).toEqual({ informational: false, noEmit: false, watch: true });
-        expect(classifyFlags(['-w'])).toEqual({ informational: false, noEmit: false, watch: true });
+        expect(classifyFlags(['--watch'])).toEqual({ forwarded: false, informational: false, noEmit: false, watch: true });
+        expect(classifyFlags(['-w'])).toEqual({ forwarded: false, informational: false, noEmit: false, watch: true });
     });
 
     it('leaves an ordinary build argv unflagged', () => {
-        expect(classifyFlags(['-p', 'tsconfig.json'])).toEqual({ informational: false, noEmit: false, watch: false });
-        expect(classifyFlags([])).toEqual({ informational: false, noEmit: false, watch: false });
+        expect(classifyFlags(['-p', 'tsconfig.json'])).toEqual({ forwarded: false, informational: false, noEmit: false, watch: false });
+        expect(classifyFlags([])).toEqual({ forwarded: false, informational: false, noEmit: false, watch: false });
+        expect(classifyFlags(['--project=tsconfig.json', '--noEmit']).forwarded).toBe(false);
+    });
+
+    it('flags compiler flags only tsc.js applies as forwarded', () => {
+        expect(classifyFlags(['-p', 'tsconfig.json', '--strict']).forwarded).toBe(true);
+        expect(classifyFlags(['--outDir', 'out']).forwarded).toBe(true);
+        expect(classifyFlags(['-b']).forwarded).toBe(true);
     });
 });
 
