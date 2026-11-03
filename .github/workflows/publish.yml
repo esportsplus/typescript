@@ -73,6 +73,10 @@ jobs:
         run: pnpm install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Lint package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --if-present run lint
       - name: Verify package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

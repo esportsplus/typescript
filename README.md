@@ -241,6 +241,21 @@ Each target also ships a `.dev` variant that extends its build config, sets `noE
 
 `tsconfig.package.dev.json` additionally sets `tsc-guard` to `warn` for `exceptions` and `resources`, so the analyzer reports over your sources during development without failing the typecheck.
 
+### Lint
+
+`oxlintrc.json` is the shared [oxlint](https://oxc.rs/docs/guide/usage/linter) config: the correctness category plus the house rules (`sort-imports` for members within braces, `sort-keys`) and type-aware TypeScript rules (`no-floating-promises`, `no-misused-promises`, `await-thenable`; tsgo-backed through `oxlint-tsgolint`). `no-unused-vars` is off: `noUnusedLocals`/`noUnusedParameters` already gate it. Install `oxlint` and `oxlint-tsgolint` and extend it:
+
+```jsonc
+// oxlintrc.json
+{ "extends": ["./node_modules/@esportsplus/typescript/oxlintrc.json"] }
+```
+
+```json
+{ "scripts": { "lint": "oxlint -c oxlintrc.json --type-aware --deny-warnings" } }
+```
+
+The shared publish workflow runs `pnpm run lint` (when defined) before `verify`. No formatter is shipped: oxfmt's Prettier-compatible output conflicts with the double blank lines between file sections.
+
 ## TypeScript 7 migration
 
 This package targets `typescript@^7`, shipped as a regular `dependencies` entry. Breaking changes for consumers:
