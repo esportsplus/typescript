@@ -69,11 +69,13 @@ export default defineConfig({
 ### CLI
 
 ```bash
-# Compiles with plugins from tsconfig.json, then resolves path aliases
+# Compiles with plugins from tsconfig.json
 tsc
 ```
 
-The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them, runs coordinated compilation, and automatically calls `tsc-alias` afterward. The package installs `tsc`/`tsc-alias` bins (also under the unambiguous `esportsplus-tsc`/`esportsplus-tsc-alias` names).
+The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them and runs coordinated compilation. The package installs a `tsc` bin (also under the unambiguous `esportsplus-tsc` name).
+
+The wrapper does **not** rewrite path aliases (`tsc-alias` and its bins were removed): emit keeps every specifier verbatim, declarations included. In a package that emits, every import in `src` — `import type` too — must be relative; `~/` aliases are for code that is never emitted (tests, benches, apps bundled by Vite).
 
 ## analyze
 
@@ -87,7 +89,7 @@ Only channels you configure run; a channel is otherwise off. It rides the `tsc` 
 
 ### Enable
 
-Add a top-level `tsc-guard` key to `tsconfig.json` (a sibling of `compilerOptions`, like `tsc-alias`). Analysis is always whole-project and covers every file the tsconfig includes (ignoring excludes). Its only root keys are the channel names — `exceptions`, `resources`, and `async` — with no `channels` wrapper. An absent channel is off; a present channel with no `severity` is `error`. Consequently, a bare `"tsc-guard": {}` analyzes nothing: the minimum useful config is the three-line per-channel shape below.
+Add a top-level `tsc-guard` key to `tsconfig.json` (a sibling of `compilerOptions`). Analysis is always whole-project and covers every file the tsconfig includes (ignoring excludes). Its only root keys are the channel names — `exceptions`, `resources`, and `async` — with no `channels` wrapper. An absent channel is off; a present channel with no `severity` is `error`. Consequently, a bare `"tsc-guard": {}` analyzes nothing: the minimum useful config is the three-line per-channel shape below.
 
 Unlike `compilerOptions.plugins` — which `extends` **replaces** wholesale — `tsc-guard` is **deep-merged down the `extends` chain**: a shared base can carry the defaults and a package override a single channel key (e.g. `tsc-guard.exceptions.report`) without restating the rest. Set an inherited key to `null` to delete it.
 
@@ -117,7 +119,7 @@ Each channel's `severity` is `"error"`, `"warn"`, `"info"`, or `"off"` — `erro
 The `tsc` passthrough runs analyze after a successful compile and prints findings to stderr. It exits non-zero (`1`) when any finding is in a channel whose `severity` is `"error"`; `warn` channels never fail the build. A rejected or removed config key is a hard error and also exits `1`.
 
 ```bash
-tsc   # compiles, resolves aliases, then reports analyze findings
+tsc   # compiles, then reports analyze findings
 ```
 
 ### Editor (LSP)
@@ -234,7 +236,7 @@ This package targets `typescript@^7`, shipped as a regular `dependencies` entry.
 ## Scripts
 
 ```bash
-pnpm build       # tsc && tsc-alias
+pnpm build       # tsc -p tsconfig.package.json
 pnpm test        # vitest run
 pnpm bench:run   # vitest bench --run
 ```

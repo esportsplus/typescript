@@ -33,9 +33,6 @@
     "include": [
         "${configDir}/src/**/*"
     ],
-    "tsc-alias": {
-        "resolveFullPaths": true
-    },
     "tsc-guard": {
         "exceptions": {
             "severity": "error",

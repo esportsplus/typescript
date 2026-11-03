@@ -2,15 +2,11 @@
     "author": "ICJR",
     "bin": {
         "esportsplus-tsc": "./bin/tsc",
-        "esportsplus-tsc-alias": "./bin/tsc-alias",
         "esportsplus-tsc-lsp": "./bin/tsc-lsp",
-        "tsc": "./bin/tsc",
-        "tsc-alias": "./bin/tsc-alias"
+        "tsc": "./bin/tsc"
     },
     "dependencies": {
-        "@esportsplus/cli-passthrough": "^0.0.19",
         "@types/node": "^26.6.6",
-        "tsc-alias": "^1.9.10",
         "typescript": "7.0.2",
         "vscode-languageserver": "^11.0.0",
         "vscode-languageserver-textdocument": "^1.0.16"
@@ -67,7 +63,7 @@
         "agent:build": "pnpm build",
         "agent:test": "pnpm typecheck && pnpm test",
         "bench:run": "vitest bench --run",
-        "build": "tsc -p tsconfig.package.json && tsc-alias -p tsconfig.package.json && node -e \"const fs=require('fs');fs.cpSync('src/guard/overlay','build/guard/overlay',{recursive:true,filter:(s)=>!/\\.[cm]?tsx?$/.test(s)})\"",
+        "build": "tsc -p tsconfig.package.json && node build/cli/specifiers.js build \"~/\" && node -e \"const fs=require('fs');fs.cpSync('src/guard/overlay','build/guard/overlay',{recursive:true,filter:(s)=>!/\\.[cm]?tsx?$/.test(s)})\"",
         "prepare": "pnpm build",
         "prepublishOnly": "pnpm build",
         "test": "vitest run",

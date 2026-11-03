@@ -7,9 +7,9 @@ import { createThrowIndex, disposeThrowIndex } from '../guard/exceptions/derive'
 import { loadConfigFromTsconfig } from '../guard/kernel/config';
 import { open } from '../compiler/language-service';
 
-import type { AnalyzeResult } from '~/guard/kernel/analyze';
-import type { ThrowIndex } from '~/guard/exceptions/derive';
-import type { AnalyzeConfig } from '~/guard/kernel/types';
+import type { AnalyzeResult } from '../guard/kernel/analyze';
+import type { ThrowIndex } from '../guard/exceptions/derive';
+import type { AnalyzeConfig } from '../guard/kernel/types';
 
 type Snapshot = ReturnType<ts.API['updateSnapshot']>;
 

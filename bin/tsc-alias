@@ -1,3 +1,0 @@
-#!/usr/bin/env node
-
-(await import ('@esportsplus/cli-passthrough')).default('tsc-alias');

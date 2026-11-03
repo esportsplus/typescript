@@ -1,4 +1,4 @@
-import type * as ts from '~/guard/adapter';
+import type * as ts from '../adapter';
 // Function identity
 
 // Every function-like node the kernel can treat as a call-graph node. Entry

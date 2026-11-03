@@ -10,7 +10,7 @@ import { AnalyzeWorkspace } from './workspace';
 
 import type { Connection } from 'vscode-languageserver/node';
 import type { DocumentResolver } from './diagnostics';
-import type { Diagnostic as AnalyzeDiagnostic } from '~/guard/kernel/types';
+import type { Diagnostic as AnalyzeDiagnostic } from '../guard/kernel/types';
 
 // Windows hands back file URIs with inconsistent drive-letter casing and percent
 // encoding; a case-folded absolute path is the only stable key across the native

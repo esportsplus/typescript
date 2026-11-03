@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
-import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runAnalyze, runTscAlias } from '~/cli/tsc';
+import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runAnalyze } from '~/cli/tsc';
 import { flatten, format } from '~/cli/diagnostics';
 import { createFixtureDir } from './fixtures';
 import sourcemap from '~/compiler/sourcemap';
@@ -164,32 +164,6 @@ describe('loadPlugins', () => {
     });
 });
 
-
-describe('runTscAlias', () => {
-    it('returns 0 for --noEmit flag', async () => {
-        let code = await runTscAlias(['--noEmit']);
-
-        expect(code).toBe(0);
-    });
-
-    it('returns 0 for --help flag', async () => {
-        let code = await runTscAlias(['--help']);
-
-        expect(code).toBe(0);
-    });
-
-    it('returns 0 for --version flag', async () => {
-        let code = await runTscAlias(['--version']);
-
-        expect(code).toBe(0);
-    });
-
-    it('returns 0 for -v flag', async () => {
-        let code = await runTscAlias(['-v']);
-
-        expect(code).toBe(0);
-    });
-});
 
 
 describe('classifyFlags', () => {

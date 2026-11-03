@@ -12,7 +12,9 @@ import viteConfig from '../../vitest.config';
 
 const BACKSLASH_REGEX = /\\/g;
 
-const IMPORT_INJECT_PLUGIN = 'export default { patterns: ["~/util"], transform: () => ({ imports: [{ package: "~/runtime", add: ["helper"] }], prepend: ["export const injected = helper;"] }) };';
+const ALIAS_INJECT_PLUGIN = 'export default { patterns: ["./util"], transform: () => ({ imports: [{ package: "~/runtime", add: ["helper"] }], prepend: ["export const injected = helper;"] }) };';
+
+const IMPORT_INJECT_PLUGIN = 'export default { patterns: ["./util"], transform: () => ({ imports: [{ package: "./runtime", add: ["helper"] }], prepend: ["export const injected = helper;"] }) };';
 
 
 function decodeSegments(mappings: string): { originalColumn: number; originalLine: number }[] {
@@ -147,10 +149,10 @@ describe('emit contract', () => {
         expect(segments.some((s) => s.originalLine === 0 && s.originalColumn === declarationColumn)).toBe(true);
     });
 
-    it('passthrough-parity oracle: shipped config shape with zero plugins emits exact tree with rewritten alias', async () => {
+    it('passthrough-parity oracle: shipped config shape with zero plugins emits exact tree with Node-loadable specifiers', async () => {
         let tsconfigPath = createFixture(tmpDir, {
             sources: {
-                'index.ts': "import { value } from '~/util';\n\nexport const result = value;\n",
+                'index.ts': "import { value } from './util';\n\nexport const result = value;\n",
                 'util.ts': 'export const value = 1;\n'
             }
         });
@@ -165,10 +167,7 @@ describe('emit contract', () => {
 
         expect(snapshotTree(buildDir)).toEqual(['index.d.ts', 'index.js', 'util.d.ts', 'util.js']);
 
-        let emitted = fs.readFileSync(path.join(buildDir, 'index.js'), 'utf8');
-
-        expect(emitted).toContain('./util.js');
-        expect(emitted).not.toContain('~/');
+        expect(fs.readFileSync(path.join(buildDir, 'index.js'), 'utf8')).toContain("from './util.js'");
     });
 
     it('fixtures helper is excluded by vitest discovery globs, unlike a real suite', () => {
@@ -191,7 +190,7 @@ describe('emit contract', () => {
         let buildDir = path.join(tmpDir, 'build'),
             tsconfigPath = createFixture(tmpDir, {
                 sources: {
-                    'index.ts': "import { value } from '~/util';\n\nexport const result = value;\n",
+                    'index.ts': "import { value } from './util';\n\nexport const result = value;\n",
                     'util.ts': 'export const value = 1;\n'
                 }
             });
@@ -244,12 +243,12 @@ describe('emit contract', () => {
         expect(fs.existsSync(buildDir)).toBe(false);
     });
 
-    it('alias fixture resolves ~/ specifiers for author-written and plugin-injected imports alike', async () => {
+    it('extensionless specifiers gain .js for author-written and plugin-injected imports alike', async () => {
         let buildDir = path.join(tmpDir, 'build'),
             tsconfigPath = createFixture(tmpDir, {
                 compilerOptions: { noUnusedLocals: false },
                 sources: {
-                    'index.ts': "import { value } from '~/util';\n\nexport const result = value;\n",
+                    'index.ts': "import { value } from './util';\n\nexport const result = value;\n",
                     'runtime.ts': 'export const helper = 1;\n',
                     'util.ts': 'export const value = 1;\n'
                 }
@@ -274,9 +273,32 @@ describe('emit contract', () => {
 
         let emitted = fs.readFileSync(path.join(buildDir, 'index.js'), 'utf8');
 
-        expect(emitted).not.toContain('~/');
-        expect(emitted).toContain('./util.js');
-        expect(emitted).toContain('./runtime.js');
+        expect(emitted).toContain("from './util.js'");
+        expect(emitted).toContain("from './runtime.js'");
+        expect(fs.readFileSync(path.join(buildDir, 'index.d.ts'), 'utf8')).not.toMatch(/from '\.\/[a-z]+'/);
+    });
+
+    it('a ~/ specifier left in emitted output fails the build naming the file', async () => {
+        let errors: string[] = [],
+            tsconfigPath = createFixture(tmpDir, {
+                compilerOptions: { noUnusedLocals: false },
+                sources: {
+                    'index.ts': "import { value } from './util';\n\nexport const result = value;\n",
+                    'runtime.ts': 'export const helper = 1;\n',
+                    'util.ts': 'export const value = 1;\n'
+                }
+            });
+
+        vi.spyOn(console, 'error').mockImplementation((message: unknown) => {
+            errors.push(String(message));
+        });
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), ALIAS_INJECT_PLUGIN);
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toEqual([1]);
+        expect(errors.join('\n')).toMatch(/index\.js imports '~\/runtime'/);
     });
 
     it('literal-relative include shape exits 0 and keeps tree parity (TS6059 regression)', async () => {

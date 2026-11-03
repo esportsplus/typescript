@@ -1,6 +1,6 @@
 // Adapter that presents the native TypeScript 7 `unstable` modules under the
 // classic `ts.*` surface analyze was written against. analyze files import this
-// as `import * as ts from "~/guard/adapter"`.
+// as a namespace (`import * as ts from '../adapter'`).
 export * from 'typescript/unstable/ast';
 export * from 'typescript/unstable/ast/is';
 export * from 'typescript/unstable/sync';

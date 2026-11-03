@@ -1,5 +1,5 @@
-import type { Plugin, SharedContext } from '~/compiler/types';
-import type { PositionMapping } from '~/compiler/sourcemap';
+import type { Plugin, SharedContext } from '../compiler/types';
+import type { PositionMapping } from '../compiler/sourcemap';
 import { API, DiagnosticCategory, type Checker, type Program, type Snapshot } from 'typescript/unstable/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
@@ -12,6 +12,7 @@ import fs from 'fs';
 import languageService from '../compiler/language-service';
 import path from 'path';
 import sourcemap from '../compiler/sourcemap';
+import specifiers from './specifiers';
 import { analyze, analyzeProgram } from '../guard/kernel/analyze';
 import { formatDiagnostics } from '../guard/kernel/format';
 import { loadConfigFromTsconfig } from '../guard/kernel/config';
@@ -30,8 +31,17 @@ type TransformedFile = {
 
 type ResolvedOptions = ReturnType<API['parseConfigFile']>['options'];
 
+type Spawned = {
+    code: number;
+    files: string[];
+};
+
 
 const BACKSLASH_REGEX = /\\/g;
+
+const CARRIAGE_RETURN_REGEX = /\r$/;
+
+const EMITTED_PREFIX = 'TSFILE: ';
 
 const INFORMATIONAL_FLAGS = new Set(['--help', '--init', '--showConfig', '--version', '-h', '-v']);
 
@@ -40,9 +50,22 @@ const NO_EMIT_FLAGS = new Set(['--noEmit', '-noEmit']);
 const WATCH_FLAGS = new Set(['--watch', '-w']);
 
 
-let require = createRequire(import.meta.url),
-    skipFlags = new Set([...INFORMATIONAL_FLAGS, ...NO_EMIT_FLAGS]);
+let require = createRequire(import.meta.url);
 
+
+// tsconfig `paths` prefixes: emit keeps them verbatim and nothing rewrites them afterwards
+function aliases(options: ResolvedOptions): string[] {
+    let keys = Object.keys(options.paths ?? {}),
+        prefixes: string[] = [];
+
+    for (let i = 0, n = keys.length; i < n; i++) {
+        if (keys[i].endsWith('*')) {
+            prefixes.push(keys[i].slice(0, -1));
+        }
+    }
+
+    return prefixes;
+}
 
 async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API, noEmit = false): Promise<void> {
     let opened = instance === undefined ? languageService.open(tsconfig) : undefined,
@@ -143,12 +166,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     let code = await emit(tsconfig, fileNames, transformedFiles, root, options);
 
     teardown(snapshot, tsconfig, owned);
-
-    if (code !== 0) {
-        process.exit(code);
-    }
-
-    return runTscAlias(process.argv.slice(2)).then((exitCode) => process.exit(exitCode));
+    process.exit(code);
 }
 
 function classifyFlags(args: string[]): { informational: boolean, noEmit: boolean, watch: boolean } {
@@ -238,7 +256,9 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
     let tscJs = path.join(path.dirname(require.resolve('typescript/package.json')), 'lib', 'tsc.js');
 
     if (transformedFiles.size === 0) {
-        return spawnTsc(tscJs, ['-p', tsconfig, '--noCheck']);
+        let { code, files } = await spawnTsc(tscJs, ['-p', tsconfig, '--noCheck']);
+
+        return code === 0 ? finalize(files, aliases(options)) : code;
     }
 
     let mirror = fs.mkdtempSync(path.join(root, '.esportsplus-tsc-'));
@@ -298,7 +318,11 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
             include: []
         }));
 
-        let code = await spawnTsc(tscJs, ['-p', path.join(mirror, 'tsconfig.json'), '--noCheck']);
+        let { code, files: emitted } = await spawnTsc(tscJs, ['-p', path.join(mirror, 'tsconfig.json'), '--noCheck']);
+
+        if (code === 0) {
+            code = finalize(emitted, aliases(options));
+        }
 
         if (code === 0) {
             if (fs.existsSync(mirrorOut)) {
@@ -316,6 +340,16 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
     finally {
         fs.rmSync(mirror, { force: true, recursive: true });
     }
+}
+
+function finalize(files: string[], prefixes: string[]): number {
+    let aliased = specifiers.rewrite(files, prefixes);
+
+    for (let i = 0, n = aliased.length; i < n; i++) {
+        console.error(`${PACKAGE_NAME}: ${normalizePath(aliased[i].file)} imports '${aliased[i].specifier}', a path alias nothing rewrites after emit; use a relative import`);
+    }
+
+    return aliased.length === 0 ? 0 : 1;
 }
 
 function isPlugin(value: unknown): value is Plugin {
@@ -376,7 +410,7 @@ function main(): void {
         tsconfig = projectPath(args) ?? languageService.findConfig(process.cwd());
 
     if (!tsconfig) {
-        return passthrough();
+        return passthrough(false);
     }
 
     let flags = classifyFlags(args);
@@ -391,11 +425,11 @@ function main(): void {
             runAnalyze(tsconfig);
         }
 
-        return passthrough();
+        return passthrough(!flags.informational && !flags.noEmit && !flags.watch);
     }
 
     if (flags.informational) {
-        return passthrough();
+        return passthrough(false);
     }
 
     if (flags.watch) {
@@ -481,18 +515,18 @@ function runAnalyze(tsconfig: string, program?: Program, checker?: Checker): voi
     }
 }
 
-function passthrough(): void {
+function passthrough(emits: boolean): void {
     let args = process.argv.slice(2),
-        tsDir = path.dirname(require.resolve('typescript/package.json'));
+        tscJs = path.join(path.dirname(require.resolve('typescript/package.json')), 'lib', 'tsc.js');
 
-    spawn(process.execPath, [path.join(tsDir, 'lib', 'tsc.js'), ...args], { stdio: 'inherit' })
-        .on('exit', async (code) => {
-            if (code === 0) {
-                code = await runTscAlias(args);
-            }
+    if (!emits) {
+        spawn(process.execPath, [tscJs, ...args], { stdio: 'inherit' })
+            .on('exit', (code) => process.exit(code ?? 0));
 
-            process.exit(code ?? 0);
-        });
+        return;
+    }
+
+    void spawnTsc(tscJs, args).then(({ code, files }) => process.exit(code === 0 ? finalize(files, []) : code));
 }
 
 function resolvePluginConfigs(tsconfig: string): PluginConfig[] {
@@ -507,25 +541,43 @@ function resolvePluginConfigs(tsconfig: string): PluginConfig[] {
     );
 }
 
-function runTscAlias(args: string[]): Promise<number> {
-    for (let i = 0, n = args.length; i < n; i++) {
-        if (skipFlags.has(args[i])) {
-            return Promise.resolve(0);
-        }
-    }
-
+// Emits with --listEmittedFiles so exactly the files this run wrote are post-processed; the listing
+// is consumed here and every other line of output passes through
+function spawnTsc(tscJs: string, args: string[]): Promise<Spawned> {
     return new Promise((resolve) => {
-        let child = spawn(process.execPath, [require.resolve('tsc-alias/dist/bin/index.js'), ...args], { stdio: 'inherit' });
+        let child = spawn(process.execPath, [tscJs, ...args, '--listEmittedFiles'], { stdio: ['inherit', 'pipe', 'inherit'] }),
+            files: string[] = [],
+            rest = '';
 
-        child.on('exit', (code) => resolve(code ?? 0));
-    });
-}
+        let read = (line: string): void => {
+            line = line.replace(CARRIAGE_RETURN_REGEX, '');
 
-function spawnTsc(tscJs: string, args: string[]): Promise<number> {
-    return new Promise((resolve) => {
-        let child = spawn(process.execPath, [tscJs, ...args], { stdio: 'inherit' });
+            if (line.startsWith(EMITTED_PREFIX)) {
+                files.push(line.slice(EMITTED_PREFIX.length));
+            }
+            else {
+                process.stdout.write(line + '\n');
+            }
+        };
 
-        child.on('exit', (code) => resolve(code ?? 0));
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', (chunk: string) => {
+            let lines = (rest + chunk).split('\n');
+
+            rest = lines.pop() ?? '';
+
+            for (let i = 0, n = lines.length; i < n; i++) {
+                read(lines[i]);
+            }
+        });
+        // `close`, not `exit`: the listing may still be buffered in the pipe when the process exits
+        child.on('close', (code) => {
+            if (rest) {
+                read(rest);
+            }
+
+            resolve({ code: code ?? 0, files });
+        });
     });
 }
 
@@ -547,4 +599,4 @@ if (process.env.VITEST === undefined) {
 }
 
 
-export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runAnalyze, runTscAlias, stripJsonc };
+export { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runAnalyze, stripJsonc };
