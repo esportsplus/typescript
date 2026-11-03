@@ -3,8 +3,8 @@ import * as ts from '../adapter';
 import { hasModifier, unwrap } from './ast';
 import { isFunctionLike, makeFunctionInfo } from './ids';
 import type {
-    CallGraph,
     CalleeResolution,
+    CallGraph,
     FunctionInfo,
     FunctionLike,
     OverlaySet,

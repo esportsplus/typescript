@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { type DerivedSummary, type ThrowIndex, createThrowIndex, deriveThrows, disposeThrowIndex } from "~/guard/exceptions/derive";
+import { createThrowIndex, type DerivedSummary, deriveThrows, disposeThrowIndex, type ThrowIndex } from "~/guard/exceptions/derive";
 
 const IMPORTER = path.resolve(import.meta.dirname, "../../fixtures/importer.js");
 

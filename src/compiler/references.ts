@@ -4,7 +4,7 @@ import {
     isArrayBindingPattern, isArrayLiteralExpression, isAsExpression, isAssignmentOperator, isAwaitExpression,
     isBinaryExpression, isBindingElement, isCallExpression, isElementAccessExpression, isForInStatement,
     isForOfStatement, isIdentifier, isImportClause, isImportEqualsDeclaration, isImportSpecifier, isImportTypeNode,
-    isNamespaceImport, isNoSubstitutionTemplateLiteral, isNonNullExpression, isObjectBindingPattern,
+    isNamespaceImport, isNonNullExpression, isNoSubstitutionTemplateLiteral, isObjectBindingPattern,
     isObjectLiteralExpression, isParameterDeclaration, isParenthesizedExpression, isPropertyAccessExpression,
     isPropertyAssignment, isQualifiedName, isSatisfiesExpression, isShorthandPropertyAssignment, isSpreadAssignment,
     isSpreadElement, isStringLiteral, isTypeAssertion, isTypeNode, isTypeQueryNode, isVariableDeclaration,

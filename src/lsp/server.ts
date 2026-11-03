@@ -1,11 +1,11 @@
 import * as NodeFS from 'node:fs';
 import * as NodePath from 'node:path';
 
-import { CodeActionKind, ProposedFeatures, StreamMessageReader, StreamMessageWriter, TextDocumentSyncKind, TextDocuments, createConnection } from 'vscode-languageserver/node';
+import { CodeActionKind, createConnection, ProposedFeatures, StreamMessageReader, StreamMessageWriter, TextDocuments, TextDocumentSyncKind } from 'vscode-languageserver/node';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
-import { DiagnosticSeverity, codeActionsAt, groupByFile, hoverAt } from './diagnostics';
+import { codeActionsAt, DiagnosticSeverity, groupByFile, hoverAt } from './diagnostics';
 import { AnalyzeWorkspace } from './workspace';
 
 import type { Connection } from 'vscode-languageserver/node';

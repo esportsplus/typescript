@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API } from 'typescript/unstable/sync';
 import { build } from '~/cli/tsc';
-import { MARKER_PLUGIN, createFixture, createFixtureDir, snapshotTree } from './fixtures';
+import { createFixture, createFixtureDir, MARKER_PLUGIN, snapshotTree } from './fixtures';
 
 import fs from 'fs';
 import os from 'os';

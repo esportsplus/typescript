@@ -15,10 +15,10 @@ import { bodyOf, paramSymbols, unwrap } from '../kernel/ast';
 import { type ExceptionsValue, isEmpty } from '../exceptions/value';
 import { isFunctionLike, locationOf } from '../kernel/ids';
 import {
-    type ResourcesValue,
     bottom,
     equals,
     fromParams,
+    type ResourcesValue,
     widen,
 } from './value';
 // Types

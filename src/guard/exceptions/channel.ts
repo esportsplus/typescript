@@ -5,13 +5,12 @@ import * as ts from '../adapter';
 import { bodyOf, constituents, isAwaited, paramSymbols } from '../kernel/ast';
 import { isFunctionLike, locationOf } from '../kernel/ids';
 import { declaredExceptions } from './jsdoc';
-import { type ThrowIndex, deriveThrows } from './derive';
+import { deriveThrows, type ThrowIndex } from './derive';
 import {
-    type ExceptionOrigin,
-    type ExceptionsValue,
-    TOP_KEY,
     bottom,
     equals,
+    type ExceptionOrigin,
+    type ExceptionsValue,
     isEmpty,
     join,
     originOf,
@@ -21,6 +20,7 @@ import {
     single,
     subtract,
     top,
+    TOP_KEY,
     widen,
     withOrigin,
 } from './value';

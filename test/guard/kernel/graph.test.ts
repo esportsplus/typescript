@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type BuiltAnalysis, buildAnalysis, reachedNames } from "./harness";
+import { buildAnalysis, type BuiltAnalysis, reachedNames } from "./harness";
 
 const IMPORT_TREE = {
     "a.ts": `import { deep } from './sub/c';

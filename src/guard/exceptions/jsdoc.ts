@@ -2,12 +2,12 @@ import * as ts from '../adapter';
 
 import type { FunctionLike } from '../kernel/types';
 import {
-    type ExceptionsValue,
-    TOP_KEY,
     bottom,
+    type ExceptionsValue,
     join,
     single,
     top,
+    TOP_KEY,
     typeRef,
 } from './value';
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type BuiltAnalysis, buildAnalysis } from "./harness";
+import { buildAnalysis, type BuiltAnalysis } from "./harness";
 import { runChannel } from "~/guard/kernel/fixpoint";
 
 import type { Channel, Diagnostic } from "~/guard/kernel/types";
