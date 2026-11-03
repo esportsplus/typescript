@@ -155,6 +155,7 @@ No exports. Import the TypeScript compiler API directly from `typescript/unstabl
 | Export | Description |
 |---|---|
 | `ast` | AST utilities — expression names, property paths, node testing |
+| `checker` | `checker.cached(checker, program?)`: memoizing checker proxy, one cache per program; `getSymbolAtLocation(nodes[])` / `getTypeAtLocation(nodes[])` send only cache misses. `coordinator.transform` already hands plugins this proxy as `ctx.checker` |
 | `code` | Template literal code generation with escaping |
 | `coordinator` | Multi-plugin transformation orchestrator |
 | `imports` | Import detection and modification (WeakMap cached) |

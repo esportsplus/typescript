@@ -46,6 +46,30 @@ describe('coordinator.transform', () => {
         expect(result.code).toBe(code);
     });
 
+    it('hands every plugin one memoized checker per program', () => {
+        let code = 'let x = 1;',
+            file = parse(code),
+            calls = 0,
+            project = {
+                checker: { getTypeAtLocation: () => ++calls } as unknown as Checker,
+                program: { getSourceFile: () => file } as unknown as Program
+            },
+            seen: Checker[] = [],
+            plugin = makePlugin((ctx) => {
+                seen.push(ctx.checker);
+                ctx.checker.getTypeAtLocation(file);
+
+                return {};
+            });
+
+        coordinator.transform([plugin, plugin], code, file, project, root, new Map());
+
+        expect(seen).toHaveLength(2);
+        expect(seen[0]).toBe(seen[1]);
+        expect(seen[0]).not.toBe(project.checker);
+        expect(calls).toBe(1);
+    });
+
     it('applies replacement intents', () => {
         let code = 'let x = OLD;',
             file = parse(code),

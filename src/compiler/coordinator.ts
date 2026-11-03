@@ -6,6 +6,7 @@ import { isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript
 
 import type { OffsetAnchor, PositionMapping } from './sourcemap';
 
+import checker from './checker';
 import imports from './imports';
 import languageService from './language-service';
 import sourcemap from './sourcemap';
@@ -456,14 +457,15 @@ const transform = (
             continue;
         }
 
-        let { dependencies: relied, imports, prepend, replacements } = plugin.transform({
-                checker: currentProject.checker,
+        let memoized = checker.cached(currentProject.checker, currentProject.program),
+            { dependencies: relied, imports, prepend, replacements } = plugin.transform({
+                checker: memoized,
                 code: currentCode,
                 program: currentProject.program,
                 shared,
                 sourceFile: currentFile
             }),
-            importIntents = imports?.length ? resolveImports(currentFile, currentProject.checker, imports) : [],
+            importIntents = imports?.length ? resolveImports(currentFile, memoized, imports) : [],
             pluginChanged = false;
 
         if (relied) {
