@@ -7,11 +7,20 @@ import fs from 'fs';
 import path from 'path';
 
 
+// Disk text of a file the program read, valid while the file's mtime and size are unchanged
+type Disk = {
+    mtimeMs: number;
+    size: number;
+    text: string;
+};
+
 type Entry = {
     api: API;
     configFileName: string;
-    contents: Map<string, string>;
-    // The config's file list as of the last membership miss; null until needed or after invalidate()
+    contents: Overlay;
+    disk: Map<string, Disk>;
+    // The config's file list as of the last membership miss; null until needed, or after invalidate()
+    // of a file the list may not cover (one it lacks, or a config)
     members: Set<string> | null;
     // Files proven not to belong to the project; cleared by invalidate() when the file changes
     outside: Set<string>;
@@ -27,7 +36,7 @@ type Entry = {
 type ScratchEntry = {
     api: API;
     config: string;
-    contents: Map<string, string>;
+    contents: Overlay;
     count: number;
     file: string;
     project: Project;
@@ -61,9 +70,41 @@ type OpenProject = {
 
 const backslashes = /\\/g;
 
+const CONFIG_REGEX = /\.json$/;
+
 
 let cache = new Map<string, Entry>(),
     scratchEntry: ScratchEntry | null = null;
+
+
+// The overlay's files indexed by directory as they are set and deleted: tsgo asks for a directory's
+// entries on every module resolution, which would otherwise scan every overlay key
+class Overlay extends Map<string, string> {
+    directories = new Map<string, Set<string>>();
+
+    delete(id: string): boolean {
+        let at = id.lastIndexOf('/');
+
+        this.directories.get(id.slice(0, at))?.delete(id.slice(at + 1));
+
+        return super.delete(id);
+    }
+
+    set(id: string, content: string): this {
+        let at = id.lastIndexOf('/'),
+            directory = id.slice(0, at),
+            names = this.directories.get(directory);
+
+        if (!names) {
+            names = new Set();
+            this.directories.set(directory, names);
+        }
+
+        names.add(id.slice(at + 1));
+
+        return super.set(id, content);
+    }
+}
 
 
 function absent(entry: Entry, id: string): boolean {
@@ -104,7 +145,7 @@ function advanceScratch(id: string, content: string): ScratchEntry {
 function createEntry(configFileName: string): Entry {
     let root = path.dirname(configFileName);
 
-    let contents = new Map<string, string>(),
+    let contents = new Overlay(),
         opened = open(configFileName, overlayFileSystem(contents, false)),
         { api, project, snapshot } = opened;
 
@@ -121,6 +162,7 @@ function createEntry(configFileName: string): Entry {
         api,
         configFileName,
         contents,
+        disk: new Map(),
         members: null,
         outside: new Set(),
         pending: new Set(),
@@ -134,7 +176,7 @@ function createEntry(configFileName: string): Entry {
 
 function createScratch(file: string, content: string): ScratchEntry {
     let config = scratchConfigPath(0),
-        contents = new Map<string, string>();
+        contents = new Overlay();
 
     contents.set(config, scratchConfig(file));
     contents.set(file, content);
@@ -156,7 +198,18 @@ function current(entry: Entry, id: string): string | undefined {
     }
 
     try {
-        return fs.readFileSync(id, 'utf8');
+        let stat = fs.statSync(id),
+            known = entry.disk.get(id);
+
+        if (known && known.mtimeMs === stat.mtimeMs && known.size === stat.size) {
+            return known.text;
+        }
+
+        let text = fs.readFileSync(id, 'utf8');
+
+        entry.disk.set(id, { mtimeMs: stat.mtimeMs, size: stat.size, text });
+
+        return text;
     }
     catch {
         return undefined;
@@ -224,19 +277,13 @@ function open(configPath: string, overlay?: FileSystem): OpenProject {
 // Every callback is a round-trip from tsgo, and a program whose imports change re-resolves every
 // module, asking whether each candidate path exists. While every overlay file is also on disk the
 // disk gives the same answers, so existence checks are only routed here once one is not.
-function overlayFileSystem(contents: Map<string, string>, virtual: boolean): FileSystem {
+function overlayFileSystem(contents: Overlay, virtual: boolean): FileSystem {
     let overlay: FileSystem = {
         getAccessibleEntries: (directoryName) => {
             let directory = normalize(directoryName),
-                extra: string[] = [];
+                extra = contents.directories.get(directory);
 
-            for (let key of contents.keys()) {
-                if (key.slice(0, key.lastIndexOf('/')) === directory) {
-                    extra.push(key.slice(key.lastIndexOf('/') + 1));
-                }
-            }
-
-            if (extra.length === 0) {
+            if (!extra || extra.size === 0) {
                 return undefined;
             }
 
@@ -471,7 +518,13 @@ const invalidate = (configFileName: string, fileName: string): void => {
     let id = normalize(fileName);
 
     entry.contents.delete(id);
-    entry.members = null;
+    entry.disk.delete(id);
+
+    // Editing a file the list already holds cannot change what the include globs match
+    if (CONFIG_REGEX.test(id) || !entry.members?.has(key(fileName))) {
+        entry.members = null;
+    }
+
     entry.outside.delete(key(fileName));
     entry.pending.add(id);
 };

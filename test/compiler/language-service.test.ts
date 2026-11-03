@@ -238,6 +238,47 @@ describe('language-service', () => {
         });
     });
 
+    describe('membership and disk text', () => {
+        let directory: string,
+            project: string;
+
+        beforeEach(() => {
+            directory = fs.mkdtempSync(path.join(root, 'test/.language-service-members-')).replace(/\\/g, '/');
+            project = directory + '/tsconfig.json';
+            fs.mkdirSync(directory + '/src');
+            fs.writeFileSync(project, JSON.stringify({ compilerOptions: { noLib: true, types: [] }, include: ['src'] }));
+            fs.writeFileSync(directory + '/src/a.ts', 'export const a = 1;');
+        });
+
+        afterEach(() => {
+            languageService.dispose();
+            fs.rmSync(directory, { force: true, recursive: true });
+        });
+
+        it('admits a file created after the file list was read, and still rejects outsiders', () => {
+            expect(languageService.contains(project, directory + '/outside.ts')).toBe(false);
+
+            languageService.invalidate(project, directory + '/src/a.ts');
+            fs.writeFileSync(directory + '/src/b.ts', 'export const b = 1;');
+            languageService.invalidate(project, directory + '/src/b.ts');
+
+            expect(languageService.contains(project, directory + '/src/b.ts')).toBe(true);
+            expect(languageService.contains(project, directory + '/outside.ts')).toBe(false);
+        });
+
+        it('reloads a file whose disk text changed under the open program', () => {
+            let file = directory + '/src/a.ts',
+                { program } = languageService.update(project, file, 'export const a = 1;');
+
+            expect(languageService.update(project, file, 'export const a = 1;').program).toBe(program);
+
+            fs.writeFileSync(file, 'export const a = 22;');
+            languageService.invalidate(project, file);
+
+            expect(languageService.update(project, file, 'export const a = 22;').program.getSourceFile(file)?.text).toBe('export const a = 22;');
+        });
+    });
+
     describe('overlay-only files', () => {
         let directory: string,
             project: string;
