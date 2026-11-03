@@ -104,6 +104,58 @@ function refsSym(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean {
     return env.checker.getSymbolAtLocation(e) === sym;
 }
 
+// The identifiers `refsSym` is asked about: call arguments and receivers, assigned,
+// initializer, returned and statement values. Resolving a file's set in one batch
+// saves a tsgo round-trip per identifier; the memoized checker answers the walks.
+function prefetchOperands(checker: ts.TypeChecker, sf: ts.SourceFile): void {
+    const out: ts.Node[] = [];
+    const add = (expr: ts.Expression | undefined): void => {
+        if (!expr) {
+            return;
+        }
+
+        const e = unwrap(expr, { assertions: true, awaits: true });
+
+        if (ts.isIdentifier(e)) {
+            out.push(e);
+        }
+    };
+    const visit = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
+            for (const arg of n.arguments ?? []) {
+                add(arg);
+            }
+
+            if (
+                ts.isPropertyAccessExpression(n.expression) ||
+                ts.isElementAccessExpression(n.expression)
+            ) {
+                add(n.expression.expression);
+            }
+        }
+        else if (
+            ts.isBinaryExpression(n) &&
+            n.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        ) {
+            add(n.right);
+        }
+        else if (ts.isVariableDeclaration(n)) {
+            add(n.initializer);
+        }
+        else if (ts.isReturnStatement(n) || ts.isExpressionStatement(n)) {
+            add(n.expression);
+        }
+
+        ts.forEachChild(n, visit);
+    };
+
+    ts.forEachChild(sf, visit);
+
+    if (out.length > 0) {
+        checker.getSymbolAtLocation(out);
+    }
+}
+
 // Whether `sym` is referenced anywhere in a subtree — the handle carried inside an
 // object literal or other argument (`this.pending.set(id, { timer })`), which the
 // identifier-only `refsSym` cannot see.
@@ -1343,6 +1395,14 @@ const createResourcesChannel = (
     // want to measure the v1 tracking noise floor inject a logger.
     onDegrade: (message: string) => void = () => {},
 ): Channel<ResourcesValue> => {
+    const prefetched = new Set<ts.SourceFile>();
+    const prefetch = (checker: ts.TypeChecker, fn: FunctionInfo): void => {
+        if (!prefetched.has(fn.sourceFile)) {
+            prefetched.add(fn.sourceFile);
+            prefetchOperands(checker, fn.sourceFile);
+        }
+    };
+
     return {
         bottom,
         dependsOn: ['exceptions'],
@@ -1392,6 +1452,8 @@ const createResourcesChannel = (
         transfer(
             ctx: TransferContext<ResourcesValue>,
         ): Summary<ResourcesValue> {
+            prefetch(ctx.checker, ctx.fn);
+
             const env = makeEnv(
                 ctx.checker,
                 ctx.fn,

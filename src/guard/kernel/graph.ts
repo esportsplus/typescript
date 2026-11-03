@@ -285,12 +285,66 @@ function buildCallGraph(
         );
     }
 
+    // --- prefetch -----------------------------------------------------------
+
+    // Identifier binding names a parameter declares, destructured object
+    // properties included (the async channel types each one).
+    function bindingIdentifiers(name: ts.BindingName, out: ts.Node[]): void {
+        if (ts.isIdentifier(name)) {
+            out.push(name);
+            return;
+        }
+        if (ts.isObjectBindingPattern(name)) {
+            for (const el of name.elements) {
+                if (el.name) {
+                    bindingIdentifiers(el.name, out);
+                }
+            }
+        }
+    }
+
+    // Every checker query is a synchronous round-trip to tsgo. Ask the questions
+    // the graph and channels will ask about a file's functions in two batches; the
+    // memoized checker then answers each later single query from its cache. The
+    // answers are the same as asking one node at a time.
+    function prefetch(fns: ReadonlyArray<FunctionInfo>): void {
+        const callees: ts.Node[] = [];
+        const symbols: ts.Node[] = [];
+        const types: ts.Node[] = [];
+        for (const fn of fns) {
+            if (!hasModifier(fn.node, ts.SyntaxKind.AsyncKeyword)) {
+                types.push(fn.node);
+            }
+            for (const param of fn.node.parameters) {
+                if (ts.isIdentifier(param.name)) {
+                    symbols.push(param.name);
+                }
+                bindingIdentifiers(param.name, types);
+            }
+            for (const call of callsIn(fn)) {
+                callees.push(call.expression);
+                types.push(call);
+            }
+        }
+        if (callees.length + symbols.length > 0) {
+            checker.getSymbolAtLocation([...callees, ...symbols]);
+        }
+        if (types.length > 0) {
+            checker.getTypeAtLocation(types);
+        }
+    }
+
     // --- build --------------------------------------------------------------
 
     for (const sf of entryFiles()) {
+        const fns: FunctionInfo[] = [];
         for (const node of allFunctionLikesIn(sf)) {
-            intern(node);
+            const info = intern(node);
+            if (info) {
+                fns.push(info);
+            }
         }
+        prefetch(fns);
     }
 
     for (let workIndex = 0; workIndex < worklist.length; workIndex++) {
