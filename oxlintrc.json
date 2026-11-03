@@ -13,10 +13,17 @@
         "sort-imports": [
             "error",
             {
+                "ignoreCase": true,
                 "ignoreDeclarationSort": true
             }
         ],
-        "sort-keys": "error",
+        "sort-keys": [
+            "error",
+            "asc",
+            {
+                "caseSensitive": false
+            }
+        ],
         "typescript/await-thenable": "error",
         "typescript/no-floating-promises": "error",
         "typescript/no-misused-promises": "error"
