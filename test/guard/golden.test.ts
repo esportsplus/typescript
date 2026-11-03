@@ -9,9 +9,15 @@ import fs from 'node:fs';
 import languageService from '~/compiler/language-service';
 import os from 'node:os';
 import path from 'node:path';
+import url from 'node:url';
 
 import type { Diagnostic, SourceLocation } from '~/guard/kernel/types';
 
+
+type Analyzer = {
+    analyzeProgram: typeof analyzeProgram;
+    loadConfigFromTsconfig: typeof loadConfigFromTsconfig;
+};
 
 type Recording = {
     findings: unknown[];
@@ -33,10 +39,26 @@ const PROJECTS: Record<string, () => string | undefined> = {
     template: () => existing('G:/template/tsconfig.json')
 };
 
-const RECORD = process.env.GOLDEN_RECORD === '1';
+// `GOLDEN_RECORD=1` records with this tree's analyzer; `GOLDEN_RECORD=<build directory>` with a built
+// one, so a project whose sources moved on is re-recorded by the baseline rather than the code under test
+const RECORD = process.env.GOLDEN_RECORD;
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 
+
+async function analyzer(): Promise<Analyzer> {
+    if (RECORD === undefined || RECORD === '1') {
+        return { analyzeProgram, loadConfigFromTsconfig };
+    }
+
+    let build = url.pathToFileURL(path.resolve(RECORD)).href,
+        [analyze, config] = await Promise.all([
+            import(`${build}/guard/kernel/analyze.js`) as Promise<Pick<Analyzer, 'analyzeProgram'>>,
+            import(`${build}/guard/kernel/config.js`) as Promise<Pick<Analyzer, 'loadConfigFromTsconfig'>>
+        ]);
+
+    return { analyzeProgram: analyze.analyzeProgram, loadConfigFromTsconfig: config.loadConfigFromTsconfig };
+}
 
 function existing(tsconfig: string): string | undefined {
     return fs.existsSync(tsconfig) ? tsconfig : undefined;
@@ -116,7 +138,7 @@ function serialize(diagnostics: readonly Diagnostic[], root: string): unknown[] 
 
 describe('guard golden findings', () => {
     for (let [name, resolve] of Object.entries(PROJECTS)) {
-        it(name, (context) => {
+        it(name, async (context) => {
             let tsconfig = resolve();
 
             if (tsconfig === undefined) {
@@ -125,7 +147,8 @@ describe('guard golden findings', () => {
                 return;
             }
 
-            let config = loadConfigFromTsconfig(tsconfig),
+            let guard = await analyzer(),
+                config = guard.loadConfigFromTsconfig(tsconfig),
                 file = path.join(DIRECTORY, `${name}.json`),
                 opened = languageService.open(tsconfig);
 
@@ -135,12 +158,12 @@ describe('guard golden findings', () => {
 
             try {
                 let recording: Recording = {
-                        findings: serialize(analyzeProgram(opened.project.program, opened.project.checker, config).diagnostics, path.dirname(tsconfig)),
+                        findings: serialize(guard.analyzeProgram(opened.project.program, opened.project.checker, config).diagnostics, path.dirname(tsconfig)),
                         fingerprint: fingerprint(opened.project.program.getSourceFileNames())
                     },
                     text = JSON.stringify(recording, null, 4) + '\n';
 
-                if (RECORD) {
+                if (RECORD !== undefined) {
                     fs.mkdirSync(DIRECTORY, { recursive: true });
                     fs.writeFileSync(file, text);
 
