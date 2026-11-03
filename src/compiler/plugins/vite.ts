@@ -95,7 +95,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
         results = new Map<string, Cached>(),
         roots = new Set<string>();
 
-    const release = () => {
+    let release = () => {
         for (let config of configs) {
             languageService.dispose(config);
         }
@@ -116,7 +116,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             relied = new Map<string, string[]>(),
             tsconfig: string | null = null;
 
-        const track = (id: string, dependencies: string[]) => {
+        let track = (id: string, dependencies: string[]) => {
             let previous = relied.get(id);
 
             if (previous) {

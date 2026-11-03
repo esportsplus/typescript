@@ -160,7 +160,9 @@ startServer(); // stdio LSP server
 
 ### `@esportsplus/typescript`
 
-No exports. Import the TypeScript compiler API directly from `typescript/unstable/*` (see [TypeScript 7 migration](#typescript-7-migration)).
+| Export | Description |
+|---|---|
+| `ts` | The vended compiler API: `typescript/unstable/ast` and `typescript/unstable/sync` as one namespace, so consumer packages pin no `typescript` of their own |
 
 ### `@esportsplus/typescript/compiler`
 
@@ -260,7 +262,7 @@ The shared publish workflow runs `pnpm run lint` (when defined) before `verify`.
 
 This package targets `typescript@^7`, shipped as a regular `dependencies` entry. Breaking changes for consumers:
 
-- **Root export removed.** `@esportsplus/typescript` no longer re-exports `ts`. Import the compiler API directly from the `typescript/unstable/*` subpaths you need — `typescript/unstable/ast`, `typescript/unstable/ast/is`, `typescript/unstable/sync`, `typescript/unstable/fs`, etc.
+- **`ts` is the TypeScript 7 API.** The root `ts` export is `typescript/unstable/ast` + `typescript/unstable/sync`, not the classic compiler namespace; type guards live in `typescript/unstable/ast/is`.
 - **Plugin-facing types.** `TransformContext` and `ReplacementIntent` now carry `typescript/unstable/ast` + `typescript/unstable/sync` identities instead of the classic `ts` namespace types.
 - **`coordinator.transform` signature.** Takes the `{ checker, program }` project pair instead of a single `ts.Program`.
 - **`imports.includes` signature.** Takes the API `Checker` type, and symbol declarations are represented as NodeHandles rather than `ts.Node`.

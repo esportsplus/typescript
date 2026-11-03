@@ -202,22 +202,25 @@ function resolveOffset(mapping: PositionMapping, offset: number): number {
 }
 
 function resolveOffsets(mapping: PositionMapping): (offset: number) => number {
-    const cursors = mapping.generations.map(() => 0);
+    let cursors = mapping.generations.map(() => 0);
+
     return (offset) => {
         let result = offset;
+
         for (let i = mapping.generations.length - 1; i >= 0; i--) {
-            const anchors = mapping.generations[i];
-            while (
-                cursors[i] + 1 < anchors.length &&
-                result >= anchors[cursors[i] + 1].afterStart
-            ) {
+            let anchors = mapping.generations[i];
+
+            while (cursors[i] + 1 < anchors.length && result >= anchors[cursors[i] + 1].afterStart) {
                 cursors[i] += 1;
             }
-            const anchor = anchors[cursors[i]];
+
+            let anchor = anchors[cursors[i]];
+
             result = anchor.identity
                 ? anchor.beforeStart + (result - anchor.afterStart)
                 : anchor.beforeStart;
         }
+
         return result;
     };
 }

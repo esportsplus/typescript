@@ -75,7 +75,7 @@ function formatOne(diagnostic: Diagnostic, root: string, sources: Map<string, So
         sourceInfo = sources.get(diagnostic.fileName) ?? readSourceInfo(diagnostic.fileName);
 
     sources.set(diagnostic.fileName, sourceInfo);
-    const text = sourceInfo.text;
+    let text = sourceInfo.text;
 
     if (text === undefined) {
         return `${location} - ${color}${category}${ANSI_RESET} ${code}: ${message}`;
@@ -95,7 +95,7 @@ function formatOne(diagnostic: Diagnostic, root: string, sources: Map<string, So
 
 function readSourceInfo(fileName: string): SourceInfo {
     try {
-        const text = readFileSync(fileName, 'utf8');
+        let text = readFileSync(fileName, 'utf8');
         return { lineStarts: computeLineStarts(text), text };
     }
     catch {
@@ -124,7 +124,7 @@ const flatten = (diagnostic: Diagnostic, indent: number = 0): string => {
 
 const format = (diagnostics: readonly Diagnostic[], root: string, transformed?: Map<string, { code: string; mapping: PositionMapping }>): string => {
     let parts: string[] = [];
-    const sources = new Map<string, SourceInfo>();
+    let sources = new Map<string, SourceInfo>();
 
     for (let i = 0, n = diagnostics.length; i < n; i++) {
         parts.push(formatOne(diagnostics[i], root, sources, transformed));
