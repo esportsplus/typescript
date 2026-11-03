@@ -82,18 +82,18 @@ describe('plugin.vite', () => {
     it('filters non-ts files', () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
-        expect(plugin.transform('code', 'file.css')).toBeNull();
+        expect(plugin.transform.handler('code', 'file.css')).toBeNull();
     });
 
     it('filters node_modules', () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
-        expect(plugin.transform('code', 'node_modules/pkg/index.ts')).toBeNull();
+        expect(plugin.transform.handler('code', 'node_modules/pkg/index.ts')).toBeNull();
     });
 
     it('processes .ts files — returns null when unchanged', () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })(),
-            result = plugin.transform('let x = 1;', 'src/app.ts');
+            result = plugin.transform.handler('let x = 1;', 'src/app.ts');
 
         expect(result).toBeNull();
         expect(coordinator.transform).toHaveBeenCalled();
@@ -108,7 +108,7 @@ describe('plugin.vite', () => {
         });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })(),
-            result = plugin.transform('let x = 1;', 'src/app.ts');
+            result = plugin.transform.handler('let x = 1;', 'src/app.ts');
 
         expect(result).not.toBeNull();
         expect(result?.code).toBe('TRANSFORMED');
@@ -123,7 +123,7 @@ describe('plugin.vite', () => {
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
-        expect(plugin.transform('let x = 1;', 'src/app.ts')).toBeNull();
+        expect(plugin.transform.handler('let x = 1;', 'src/app.ts')).toBeNull();
         expect(languageService.update).not.toHaveBeenCalled();
         expect(coordinator.transform).not.toHaveBeenCalled();
     });
@@ -133,7 +133,7 @@ describe('plugin.vite', () => {
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
-        expect(plugin.transform('let x = reactive(1);', 'G:/linked-dependency/build/index.js')).toBeNull();
+        expect(plugin.transform.handler('let x = reactive(1);', 'G:/linked-dependency/build/index.js')).toBeNull();
         expect(languageService.update).not.toHaveBeenCalled();
         expect(coordinator.transform).not.toHaveBeenCalled();
     });
@@ -141,7 +141,7 @@ describe('plugin.vite', () => {
     it('returns null (no map) when unchanged', () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
-        expect(plugin.transform('let x = 1;', 'src/app.ts')).toBeNull();
+        expect(plugin.transform.handler('let x = 1;', 'src/app.ts')).toBeNull();
     });
 
     it('watchChange calls onWatchChange and invalidate', () => {
@@ -168,7 +168,7 @@ describe('plugin.vite', () => {
 
         vi.mocked(languageService.findConfig).mockReturnValueOnce('/my/root/tsconfig.json');
         plugin.configResolved({ root: '/my/root' });
-        plugin.transform('let x = 1;', 'src/app.ts');
+        plugin.transform.handler('let x = 1;', 'src/app.ts');
 
         expect(languageService.update).toHaveBeenCalledWith('/my/root/tsconfig.json', expect.any(String), expect.any(String));
     });
@@ -182,7 +182,7 @@ describe('plugin.vite', () => {
 
         vi.mocked(languageService.findConfig).mockReturnValueOnce(configPath);
         plugin.configResolved({ root: app, configFile: resolve(docs, 'custom.vite.config.ts') });
-        plugin.transform('let x = 1;', resolve(docs, 'src/app.ts'));
+        plugin.transform.handler('let x = 1;', resolve(docs, 'src/app.ts'));
         plugin.watchChange(resolve(docs, 'src/app.ts'));
         plugin.closeBundle();
 
@@ -208,7 +208,7 @@ describe('plugin.vite', () => {
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
-        expect(() => plugin.transform('let x = 1;', 'src/app.ts')).toThrow('transform failed');
+        expect(() => plugin.transform.handler('let x = 1;', 'src/app.ts')).toThrow('transform failed');
     });
 
     it('rejects a chunk that still contains a compile-only runtime stub', () => {
@@ -238,7 +238,7 @@ describe('plugin.vite', () => {
                 }
             };
 
-        plugin.transform('let x = 1;', 'src/app.ts');
+        plugin.transform.handler('let x = 1;', 'src/app.ts');
 
         let result = plugin.handleHotUpdate({ file: 'src/state.ts', modules: [changed], server, timestamp: 1 } as never);
 
@@ -254,7 +254,7 @@ describe('plugin.vite', () => {
         });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })(),
-            result = plugin.transform('let x = 1;', 'src/app.ts');
+            result = plugin.transform.handler('let x = 1;', 'src/app.ts');
 
         expect(result).toBeNull();
         expect(languageService.parse).toHaveBeenCalled();
@@ -269,6 +269,114 @@ describe('plugin.vite', () => {
         plugin.closeBundle();
 
         expect(languageService.dispose).toHaveBeenCalledWith('/my/root/tsconfig.json');
+    });
+
+    it('filters natively to project scripts', () => {
+        let { filter } = vite({ name: 'test-pkg', plugins: [] })().transform,
+            matches = (id: string) => filter.id.include.test(id) && !filter.id.exclude.some(pattern => pattern.test(id));
+
+        expect(['src/app.ts', 'src/app.tsx', 'src/app.mts', 'src/app.js'].every(matches)).toBe(true);
+        expect(['style.css', 'src/app.ts?raw', 'node_modules/pkg/index.ts', '\0virtual.ts'].some(matches)).toBe(false);
+    });
+
+    describe('build', () => {
+        function changed(dependencies: string[] = []) {
+            vi.mocked(coordinator.transform).mockImplementationOnce((_plugins, code) => ({
+                changed: true,
+                code: code + ' // compiled',
+                dependencies,
+                map: { generations: [] }
+            }));
+        }
+
+        it('answers a module seen with the same text from its result cache', () => {
+            let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+            plugin.configResolved({ command: 'build', root: '/project' });
+            changed();
+
+            let first = plugin.transform.handler('let x = 1;', 'src/app.ts'),
+                second = plugin.transform.handler('let x = 1;', 'src/app.ts');
+
+            expect(second).toEqual(first);
+            expect(second).not.toBe(first);
+            expect(coordinator.transform).toHaveBeenCalledTimes(1);
+            expect(languageService.update).toHaveBeenCalledTimes(1);
+
+            plugin.transform.handler('let x = 2;', 'src/app.ts');
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(2);
+        });
+
+        it('shares the cache with a nested build instance and releases only after the outer build', () => {
+            let factory = vite({ name: 'test-pkg', plugins: [] }),
+                outer = factory(),
+                inner = factory();
+
+            vi.mocked(languageService.findConfig).mockReturnValueOnce('/project/tsconfig.json').mockReturnValueOnce('/project/tsconfig.json');
+            outer.configResolved({ command: 'build', root: '/project' });
+            inner.configResolved({ command: 'build', root: '/project' });
+            outer.buildStart();
+            outer.transform.handler('let x = 1;', 'src/app.ts');
+            inner.buildStart();
+            inner.transform.handler('let x = 1;', 'src/app.ts');
+            inner.closeBundle();
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(1);
+            expect(languageService.dispose).not.toHaveBeenCalled();
+
+            outer.closeBundle();
+
+            expect(languageService.dispose).toHaveBeenCalledWith('/project/tsconfig.json');
+
+            outer.transform.handler('let x = 1;', 'src/app.ts');
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(2);
+        });
+
+        it('does not cache while serving', () => {
+            let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+            plugin.configResolved({ command: 'serve', root: '/project' });
+            plugin.transform.handler('let x = 1;', 'src/app.ts');
+            plugin.transform.handler('let x = 1;', 'src/app.ts');
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(2);
+        });
+
+        it('recompiles a module whose dependency changed and keeps unrelated results', () => {
+            let plugin = vite({ name: 'test-pkg', plugins: [] })();
+
+            plugin.configResolved({ command: 'build', root: '/project' });
+            changed(['src/state.ts']);
+            plugin.transform.handler('let a = 1;', 'src/app.ts');
+            plugin.transform.handler('let b = 1;', 'src/other.ts');
+            plugin.watchChange('src/state.ts');
+            plugin.transform.handler('let a = 1;', 'src/app.ts');
+            plugin.transform.handler('let b = 1;', 'src/other.ts');
+
+            expect(vi.mocked(coordinator.transform).mock.calls.map(call => call[1])).toEqual(['let a = 1;', 'let b = 1;', 'let a = 1;']);
+        });
+    });
+
+    it('watchChange drops only the shared entries of the changed module and its dependents', () => {
+        let context: Map<string, unknown> | undefined,
+            plugin = vite({ name: 'test-pkg', plugins: [] })({ root: '/shared-root' });
+
+        vi.mocked(coordinator.transform).mockImplementationOnce((_plugins, code, _file, _project, _root, ctx) => {
+            context = ctx;
+            ctx.set('src/app.ts', 'app');
+            ctx.set('src/state.ts', 'state');
+            ctx.set('src/other.ts', 'other');
+            ctx.set('global', 'kept');
+
+            return { changed: false, code, dependencies: ['src/state.ts'], map: { generations: [] } };
+        });
+
+        plugin.transform.handler('let x = 1;', 'src/app.ts');
+        plugin.watchChange('src/state.ts');
+
+        expect([...context!.keys()]).toEqual(['src/other.ts', 'global']);
     });
 
     it('closeWatcher disposes the language service for the root', () => {
