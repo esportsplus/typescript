@@ -1,3 +1,7 @@
 #!/usr/bin/env node
 
-import '../build/cli/tsc.js';
+// libuv sizes its pool once, on first use: set before the CLI loads, so the post-emit specifier pass
+// can open every emitted file concurrently
+process.env.UV_THREADPOOL_SIZE ??= '16';
+
+await import('../build/cli/tsc.js');
