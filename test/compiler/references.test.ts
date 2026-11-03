@@ -14,9 +14,75 @@ const FILES: Record<string, string> = {
     'node_modules/fake-pkg/index.d.ts': [
         'export declare function make(value: number): number;',
         'export declare const tag: (strings: TemplateStringsArray) => string;',
-        "export { make as default } from './index';"
+        "export { make as default } from './index';",
+        "export { signal as wire } from './internal';"
     ].join('\n'),
+    // A library's own barrel renames what its internal module declares
+    'node_modules/fake-pkg/internal.d.ts': 'export declare function signal(value: number): number;',
     'node_modules/fake-pkg/package.json': JSON.stringify({ name: 'fake-pkg', types: './index.d.ts' }),
+    // A central module re-exporting under other names, the way an app's `app.ts` does
+    'src/app.ts': [
+        "import { make } from 'fake-pkg';",
+        "export { make as x } from 'fake-pkg';",
+        "export { tag as t } from 'fake-pkg';",
+        'export const held = make;',
+        "export * from './star';"
+    ].join('\n'),
+    'src/assigned.ts': [
+        "import { make } from 'fake-pkg';",
+        'let x: number;',
+        'export let before = () => x;',
+        'x = make(0);',
+        'export let after = x;'
+    ].join('\n'),
+    'src/chain.ts': [
+        "import * as P from 'fake-pkg';",
+        'const a = P.make;',
+        'const b = a;',
+        'const { tag: c } = P;',
+        'export let r1 = b(1);',
+        'export let r2 = c`x`;',
+        'export let r3 = { a };'
+    ].join('\n'),
+    'src/defaulted.ts': [
+        "import { make } from 'fake-pkg';",
+        'export default make;'
+    ].join('\n'),
+    'src/dynamic.ts': [
+        "export let d1 = async () => (await import('fake-pkg')).make(1);",
+        "export let d2 = async () => { const m = await import('fake-pkg'); return m.make(2); };"
+    ].join('\n'),
+    'src/renamed.ts': [
+        "import { make as x, tag as h, wire, wire as w } from 'fake-pkg';",
+        "import { held, t, x as viaApp } from './app';",
+        "import { make as starred, tag as starredTag } from './star';",
+        "import r from './defaulted';",
+        "import * as app from './app';",
+        'export let a1 = x(1);',
+        'export let a2 = h`a`;',
+        'export let a3 = viaApp(2);',
+        'export let a4 = starred(3);',
+        'export let a5 = starredTag`b`;',
+        'export let a6 = r(4);',
+        'export let a7 = held(5);',
+        'export let a8 = app.x(6);',
+        "export let a9 = app['x'](7);",
+        'const { x: y } = app;',
+        'export let a10 = y(8);',
+        'export let a11 = t`c`;',
+        'export let a12 = wire(9);',
+        'export let a13 = w(10);'
+    ].join('\n'),
+    'src/shadow.ts': [
+        "import { make, tag } from 'fake-pkg';",
+        'export let s1 = (make: (value: number) => number) => make(1);',
+        'export let s2 = (obj: { tag: string }) => obj.tag;',
+        'export let s3 = make(2);',
+        'export let s4 = tag`d`;'
+    ].join('\n'),
+    // `export *` two modules deep before reaching the package
+    'src/star.ts': "export * from './star2';",
+    'src/star2.ts': "export * from 'fake-pkg';",
     'src/alias.ts': [
         "import { make as m, tag } from 'fake-pkg';",
         'export let a = m(1);',
@@ -74,6 +140,24 @@ function find(file: string, predicate: (node: Node) => boolean): Node {
     visit(program.getSourceFile(fixture + '/' + file)!);
 
     return found!;
+}
+
+// Parent expression text of every value in `file` that holds the package's export, the way the
+// template and reactivity compilers find their sites: origins, then holds through const aliases
+function sites(file: string, name: string): string[] {
+    let targets = new Set(references.exported(checker, program, 'fake-pkg', name).map(references.key)),
+        sourceFile = program.getSourceFile(fixture + '/' + file)!,
+        result: string[] = [];
+
+    for (let [identifier, origin] of references.origins(checker, program, sourceFile)) {
+        if (references.holds(checker, program, origin, targets)) {
+            let parent = identifier.parent!;
+
+            result.push(sourceFile.text.slice(parent.getStart(), parent.end));
+        }
+    }
+
+    return result.sort();
 }
 
 // Parent expression text of every identifier in `file` whose value comes from the package's export
@@ -168,6 +252,87 @@ describe('references', () => {
             expect(origin.through.map(file => file.toLowerCase())).toEqual(
                 [fixture + '/src/consumer.ts', fixture + '/src/barrel.ts'].map(file => file.toLowerCase())
             );
+        });
+    });
+
+    // Each case is a shape that has broken the compilers before; none may depend on the name a
+    // value is imported, re-exported or bound under
+    describe('sites under any name', () => {
+        it('resolves a renamed import', () => {
+            expect(sites('src/renamed.ts', 'make')).toContain('x(1)');
+        });
+
+        it('resolves a renamed template tag', () => {
+            expect(sites('src/renamed.ts', 'tag')).toContain('h`a`');
+        });
+
+        it('resolves a rename re-exported by a central module', () => {
+            expect(sites('src/renamed.ts', 'make')).toContain('viaApp(2)');
+            expect(sites('src/renamed.ts', 'tag')).toContain('t`c`');
+        });
+
+        it('resolves through export * two modules deep', () => {
+            expect(sites('src/renamed.ts', 'make')).toContain('starred(3)');
+            expect(sites('src/renamed.ts', 'tag')).toContain('starredTag`b`');
+        });
+
+        it('resolves a default export imported under another name', () => {
+            expect(sites('src/renamed.ts', 'make')).toContain('r(4)');
+        });
+
+        it('resolves a const export holding the export, consumed from another file', () => {
+            expect(sites('src/app.ts', 'make')).toEqual(['held = make']);
+            expect(sites('src/renamed.ts', 'make')).toContain('held(5)');
+        });
+
+        it('resolves members and destructuring of a namespace import', () => {
+            expect(sites('src/renamed.ts', 'make')).toEqual(expect.arrayContaining(['app.x', "app['x']", 'x: y', 'y(8)']));
+        });
+
+        it('resolves a library-internal barrel rename', () => {
+            expect(sites('src/renamed.ts', 'wire')).toEqual(['w(10)', 'wire(9)']);
+        });
+
+        it('resolves every site of the renamed fixture and nothing else', () => {
+            expect(sites('src/renamed.ts', 'make')).toEqual(
+                ['app.x', "app['x']", 'held(5)', 'r(4)', 'starred(3)', 'viaApp(2)', 'x(1)', 'x: y', 'y(8)'].sort()
+            );
+            expect(sites('src/renamed.ts', 'tag')).toEqual(['h`a`', 'starredTag`b`', 't`c`'].sort());
+        });
+
+        it('resolves const aliases of a namespace member to a fixpoint', () => {
+            expect(sites('src/chain.ts', 'make')).toEqual(['P.make', 'a', 'b = a', 'b(1)'].sort());
+            expect(sites('src/chain.ts', 'tag')).toEqual(['c`x`']);
+        });
+
+        it('resolves members of a dynamic import', () => {
+            expect(sites('src/dynamic.ts', 'make')).toEqual(["(await import('fake-pkg')).make", 'm.make'].sort());
+        });
+
+        it('rejects a parameter shadowing the import and a member of a parameter', () => {
+            expect(sites('src/shadow.ts', 'make')).toEqual(['make(2)']);
+            expect(sites('src/shadow.ts', 'tag')).toEqual(['tag`d`']);
+        });
+
+        it('resolves reads of a let assigned from the export, before and after the assignment', () => {
+            let sourceFile = program.getSourceFile(fixture + '/src/assigned.ts')!,
+                reads: number[] = [];
+
+            for (let [identifier, origin] of references.origins(checker, program, sourceFile)) {
+                if (
+                    identifier.getText() === 'x' &&
+                    origin.declaration.kind === SyntaxKind.VariableDeclaration &&
+                    origin.declaration.path.toLowerCase() === sourceFile.fileName.toLowerCase()
+                ) {
+                    reads.push(identifier.getStart());
+                }
+            }
+
+            expect(reads.sort((a, b) => a - b)).toEqual([
+                sourceFile.text.indexOf('=> x') + 3,
+                sourceFile.text.indexOf('x = make'),
+                sourceFile.text.indexOf('after = x') + 8
+            ]);
         });
     });
 
