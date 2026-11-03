@@ -226,6 +226,21 @@ describe('compiler/checker', () => {
             expect(batches).toHaveLength(1);
         });
     });
+
+    it('counts the calls it passes on to the checker', () => {
+        let { checker: double } = fake(),
+            memo = wrap(double),
+            node = {};
+
+        memo.getSymbolAtLocation(node);
+        memo.getSymbolAtLocation(node);
+        memo.getSymbolAtLocation([node, {}, {}]);
+        memo.getImmediateAliasedSymbol(node);
+        memo.getImmediateAliasedSymbol(node);
+
+        expect(checker.sent(memo as unknown as Checker)).toBe(4);
+        expect(checker.sent(double as unknown as Checker)).toBe(0);
+    });
 });
 
 describe('compiler/checker type-keyed queries', () => {

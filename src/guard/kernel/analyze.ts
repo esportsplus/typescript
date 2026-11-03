@@ -52,11 +52,15 @@ function runAnalysis(
     config: AnalyzeConfig,
     throwIndex: ThrowIndex,
 ): AnalyzeResult {
+    // Round-trips to tsgo since `start`, the cost the timings make visible.
+    const roundTrips = (start: number): string =>
+        `(${checkers.sent(checker) - start} checker round-trips)`;
+    const started = checkers.sent(checker);
     const total = timing('analyze');
     const overlays = loadOverlays();
     const graphed = timing('analyze: call graph');
     const graph = buildCallGraph(program, checker, overlays);
-    graphed();
+    graphed(roundTrips(started));
     const analysis: Analysis = { checker, graph };
 
     const built = new Map<string, [ChannelConfig, Channel<unknown>]>();
@@ -112,13 +116,14 @@ function runAnalysis(
     for (const name of runnable) {
         const [channelConfig, channel] = instance(name)!;
         const ran = timing(`analyze: ${name}`);
+        const before = checkers.sent(checker);
         const result = runChannel(
             analysis,
             channel,
             channelConfig.options,
             peers,
         );
-        ran();
+        ran(roundTrips(before));
         peers.set(name, result.store);
         // Silent peer: pulled in only as a dependency of an enabled channel; keep
         // its summaries for that channel, discard its own diagnostics.
@@ -127,7 +132,7 @@ function runAnalysis(
         }
     }
 
-    total(`${program.getSourceFileNames().length} files`);
+    total(`${program.getSourceFileNames().length} files ${roundTrips(started)}`);
 
     return { diagnostics };
 }
