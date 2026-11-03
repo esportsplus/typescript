@@ -1,7 +1,8 @@
 import { afterAll, describe, test } from 'vitest';
 import type { Checker, Program } from 'typescript/unstable/sync';
-import type { Plugin, TransformContext } from '~/compiler/types';
-import type { SourceFile } from 'typescript/unstable/ast';
+import { isBinaryExpression, isIdentifier } from 'typescript/unstable/ast/is';
+import type { Node, SourceFile } from 'typescript/unstable/ast';
+import type { Plugin, ReplacementIntent, TransformContext } from '~/compiler/types';
 
 import coordinator from '~/compiler/coordinator';
 import languageService from '~/compiler/language-service';
@@ -113,6 +114,40 @@ describe('applyImports batching', () => {
             }));
 
             coordinator.transform([plugin], code, file, project, '/root', new Map());
+        }).run();
+    });
+});
+
+// Many intents, each generating from text(): one plugin rewrites every read, another every
+// initializer around them through text()
+describe('replacement composition', () => {
+    let statements = 2_000,
+        source = Array.from({ length: statements }, (_, index) => `let v${index} = a${index} + b${index};`).join('\n'),
+        tree = parse(source, root + '/src/coordinator-bench-composition.ts'),
+        initializers: Node[] = [],
+        reads: Node[] = [];
+
+    tree.forEachChild(function visit(node) {
+        if (isBinaryExpression(node)) {
+            initializers.push(node);
+        }
+        else if (isIdentifier(node) && node.text.startsWith('a')) {
+            reads.push(node);
+        }
+
+        node.forEachChild(visit);
+    });
+
+    let inner = makePlugin(() => ({
+            replacements: reads.map((node): ReplacementIntent => ({ generate: () => `${(node as Node & { text: string }).text}.value`, node }))
+        })),
+        outer = makePlugin(() => ({
+            replacements: initializers.map((node): ReplacementIntent => ({ generate: (_sf, text) => `wrap(${text(node)})`, node }))
+        }));
+
+    test(`${statements * 2} intents, ${statements} text() calls`, async ({ bench }) => {
+        await bench(`${statements * 2} intents, ${statements} text() calls`, () => {
+            coordinator.transform([inner, outer], source, tree, makeProject(tree), '/root', new Map());
         }).run();
     });
 });

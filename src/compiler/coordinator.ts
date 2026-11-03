@@ -55,6 +55,26 @@ type Layout = {
 const IMPORT_DECLARATION = /\bimport\b(?!\s*[(.])/;
 
 
+// First of `siblings` ending after `offset`: siblings are disjoint and sorted by start, so their
+// ends ascend too
+function after(siblings: Intent[], offset: number): number {
+    let high = siblings.length,
+        low = 0;
+
+    while (low < high) {
+        let middle = (low + high) >>> 1;
+
+        if (siblings[middle].end <= offset) {
+            low = middle + 1;
+        }
+        else {
+            high = middle;
+        }
+    }
+
+    return low;
+}
+
 function applyImports(code: string, layout: Layout, intents: ImportIntent[]): { batches: EditBatch[]; code: string } {
     let merged = new Map<string, { add?: string[]; namespace?: string; remove?: string[] }>();
 
@@ -167,10 +187,14 @@ function compose(code: string, file: SourceFile, names: string[], intents: Inten
     };
 
     let splice = (start: number, end: number, within: Intent[], parts: string[], at: number): number => {
-        for (let i = 0, n = within.length; i < n; i++) {
+        for (let i = after(within, start), n = within.length; i < n; i++) {
             let intent = within[i];
 
-            if (intent.end <= start || intent.start >= end) {
+            if (intent.start >= end) {
+                break;
+            }
+
+            if (intent.end <= start) {
                 continue;
             }
 
