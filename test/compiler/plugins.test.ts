@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolve } from 'node:path';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { Plugin } from '~/compiler/types';
@@ -56,6 +56,11 @@ describe('plugin.tsc', () => {
 
 
 describe('plugin.vite', () => {
+    // Build state is process-wide; a closing outermost build releases it
+    afterEach(() => {
+        vite({ name: 'test-pkg', plugins: [] })().closeBundle();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
     });
@@ -332,6 +337,33 @@ describe('plugin.vite', () => {
             outer.transform.handler('let x = 1;', 'src/app.ts');
 
             expect(coordinator.transform).toHaveBeenCalledTimes(2);
+        });
+
+        it('shares results between factories of one name, as a wrapper creating one per instance does', () => {
+            let outer = vite({ name: 'test-pkg', plugins: [] })({ root: '/project' }),
+                inner = vite({ name: 'test-pkg', plugins: [] })({ root: '/project' }),
+                other = vite({ name: 'other-pkg', plugins: [] })({ root: '/project' });
+
+            vi.mocked(languageService.findConfig)
+                .mockReturnValueOnce('/project/tsconfig.json')
+                .mockReturnValueOnce('/project/tsconfig.json')
+                .mockReturnValueOnce('/project/tsconfig.json');
+            outer.configResolved({ command: 'build', root: '/project' });
+            inner.configResolved({ command: 'build', root: '/project' });
+            other.configResolved({ command: 'build', root: '/project' });
+            outer.buildStart();
+            outer.transform.handler('let x = 1;', 'src/app.ts');
+            inner.buildStart();
+            inner.transform.handler('let x = 1;', 'src/app.ts');
+            inner.closeBundle();
+            other.transform.handler('let x = 1;', 'src/app.ts');
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(2);
+            expect(languageService.dispose).not.toHaveBeenCalled();
+
+            outer.closeBundle();
+
+            expect(languageService.dispose).toHaveBeenCalled();
         });
 
         it('does not cache while serving', () => {

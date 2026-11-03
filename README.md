@@ -69,7 +69,7 @@ export default defineConfig({
 
 The returned plugin's `transform` is the object form (`{ filter, handler }`): Rolldown applies `filter` natively (`.[cm]?[tj]sx?` ids, excluding `node_modules` and `\0` virtual modules), so other modules never call into JavaScript. A wrapper that delegates to it calls `transform.handler(code, id)`.
 
-- **Build cache.** During `vite build`, results are cached by module id + content hash and shared by every instance one `plugin.vite(...)` factory creates, so a nested build (a worker bundle re-transforming the main graph's modules) costs a hash per module. Serving never caches; HMR invalidation covers that path.
+- **Build cache.** During `vite build`, results are cached by host `name`, root, module id and content hash, process-wide, so every instance of a host (from one factory or from a fresh `plugin.vite(...)` call per instance) shares them and a nested build (a worker bundle re-transforming the main graph's modules) costs a hash per module. Serving never caches; HMR invalidation covers that path.
 - **Nested builds.** The language service is disposed when the outermost build closes, not when a nested build does.
 - **Processes.** A build runs at most two tsgo processes: one per project (every plugin analyses its program) and the lazily started scratch parser for files outside it.
 - **`shared` invalidation.** On a file change the host drops only the changed module's state: its cached result, the results of modules compiled against it, and the `shared` entries keyed by those modules' paths (`sourceFile.fileName`). Other `shared` entries live as long as the host.

@@ -71,7 +71,14 @@ const NODE_MODULES_REGEX = /node_modules/;
 const VIRTUAL_REGEX = /^\0/;
 
 
-let contexts = new Map<string, SharedContext>();
+// Process-wide, like the language service whose entries it releases: a nested build (a worker
+// bundle) runs fresh host instances, often from a fresh factory, that transform most of the outer
+// build's modules again and must not dispose what the outer build is still using
+let active = 0,
+    configs = new Set<string>(),
+    contexts = new Map<string, SharedContext>(),
+    results = new Map<string, Cached>(),
+    roots = new Set<string>();
 
 
 // Case-folded on Windows: program file names and Vite ids disagree on drive-letter casing
@@ -85,30 +92,22 @@ function normalize(fileName: string): string {
     return fileName.replace(DIRECTORY_SEPARATOR_REGEX, '/');
 }
 
+function release(): void {
+    for (let config of configs) {
+        languageService.dispose(config);
+    }
+
+    for (let root of roots) {
+        contexts.delete(root);
+    }
+
+    configs.clear();
+    results.clear();
+    roots.clear();
+}
+
 
 export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOptions) => {
-    // Shared by every instance this factory creates: a nested build (a worker bundle) gets a fresh
-    // instance but transforms most of the outer build's modules again, and must not dispose the
-    // language service the outer build is still using
-    let active = 0,
-        configs = new Set<string>(),
-        results = new Map<string, Cached>(),
-        roots = new Set<string>();
-
-    let release = () => {
-        for (let config of configs) {
-            languageService.dispose(config);
-        }
-
-        for (let root of roots) {
-            contexts.delete(root);
-        }
-
-        configs.clear();
-        results.clear();
-        roots.clear();
-    };
-
     return ({ root }: { root?: string } = {}): VitePlugin => {
         // dependency file -> ids whose last compile relied on it, and the reverse
         let building = false,
@@ -231,8 +230,9 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                         return null;
                     }
 
+                    // Hosts sharing a name compile alike, whichever factory created them
                     let digest = building ? hash('sha1', code) : '',
-                        identity = key(id);
+                        identity = `${name}\0${root || ''}\0${key(id)}`;
 
                     if (building) {
                         let found = results.get(identity);
@@ -300,7 +300,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
 
                 for (let i = 0, n = stale.length; i < n; i++) {
                     ctx?.delete(normalize(stale[i]));
-                    results.delete(key(stale[i]));
+                    results.delete(`${name}\0${root || ''}\0${key(stale[i])}`);
                 }
 
                 for (let [identity, entry] of results) {
