@@ -935,6 +935,31 @@ describe('coordinator.transform', () => {
             expect(result.code).toBe('let a = one;\nlet b = "let a = one;";');
         });
 
+        it('evaluates function prepends after composition, with text()', () => {
+            let code = 'let v = a;',
+                file = parse(code),
+                [statement] = file.statements,
+                recorded: string[] = [],
+                reads = wrapping(n => isIdentifier(n) && n.text === 'a', inner => `${inner}.value`),
+                hoisting = makePlugin(() => ({
+                    prepend: [
+                        'const plain = 1;',
+                        (text) => `const hoisted = ${JSON.stringify(text(statement))}; // ${recorded.join(',')}`
+                    ],
+                    replacements: nodes(file, n => isIdentifier(n) && n.text === 'v').map(node => ({
+                        generate: () => {
+                            recorded.push('generated');
+
+                            return 'w';
+                        },
+                        node
+                    }))
+                })),
+                result = coordinator.transform([hoisting, reads], code, file, makeProject(file), root, new Map());
+
+            expect(result.code).toBe('const plain = 1;\nconst hoisted = "let w = a.value;"; // generated\nlet w = a.value;');
+        });
+
         it('fails naming both plugins when two replacements overlap without nesting', () => {
             let code = 'let value = 1;',
                 file = parse(code),

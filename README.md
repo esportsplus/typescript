@@ -204,7 +204,7 @@ type TransformContext = {
 type TransformResult = {
     dependencies?: string[];
     imports?: ImportIntent[];
-    prepend?: string[];
+    prepend?: Prepend[];               // string | ((text: (node: Node) => string) => string)
     replacements?: ReplacementIntent[];
 };
 
@@ -221,7 +221,7 @@ type ReplacementIntent = {
 };
 ```
 
-**Composition.** All plugins' replacements are placed by range against the original source and applied in one generation. A replacement inside another nests: the outer intent's `text(node)` returns `node`'s source with every replacement inside it (from any plugin, or the same plugin's other intents) already applied, so any expression a generator copies into its output must be read with `text()`, not `node.getText()` (which returns the original source and drops nested replacements). On two equal ranges the ancestor node, then the later plugin, is outer. Ranges that overlap without nesting fail the transform naming both plugins. Prepends and imports then apply in plugin order. There is no staged second program: a later plugin never sees an earlier plugin's output.
+**Composition.** All plugins' replacements are placed by range against the original source and applied in one generation. A replacement inside another nests: the outer intent's `text(node)` returns `node`'s source with every replacement inside it (from any plugin, or the same plugin's other intents) already applied, so any expression a generator copies into its output must be read with `text()`, not `node.getText()` (which returns the original source and drops nested replacements). On two equal ranges the ancestor node, then the later plugin, is outer. Ranges that overlap without nesting fail the transform naming both plugins. **Order is a contract:** (1) every plugin's `transform()` runs on the original program; (2) all replacements compose in one generation, running every `generate()`; (3) then, plugin by plugin, its `prepend` entries are inserted after the opening imports and its `imports` intents applied. A `prepend` entry may be a function: it is called in step 3 with the same `text()` helper, so it can read sources other plugins rewrote and anything this plugin's generators recorded (hoisted handlers, template factories). Plain strings work as before. There is no staged second program: a later plugin never sees an earlier plugin's output.
 
 ## Shared Config
 

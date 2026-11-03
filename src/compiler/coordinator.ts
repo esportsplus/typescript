@@ -4,7 +4,7 @@ import type { Node, SourceFile } from 'typescript/unstable/ast';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { ImportInfo, ModifyOptions } from './imports';
 import type { OffsetAnchor, PositionMapping } from './sourcemap';
-import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
+import type { ImportIntent, Plugin, Prepend, Replacement, ReplacementIntent, SharedContext, Text } from './types';
 
 import checker from './checker';
 import imports from './imports';
@@ -146,7 +146,7 @@ function applyPrepend(code: string, layout: Layout, prepend: string[]): { code: 
 // ranges an ancestor node, then a later plugin, is the outer one), and each intent generates with
 // text(node) returning the node's source with every replacement nested inside it applied. Two ranges
 // that overlap without nesting cannot both apply.
-function compose(code: string, file: SourceFile, names: string[], intents: Intent[]): Replacement[] {
+function compose(code: string, file: SourceFile, names: string[], intents: Intent[]): { edits: Replacement[]; text: Text } {
     intents.sort((a, b) => a.start - b.start || b.end - a.end || (encloses(a.node, b.node) ? -1 : encloses(b.node, a.node) ? 1 : b.order - a.order));
 
     let roots: Intent[] = [],
@@ -210,7 +210,7 @@ function compose(code: string, file: SourceFile, names: string[], intents: Inten
         return at;
     };
 
-    let text = (node: Node): string => {
+    let text: Text = (node) => {
         let end = node.end,
             parts: string[] = [],
             start = node.getStart(file);
@@ -226,7 +226,7 @@ function compose(code: string, file: SourceFile, names: string[], intents: Inten
         edits.push({ end: roots[i].end, newText: generate(roots[i]), start: roots[i].start });
     }
 
-    return edits;
+    return { edits, text };
 }
 
 // Whether `inner` lies within `outer`: inside its range, and not merely touching its end
@@ -528,7 +528,8 @@ const accepts = (plugins: Plugin[], code: string): boolean => {
 };
 
 // Every plugin analyses the same program and source and returns intents against that AST; their
-// replacements compose in one generation (see compose), then prepends and imports apply in plugin order
+// replacements compose in one generation (see compose), then each plugin's prepends (a function entry
+// reading the composed text through text()) and imports apply in plugin order
 const transform = (
     plugins: Plugin[],
     code: string,
@@ -555,7 +556,7 @@ const transform = (
         memoized = checker.cached(project.checker, project.program),
         names: string[] = [],
         outlined = file,
-        steps: { imports: ImportIntent[]; prepend: string[] }[] = [];
+        steps: { imports: ImportIntent[]; prepend: Prepend[] }[] = [];
 
     let layout = (): Layout => {
         let result: Layout | null = outline(outlined);
@@ -617,9 +618,9 @@ const transform = (
         steps.push({ imports: imports?.length ? resolveImports(file, memoized, imports) : [], prepend: prepend ?? [] });
     }
 
-    if (intents.length > 0) {
-        let edits = compose(code, file, names, intents);
+    let { edits, text } = compose(code, file, names, intents);
 
+    if (edits.length > 0) {
         generations.push(sourcemap.buildGeneration(code, edits));
         currentCode = replaceReverse(code, edits);
         edited.push(edits);
@@ -631,7 +632,7 @@ const transform = (
 
         if (prepend.length > 0) {
             let before = currentCode,
-                result = applyPrepend(currentCode, layout(), prepend);
+                result = applyPrepend(currentCode, layout(), prepend.map(entry => typeof entry === 'string' ? entry : entry(text)));
 
             generations.push(sourcemap.buildGeneration(before, result.edits));
             currentCode = result.code;

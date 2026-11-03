@@ -30,6 +30,9 @@ type Plugin = {
 
 type PluginFactory = (options?: Record<string, unknown>) => Plugin;
 
+// A prepended statement, or one generated from the composed source once every replacement applied
+type Prepend = string | ((text: Text) => string);
+
 type Range = {
     end: number;
     start: number;
@@ -45,7 +48,7 @@ type ReplacementIntent = {
      * nested inside it (from any plugin, or this plugin's other intents) already applied; use it
      * instead of `node.getText()` for any expression copied into the output.
      */
-    generate: (sourceFile: SourceFile, text: (node: Node) => string) => string;
+    generate: (sourceFile: SourceFile, text: Text) => string;
 
     /**
      * AST node to replace. Position resolved at apply-time.
@@ -54,6 +57,9 @@ type ReplacementIntent = {
 };
 
 type SharedContext = Map<string, unknown>;
+
+// A node's source with every replacement nested inside it applied
+type Text = (node: Node) => string;
 
 type TransformContext = {
     checker: Checker;
@@ -76,9 +82,12 @@ type TransformResult = {
     imports?: ImportIntent[];
 
     /**
-     * Code to prepend after imports (e.g., generated classes, template factories).
+     * Code to prepend after imports (e.g., generated classes, template factories). Applied after
+     * every plugin's replacements are composed, in plugin order, then that plugin's imports; a
+     * function entry is called then with `text()` (the same helper `generate` receives), so it can
+     * read sources other plugins rewrote and anything its own generators recorded.
      */
-    prepend?: string[];
+    prepend?: Prepend[];
 
     /**
      * Replacement intents - node references with generator functions.
@@ -89,8 +98,8 @@ type TransformResult = {
 
 export type {
     ImportIntent,
-    Plugin, PluginFactory,
+    Plugin, PluginFactory, Prepend,
     Range, Replacement, ReplacementIntent,
     SharedContext,
-    TransformContext, TransformResult
+    Text, TransformContext, TransformResult
 };
