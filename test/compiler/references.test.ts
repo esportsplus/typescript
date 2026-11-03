@@ -52,6 +52,19 @@ const FILES: Record<string, string> = {
         "export let d1 = async () => (await import('fake-pkg')).make(1);",
         "export let d2 = async () => { const m = await import('fake-pkg'); return m.make(2); };"
     ].join('\n'),
+    // Receivers that can never reach an import: a parameter, `this`, a call result, a class
+    'src/receivers.ts': [
+        "import { make } from 'fake-pkg';",
+        'class Box {',
+        '    make = 1;',
+        '    read() { return this.make; }',
+        '}',
+        'function local() { return { make: 2 }; }',
+        'let plain = 3;',
+        'export let v1 = (obj: { make: number }) => obj.make;',
+        'export let v2 = new Box().make + local().make + plain;',
+        'export let v3 = make(1);'
+    ].join('\n'),
     'src/renamed.ts': [
         "import { make as x, tag as h, wire, wire as w } from 'fake-pkg';",
         "import { held, t, x as viaApp } from './app';",
@@ -79,6 +92,13 @@ const FILES: Record<string, string> = {
         'export let s2 = (obj: { tag: string }) => obj.tag;',
         'export let s3 = make(2);',
         'export let s4 = tag`d`;'
+    ].join('\n'),
+    // Parameters typed as a module namespace: a member of one is the export itself
+    'src/typed.ts': [
+        "import * as B from './barrel';",
+        "export let t1 = (P: typeof import('fake-pkg')) => P.make(1);",
+        'export let t2 = (N: typeof B) => N.P.make(2);',
+        "export let t3 = ({ make }: typeof import('fake-pkg')) => make(3);"
     ].join('\n'),
     // `export *` two modules deep before reaching the package
     'src/star.ts': "export * from './star2';",
@@ -309,9 +329,39 @@ describe('references', () => {
             expect(sites('src/dynamic.ts', 'make')).toEqual(["(await import('fake-pkg')).make", 'm.make'].sort());
         });
 
+        it('resolves members of a parameter typed as a module namespace', () => {
+            expect(sites('src/typed.ts', 'make')).toEqual(['N.P.make', 'P.make']);
+        });
+
         it('rejects a parameter shadowing the import and a member of a parameter', () => {
             expect(sites('src/shadow.ts', 'make')).toEqual(['make(2)']);
             expect(sites('src/shadow.ts', 'tag')).toEqual(['tag`d`']);
+        });
+
+        it('never asks the checker about reads that cannot reach an import', () => {
+            let sent: string[] = [],
+                recording = new Proxy(checker, {
+                    get(target, key) {
+                        let value = Reflect.get(target, key);
+
+                        if (key === 'getSymbolAtLocation') {
+                            return (nodes: Node | Node[]) => {
+                                for (let node of Array.isArray(nodes) ? nodes : [nodes]) {
+                                    sent.push(node.getText());
+                                }
+
+                                return (value as (nodes: Node | Node[]) => unknown).call(target, nodes);
+                            };
+                        }
+
+                        return typeof value === 'function' ? value.bind(target) : value;
+                    }
+                });
+
+            references.origins(recording, program, program.getSourceFile(fixture + '/src/receivers.ts')!);
+
+            expect(sent).toEqual(['make']);
+            expect(sites('src/receivers.ts', 'make')).toEqual(['make(1)']);
         });
 
         it('resolves reads of a let assigned from the export, before and after the assignment', () => {

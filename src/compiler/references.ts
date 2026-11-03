@@ -1,18 +1,29 @@
 import type { Node, SourceFile } from 'typescript/unstable/ast';
-import { SyntaxKind } from 'typescript/unstable/ast';
+import { NodeFlags, SyntaxKind } from 'typescript/unstable/ast';
 import {
-    isArrayBindingPattern, isAsExpression, isBindingElement, isElementAccessExpression, isIdentifier, isImportClause,
-    isImportEqualsDeclaration, isImportSpecifier, isNamespaceImport, isNonNullExpression,
-    isNoSubstitutionTemplateLiteral, isObjectBindingPattern, isParenthesizedExpression, isPropertyAccessExpression,
-    isSatisfiesExpression, isShorthandPropertyAssignment, isStringLiteral, isTypeAssertion, isTypeNode,
-    isVariableDeclaration, isVariableDeclarationList
+    isArrayBindingPattern, isArrayLiteralExpression, isAsExpression, isAssignmentOperator, isAwaitExpression,
+    isBinaryExpression, isBindingElement, isCallExpression, isElementAccessExpression, isForInStatement,
+    isForOfStatement, isIdentifier, isImportClause, isImportEqualsDeclaration, isImportSpecifier, isImportTypeNode,
+    isNamespaceImport, isNonNullExpression, isNoSubstitutionTemplateLiteral, isObjectBindingPattern,
+    isObjectLiteralExpression, isParameterDeclaration, isParenthesizedExpression, isPropertyAccessExpression,
+    isPropertyAssignment, isQualifiedName, isSatisfiesExpression, isShorthandPropertyAssignment, isSpreadAssignment,
+    isSpreadElement, isStringLiteral, isTypeAssertion, isTypeNode, isTypeQueryNode, isVariableDeclaration,
+    isVariableDeclarationList
 } from 'typescript/unstable/ast/is';
-import { NodeFlags } from 'typescript/unstable/ast';
 import type { Checker, NodeHandle, Program, Symbol } from 'typescript/unstable/sync';
 import { SymbolFlags } from 'typescript/unstable/sync';
 
 import manifest from './manifest';
 
+
+// Names a value binds (a declaration's initializer, a for-of/in iteration, an assignment's right side)
+// and what the value reads, so the names can be kept once anything it reads is
+type Binding = {
+    // Whether the value loads a module itself (`import()`, `require()`)
+    loads: boolean;
+    names: string[];
+    reads: Set<string>;
+};
 
 type Origin = {
     // Declaration the value comes from once every import, re-export and namespace alias is followed
@@ -40,32 +51,80 @@ let cache = new WeakMap<Program, Map<string, unknown>>(),
     signatures = new WeakMap<Set<string>, string>();
 
 
-// Names a plain value read can resolve through to an export or a variable: the names this file
-// imports and the names its variables bind. A read of any other name (a parameter, a function, a
-// class, a global) can never reach a package export or a reactive binding.
-function bound(node: Node, names: Set<string>): void {
-    if (isTypeNode(node)) {
+// The module types an annotation spells: `typeof import('x')` loads one, `typeof ns.a` reads `ns`
+function annotation(node: Node, binding: Binding): void {
+    if (isImportTypeNode(node)) {
+        binding.loads ||= node.isTypeOf;
+
         return;
     }
 
-    if (
-        isBindingElement(node) ||
-        isImportClause(node) ||
-        isImportEqualsDeclaration(node) ||
-        isImportSpecifier(node) ||
-        isNamespaceImport(node) ||
-        isVariableDeclaration(node)
-    ) {
-        let name = (node as { name?: Node }).name;
+    if (isTypeQueryNode(node)) {
+        let root: Node = node.exprName;
 
-        if (name && isIdentifier(name)) {
-            names.add(name.text);
+        while (isQualifiedName(root)) {
+            root = root.left;
         }
+
+        if (isIdentifier(root)) {
+            binding.reads.add(root.text);
+        }
+
+        return;
     }
 
-    node.forEachChild(child => bound(child, names));
+    node.forEachChild(child => annotation(child, binding));
 }
 
+function binding(target: Node, value: Node): Binding {
+    let result: Binding = { loads: false, names: [], reads: new Set() };
+
+    bound(target, result.names);
+    reads(value, result);
+
+    return result;
+}
+
+// Names a declaration name or an assignment target binds, through destructuring patterns and
+// destructuring assignment literals; a member target (`a.b = ...`) binds no variable
+function bound(target: Node, names: string[]): void {
+    if (isIdentifier(target)) {
+        names.push(target.text);
+    }
+    else if (isObjectBindingPattern(target) || isArrayBindingPattern(target)) {
+        target.forEachChild(element => {
+            if (isBindingElement(element) && element.name) {
+                bound(element.name, names);
+            }
+        });
+    }
+    else if (isArrayLiteralExpression(target)) {
+        for (let i = 0, n = target.elements.length; i < n; i++) {
+            bound(target.elements[i], names);
+        }
+    }
+    else if (isObjectLiteralExpression(target)) {
+        for (let i = 0, n = target.properties.length; i < n; i++) {
+            let property = target.properties[i];
+
+            if (isShorthandPropertyAssignment(property)) {
+                bound(property.name, names);
+            }
+            else if (isPropertyAssignment(property)) {
+                bound(property.initializer, names);
+            }
+            else if (isSpreadAssignment(property)) {
+                bound(property.expression, names);
+            }
+        }
+    }
+    else if (isSpreadElement(target) || isParenthesizedExpression(target)) {
+        bound(target.expression, names);
+    }
+    else if (isBinaryExpression(target)) {
+        bound(target.left, names);
+    }
+}
 
 function cached<T>(program: Program, key: string, compute: () => T): T {
     let entries = cache.get(program);
@@ -80,6 +139,85 @@ function cached<T>(program: Program, key: string, compute: () => T): T {
     }
 
     return entries.get(key) as T;
+}
+
+// Values the checker is asked about: reads rooted in the file's import bindings, whatever they are
+// called. Kept are (1) every local name an import introduces, (2) members (`ns.x`, `ns['x']`) whose
+// receiver chain roots in a kept name or a module load, and (3) names bound from a value reading a
+// kept name or annotated with a module's type, to a fixpoint (`const h = html`,
+// `let x; x = reactive(0)`, `(ns: typeof import('x')) => ns.html`). The checker still decides what
+// each resolves to, so renames, re-exports and shadowing resolve as before; what is dropped
+// (parameters, functions, classes, locals never bound from an import, members of other receivers)
+// only ever resolved to declarations holds() rejects by kind.
+function candidates(file: SourceFile): Node[] {
+    let bindings: Binding[] = [],
+        found: Node[] = [],
+        roots = new Set<string>();
+
+    scan(file, roots, bindings);
+
+    let kept = roots,
+        pending = bindings;
+
+    for (let changed = true; changed;) {
+        let next: Binding[] = [];
+
+        changed = false;
+
+        for (let i = 0, n = pending.length; i < n; i++) {
+            let binding = pending[i];
+
+            if (!binding.loads && !reaches(binding.reads, kept)) {
+                next.push(binding);
+                continue;
+            }
+
+            for (let j = 0, m = binding.names.length; j < m; j++) {
+                if (!kept.has(binding.names[j])) {
+                    kept.add(binding.names[j]);
+                    changed = true;
+                }
+            }
+        }
+
+        pending = next;
+    }
+
+    collect(file, found, kept);
+
+    return found;
+}
+
+function collect(node: Node, found: Node[], kept: Set<string>): void {
+    if (isTypeNode(node)) {
+        return;
+    }
+
+    let parent = node.parent;
+
+    if (isIdentifier(node)) {
+        if (!LINKS.has(parent?.kind as SyntaxKind) && !isDeclarationName(node)) {
+            if (parent !== undefined && isPropertyAccessExpression(parent) && parent.name === node) {
+                if (rooted(parent.expression, kept)) {
+                    found.push(node);
+                }
+            }
+            else if (kept.has(node.text)) {
+                found.push(node);
+            }
+        }
+    }
+    else if (
+        (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node)) &&
+        parent !== undefined &&
+        isElementAccessExpression(parent) &&
+        parent.argumentExpression === node &&
+        rooted(parent.expression, kept)
+    ) {
+        found.push(node);
+    }
+
+    node.forEachChild(child => collect(child, found, kept));
 }
 
 // Follows an alias one hop at a time so every file along the chain is known
@@ -139,34 +277,131 @@ function isDeclarationName(node: Node): boolean {
         (parent as { name?: Node }).name === node;
 }
 
-// Every member name is kept: a member resolves through its receiver's type, so `f().name` can
-// reach an export whatever `f` is. `ns['name']` reads a member exactly like `ns.name`.
-function values(node: Node, found: Node[], names: Set<string>): void {
+// `import()` and `require()` load a module without an import declaration to bind it
+function isLoad(node: Node): boolean {
+    return isCallExpression(node) && (
+        node.expression.kind === SyntaxKind.ImportKeyword ||
+        (isIdentifier(node.expression) && node.expression.text === 'require')
+    );
+}
+
+function reaches(reads: Set<string>, kept: Set<string>): boolean {
+    for (let name of reads) {
+        if (kept.has(name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Every name a value reads (member names excluded: `a.b` reads `a`), and whether it loads a module
+function reads(node: Node, binding: Binding): void {
     if (isTypeNode(node)) {
         return;
     }
 
-    let parent = node.parent;
-
     if (isIdentifier(node)) {
+        let parent = node.parent;
+
+        if (!(parent !== undefined && isPropertyAccessExpression(parent) && parent.name === node)) {
+            binding.reads.add(node.text);
+        }
+
+        return;
+    }
+
+    if (isLoad(node)) {
+        binding.loads = true;
+    }
+
+    node.forEachChild(child => reads(child, binding));
+}
+
+// Whether a receiver chain (`ns`, `ns.a.b`, `ns['a']`, `(await import('x')).a`) starts at a kept
+// name or a module load; a call result, `this` or any other receiver never reaches an export
+function rooted(expression: Node, kept: Set<string>): boolean {
+    while (true) {
         if (
-            !LINKS.has(parent?.kind as SyntaxKind) &&
-            !isDeclarationName(node) &&
-            ((parent !== undefined && isPropertyAccessExpression(parent) && parent.name === node) || names.has(node.text))
+            isAsExpression(expression) ||
+            isAwaitExpression(expression) ||
+            isNonNullExpression(expression) ||
+            isParenthesizedExpression(expression) ||
+            isSatisfiesExpression(expression) ||
+            isTypeAssertion(expression)
         ) {
-            found.push(node);
+            expression = (expression as Node & { expression: Node }).expression;
+        }
+        else if (isPropertyAccessExpression(expression) || isElementAccessExpression(expression)) {
+            expression = expression.expression;
+        }
+        else {
+            break;
         }
     }
-    else if (
-        (isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node)) &&
-        parent !== undefined &&
-        isElementAccessExpression(parent) &&
-        parent.argumentExpression === node
-    ) {
-        found.push(node);
+
+    return isIdentifier(expression) ? kept.has(expression.text) : isLoad(expression);
+}
+
+function scan(node: Node, roots: Set<string>, bindings: Binding[]): void {
+    if (isTypeNode(node)) {
+        return;
     }
 
-    node.forEachChild(child => values(child, found, names));
+    if (isImportClause(node) || isImportEqualsDeclaration(node) || isImportSpecifier(node) || isNamespaceImport(node)) {
+        let name = (node as { name?: Node }).name;
+
+        if (name && isIdentifier(name)) {
+            roots.add(name.text);
+        }
+    }
+    else if (isVariableDeclaration(node)) {
+        let source = value(node);
+
+        if (source) {
+            bindings.push(binding(node.name, source));
+        }
+
+        if (node.type) {
+            typed(node.name, node.type, bindings);
+        }
+    }
+    else if (isParameterDeclaration(node) && node.type) {
+        typed(node.name, node.type, bindings);
+    }
+    else if (isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind)) {
+        bindings.push(binding(node.left, node.right));
+    }
+
+    node.forEachChild(child => scan(child, roots, bindings));
+}
+
+// A name annotated with a module's type (`typeof import('x')`, `typeof ns` for a kept `ns`) holds
+// that module's namespace, so its members are the module's exports whatever value it is given
+function typed(name: Node, type: Node, bindings: Binding[]): void {
+    let binding: Binding = { loads: false, names: [], reads: new Set() };
+
+    annotation(type, binding);
+
+    if (binding.loads || binding.reads.size > 0) {
+        bound(name, binding.names);
+        bindings.push(binding);
+    }
+}
+
+// What a variable declaration binds from: its initializer, or what a for-of/in loop iterates
+function value(declaration: Node & { initializer?: Node }): Node | undefined {
+    if (declaration.initializer) {
+        return declaration.initializer;
+    }
+
+    let statement = declaration.parent?.parent;
+
+    if (statement && (isForOfStatement(statement) || isForInStatement(statement))) {
+        return statement.expression;
+    }
+
+    return undefined;
 }
 
 
@@ -326,18 +561,15 @@ const origin = (checker: Checker, program: Program, node: Node): Origin | null =
     });
 };
 
-// Origin of every value read in a file that can resolve to an export or a variable (see bound):
-// identifiers, member names and string keys of element accesses, resolved in one checker
-// round-trip. Type positions and the identifiers of import/export clauses are excluded;
+// Origin of every value read in a file that can resolve to an export or a variable bound from one
+// (see candidates): identifiers, member names and string keys of element accesses, resolved in one
+// checker round-trip. Type positions and the identifiers of import/export clauses are excluded;
 // declaration names are not reads.
 const origins = (checker: Checker, program: Program, file: SourceFile): Map<Node, Origin> => {
     return cached(program, `origins\0${file.fileName}`, () => {
-        let identifiers: Node[] = [],
-            names = new Set<string>(),
-            result = new Map<Node, Origin>();
+        let result = new Map<Node, Origin>();
 
-        bound(file, names);
-        values(file, identifiers, names);
+        let identifiers = candidates(file);
 
         let symbols = checker.getSymbolAtLocation(identifiers);
 
