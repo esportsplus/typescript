@@ -165,12 +165,12 @@ describe('compiler/checker', () => {
 
     it('binds methods to the underlying checker', () => {
         let double = {
-                self: null as unknown,
                 getTypeAtLocation(this: { self: unknown }) {
                     this.self = this;
 
                     return 1;
-                }
+                },
+                self: null as unknown
             },
             memo = wrap(double as unknown as Fake);
 

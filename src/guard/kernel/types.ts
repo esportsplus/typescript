@@ -70,18 +70,18 @@ type TransferContext<V>  = {
     readonly checker: ts.TypeChecker;
     readonly fn: FunctionInfo;
     // Current-iteration summary of a reachable callee (bottom until analyzed).
-    summaryOf(fn: FunctionInfo): Summary<V>;
+    readonly summaryOf: (fn: FunctionInfo) => Summary<V>;
     // Resolve a call/new expression to targets + function args + overlay.
-    resolveCall(call: ts.CallExpression | ts.NewExpression): CalleeResolution;
+    readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
     // Resolve a call against a named peer channel's overlay section — targets are
     // channel-independent; only the overlay layer differs.
-    resolveCallFor(
+    readonly resolveCallFor: (
         channel: string,
         call: ts.CallExpression | ts.NewExpression,
-    ): CalleeResolution;
+    ) => CalleeResolution;
     // Converged summary value of a peer channel for a function id, or undefined
     // when that peer channel did not run (peer dependencies are optional).
-    peerSummaryValue(channel: string, fnId: string): unknown;
+    readonly peerSummaryValue: (channel: string, fnId: string) => unknown;
 };
 
 // Context handed to `diagnose` after the fixpoint has converged.
@@ -89,17 +89,17 @@ type DiagnoseContext<V>  = {
     readonly checker: ts.TypeChecker;
     readonly fn: FunctionInfo;
     readonly channelConfig: unknown;
-    summaryOf(fn: FunctionInfo): Summary<V>;
-    resolveCall(call: ts.CallExpression | ts.NewExpression): CalleeResolution;
-    resolveCallFor(
+    readonly summaryOf: (fn: FunctionInfo) => Summary<V>;
+    readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
+    readonly resolveCallFor: (
         channel: string,
         call: ts.CallExpression | ts.NewExpression,
-    ): CalleeResolution;
-    peerSummaryValue(channel: string, fnId: string): unknown;
+    ) => CalleeResolution;
+    readonly peerSummaryValue: (channel: string, fnId: string) => unknown;
     // Call-graph roots: reached functions with no callers (the "tops of the stack").
     // A channel can use these plus `summaryOf` to tell whether an effect escapes all
     // the way up uncaught, or is handled by some ancestor.
-    roots(): ReadonlyArray<FunctionInfo>;
+    readonly roots: () => ReadonlyArray<FunctionInfo>;
 };
 
 // A channel is a plugin over the shared kernel. `V` is its lattice value type.
@@ -186,14 +186,14 @@ type OverlaySet  = {
 
 type CallGraph  = {
     // Every function reached from the configured entry points.
-    reachedFunctions(): ReadonlyArray<FunctionInfo>;
+    readonly reachedFunctions: () => ReadonlyArray<FunctionInfo>;
     // App-function callees of `fn` (call-graph edges; excludes overlay leaves).
-    calleesOf(fn: FunctionInfo): ReadonlyArray<FunctionInfo>;
+    readonly calleesOf: (fn: FunctionInfo) => ReadonlyArray<FunctionInfo>;
     // Structural resolution of one call site (targets, function args, overlay).
-    resolveCall(
+    readonly resolveCall: (
         call: ts.CallExpression | ts.NewExpression,
         channel: string,
-    ): CalleeResolution;
+    ) => CalleeResolution;
 };
 // Fixpoint engine result (implemented by src/kernel/fixpoint)
 

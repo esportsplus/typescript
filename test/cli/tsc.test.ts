@@ -10,6 +10,9 @@ import os from 'os';
 import path from 'path';
 
 
+// SGR color codes the formatter wraps its output in
+const ANSI_REGEX = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g');
+
 const BACKSLASH_REGEX = /\\/g;
 
 
@@ -62,7 +65,7 @@ describe('projectPath', () => {
     });
 
     afterEach(() => {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(tmpDir, { force: true, recursive: true });
     });
 
     it('uses the config named by -p, including a project directory', () => {
@@ -102,7 +105,7 @@ describe('loadPlugins', () => {
     });
 
     afterEach(() => {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(tmpDir, { force: true, recursive: true });
     });
 
     it('loads a valid plugin with transform export', async () => {
@@ -229,7 +232,7 @@ describe('build', () => {
     afterEach(() => {
         process.argv = originalArgv;
         vi.restoreAllMocks();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(tmpDir, { force: true, recursive: true });
     });
 
     it('emits transformed sources to outDir and leaves originals untouched', async () => {
@@ -451,7 +454,7 @@ describe('resolvePluginConfigs extends resolution', () => {
     });
 
     afterEach(() => {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(tmpDir, { force: true, recursive: true });
     });
 
     it('resolves a plugin from a package-specifier extends via require.resolve', () => {
@@ -518,7 +521,7 @@ describe('main flag gating', () => {
     afterEach(() => {
         process.argv = originalArgv;
         vi.restoreAllMocks();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(tmpDir, { force: true, recursive: true });
     });
 
     it('--watch on a plugin project exits 1 with a prefixed error and never builds', () => {
@@ -596,7 +599,7 @@ describe('runAnalyze', () => {
 
     it('exits 1 when a finding belongs to an error-severity channel', () => {
         let tsconfig = writeProject(
-            { exceptions: { severity: 'error', report: 'all' } },
+            { exceptions: { report: 'all', severity: 'error' } },
             'export function b(x: string): unknown { return JSON.parse(x); }\n',
         );
 
@@ -606,7 +609,7 @@ describe('runAnalyze', () => {
 
     it('does not exit when the only findings are in a warn-severity channel', () => {
         let tsconfig = writeProject(
-            { exceptions: { severity: 'warn', report: 'all' } },
+            { exceptions: { report: 'all', severity: 'warn' } },
             'export function b(x: string): unknown { return JSON.parse(x); }\n',
         );
 
@@ -631,7 +634,7 @@ describe('diagnostics', () => {
     });
 
     afterEach(() => {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(tmpDir, { force: true, recursive: true });
     });
 
     it('flatten concatenates a nested messageChain with indentation', () => {
@@ -671,7 +674,7 @@ describe('diagnostics', () => {
             text: 'Global failure.'
         };
 
-        let clean = format([diagnostic], tmpDir).replace(/\x1b\[[0-9;]*m/g, '');
+        let clean = format([diagnostic], tmpDir).replace(ANSI_REGEX, '');
 
         expect(clean).toContain('error TS1234: Global failure.');
         expect(clean).not.toContain(':1:1');
@@ -693,7 +696,7 @@ describe('diagnostics', () => {
             text: 'Cannot redeclare block-scoped variable.'
         };
 
-        let clean = format([diagnostic], tmpDir).replace(/\x1b\[[0-9;]*m/g, '');
+        let clean = format([diagnostic], tmpDir).replace(ANSI_REGEX, '');
 
         expect(clean).toContain('source.ts:2:7');
         expect(clean).toContain('const bad = 2;');
@@ -718,7 +721,7 @@ describe('diagnostics', () => {
         fs.writeFileSync(sourcePath, source);
 
         let transformed = new Map([[sourcePath.replace(/\\/g, '/'), { code: prefix + source, mapping: { generations: [mapping] } }]]),
-            clean = format([diagnostic], tmpDir, transformed).replace(/\x1b\[[0-9;]*m/g, '');
+            clean = format([diagnostic], tmpDir, transformed).replace(ANSI_REGEX, '');
 
         expect(clean).toContain('source.ts:1:23');
         expect(clean).toContain('const value: string = 1;');

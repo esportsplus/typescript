@@ -230,7 +230,7 @@ function findInSections(
     if (preferred) {
         const table = channel.get(preferred);
         if (table && table.has(key)) {
-            return { pkg: preferred, symbol: key, entry: table.get(key) };
+            return { entry: table.get(key), pkg: preferred, symbol: key };
         }
     }
     for (const [section, table] of channel) {
@@ -238,7 +238,7 @@ function findInSections(
             continue;
         }
         if (table.has(key)) {
-            return { pkg: section, symbol: key, entry: table.get(key) };
+            return { entry: table.get(key), pkg: section, symbol: key };
         }
     }
     return undefined;
@@ -252,7 +252,7 @@ function findInGlobal(
 ): OverlayLookup | undefined {
     const table = channel.get(GLOBAL_SECTION);
     if (table && table.has(key)) {
-        return { pkg: GLOBAL_SECTION, symbol: key, entry: table.get(key) };
+        return { entry: table.get(key), pkg: GLOBAL_SECTION, symbol: key };
     }
     return undefined;
 }

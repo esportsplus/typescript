@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildAnalysis, reachedNames, type BuiltAnalysis } from "./harness";
+import { type BuiltAnalysis, buildAnalysis, reachedNames } from "./harness";
 
 const IMPORT_TREE = {
     "a.ts": `import { deep } from './sub/c';
@@ -43,10 +43,10 @@ export function useDep(): void { dep(); }
             },
             {
                 files: {
-                    "node_modules/dep/package.json": JSON.stringify({ main: "index.js", name: "dep", version: "1.0.0" }),
                     "node_modules/dep/index.js": `function dep() { throw new Error('boom'); }
 module.exports = { dep };
 `,
+                    "node_modules/dep/package.json": JSON.stringify({ main: "index.js", name: "dep", version: "1.0.0" }),
                 },
             },
         );

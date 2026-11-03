@@ -1,7 +1,7 @@
 import type { Plugin, SharedContext } from '../compiler/types';
 import type { PositionMapping } from '../compiler/sourcemap';
 import type { Diagnostic as AnalyzeDiagnostic } from '../guard/kernel/types';
-import { API, DiagnosticCategory, type Checker, type Program, type Snapshot } from 'typescript/unstable/sync';
+import { API, type Checker, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
 import { PACKAGE_NAME } from '../constants';

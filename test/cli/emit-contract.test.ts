@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { API } from 'typescript/unstable/sync';
 import { build } from '~/cli/tsc';
-import { createFixture, createFixtureDir, MARKER_PLUGIN, snapshotTree } from './fixtures';
+import { MARKER_PLUGIN, createFixture, createFixtureDir, snapshotTree } from './fixtures';
 
 import fs from 'fs';
 import os from 'os';
@@ -68,7 +68,7 @@ describe('emit contract', () => {
     afterEach(() => {
         process.argv = originalArgv;
         vi.restoreAllMocks();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.rmSync(tmpDir, { force: true, recursive: true });
     });
 
     it('refreshes the owned project between files when plugins advance its snapshot', async () => {

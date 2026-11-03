@@ -66,7 +66,6 @@ export const buildAnalysis = (
 
     return {
         analysis,
-        graph,
         dispose() {
             if (disposed) {
                 return;
@@ -75,6 +74,7 @@ export const buildAnalysis = (
             built.dispose();
             fs.rmSync(dir, { force: true, recursive: true });
         },
+        graph,
     };
 };
 

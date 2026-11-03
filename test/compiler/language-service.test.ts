@@ -42,7 +42,7 @@ describe('language-service', () => {
             if (path.dirname(path.resolve(directory)) !== path.resolve(root, 'test')) {
                 throw new Error('Fixture escaped the test directory');
             }
-            fs.rmSync(directory, { recursive: true, force: true });
+            fs.rmSync(directory, { force: true, recursive: true });
         });
 
         it('shares updates with the project opened through its canonical path', () => {

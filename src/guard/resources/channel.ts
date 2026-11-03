@@ -3,23 +3,23 @@ import * as ts from '../adapter';
 import type {
     CalleeResolution,
     Channel,
+    DiagnoseContext,
     Diagnostic,
     DiagnosticFix,
-    DiagnoseContext,
     FunctionInfo,
     Summary,
     TransferContext,
 } from '../kernel/types';
 import { overlayThrows } from '../exceptions/channel';
 import { bodyOf, paramSymbols, unwrap } from '../kernel/ast';
-import { isEmpty, type ExceptionsValue } from '../exceptions/value';
+import { type ExceptionsValue, isEmpty } from '../exceptions/value';
 import { isFunctionLike, locationOf } from '../kernel/ids';
 import {
+    type ResourcesValue,
     bottom,
     equals,
     fromParams,
     widen,
-    type ResourcesValue,
 } from './value';
 // Types
 
@@ -276,9 +276,9 @@ function acquireAt(
 
             return {
                 kind: pairKey ? 'pair' : 'handle',
-                releasedBy,
-                pairKey,
                 label: entry.acquires,
+                pairKey,
+                releasedBy,
             };
         }
     }
@@ -303,9 +303,9 @@ function acquireAt(
     if (hasDispose(env, env.checker.getTypeAtLocation(call), true)) {
         return {
             kind: 'handle',
-            releasedBy: undefined,
-            pairKey: undefined,
             label: 'Disposable',
+            pairKey: undefined,
+            releasedBy: undefined,
         };
     }
 
@@ -365,7 +365,7 @@ function handleBinding(
 
     const sym = env.checker.getSymbolAtLocation(decl.name);
 
-    return sym ? { using: false, sym } : undefined;
+    return sym ? { sym, using: false } : undefined;
 }
 
 function isDischargeCall(
@@ -911,7 +911,7 @@ function classFieldAcquires(
                 const acq = acquireAt(env, init);
 
                 if (acq && acq.kind === 'handle') {
-                    out.push({ field: member.name.text, node: member, acq });
+                    out.push({ acq, field: member.name.text, node: member });
                 }
             }
         }
@@ -935,7 +935,7 @@ function classFieldAcquires(
                     const acq = acquireAt(env, rhs);
 
                     if (acq && acq.kind === 'handle') {
-                        out.push({ field: n.left.name.text, node: n, acq });
+                        out.push({ acq, field: n.left.name.text, node: n });
                     }
                 }
             }
@@ -988,15 +988,15 @@ function usingFix(
     }
 
     return {
-        title: 'Convert to `using`',
         edits: [
             {
-                fileName: sf.fileName,
-                pos: start,
                 end: start + keyword.length,
+                fileName: sf.fileName,
                 newText: 'using',
+                pos: start,
             },
         ],
+        title: 'Convert to `using`',
     };
 }
 
@@ -1074,15 +1074,15 @@ function tryFinallyFix(
     const replacement = `${base}try {\n${region}\n${base}}\n${base}finally {\n${base}${unit}${release};\n${base}}`;
 
     return {
-        title: 'Wrap in try/finally',
         edits: [
             {
-                fileName: sf.fileName,
-                pos: lineStart,
                 end: regionEnd,
+                fileName: sf.fileName,
                 newText: replacement,
+                pos: lineStart,
             },
         ],
+        title: 'Wrap in try/finally',
     };
 }
 
@@ -1094,10 +1094,10 @@ function leakDiagnostic(
 ): Diagnostic {
     return {
         channel: 'resources',
-        message: `\`${acq.label}\` resource can leak — ${why}`,
-        location: locationOf(node, node.getSourceFile()),
-        related: [],
         fixes,
+        location: locationOf(node, node.getSourceFile()),
+        message: `\`${acq.label}\` resource can leak — ${why}`,
+        related: [],
     };
 }
 // Environment
@@ -1129,12 +1129,12 @@ function makeEnv(
     return {
         checker,
         fn,
-        summaryOf,
-        resolveCall,
-        resolveExceptions,
-        peerThrows,
         logDegrade,
         paramSymbols: includeParamSymbols ? paramSymbols(checker, fn.node) : undefined,
+        peerThrows,
+        resolveCall,
+        resolveExceptions,
+        summaryOf,
     };
 }
 
@@ -1289,8 +1289,8 @@ function diagnoseAcquire(
             // resource that flows somewhere untrackable is treated as a leak.
             out.push({
                 channel: 'resources',
-                message: `\`${acq.label}\` resource becomes untrackable — it flows to an opaque sink and release cannot be verified`,
                 location: locationOf(call, call.getSourceFile()),
+                message: `\`${acq.label}\` resource becomes untrackable — it flows to an opaque sink and release cannot be verified`,
                 related: [],
             });
         }
@@ -1323,8 +1323,8 @@ function diagnoseClassFields(
 
         out.push({
             channel: 'resources',
-            message: `\`${stored.acq.label}\` stored on \`this.${stored.field}\` can leak — class \`${className(cls)}\` has no release method that discharges it`,
             location: locationOf(stored.node, stored.node.getSourceFile()),
+            message: `\`${stored.acq.label}\` stored on \`this.${stored.field}\` can leak — class \`${className(cls)}\` has no release method that discharges it`,
             related: [],
         });
     }
@@ -1344,30 +1344,8 @@ const createResourcesChannel = (
     onDegrade: (message: string) => void = () => {},
 ): Channel<ResourcesValue> => {
     return {
-        name: 'resources',
-        dependsOn: ['exceptions'],
         bottom,
-        equals,
-        widen,
-        transfer(
-            ctx: TransferContext<ResourcesValue>,
-        ): Summary<ResourcesValue> {
-            const env = makeEnv(
-                ctx.checker,
-                ctx.fn,
-                ctx.summaryOf,
-                ctx.resolveCall,
-                ctx.resolveCallFor,
-                ctx.peerSummaryValue,
-                onDegrade,
-                true,
-            );
-
-            return {
-                value: fromParams(computeOwnership(env)),
-                fromCallbacks: new Set(),
-            };
-        },
+        dependsOn: ['exceptions'],
         diagnose(
             ctx: DiagnoseContext<ResourcesValue>,
         ): ReadonlyArray<Diagnostic> {
@@ -1409,6 +1387,28 @@ const createResourcesChannel = (
 
             return out;
         },
+        equals,
+        name: 'resources',
+        transfer(
+            ctx: TransferContext<ResourcesValue>,
+        ): Summary<ResourcesValue> {
+            const env = makeEnv(
+                ctx.checker,
+                ctx.fn,
+                ctx.summaryOf,
+                ctx.resolveCall,
+                ctx.resolveCallFor,
+                ctx.peerSummaryValue,
+                onDegrade,
+                true,
+            );
+
+            return {
+                fromCallbacks: new Set(),
+                value: fromParams(computeOwnership(env)),
+            };
+        },
+        widen,
     };
 };
 

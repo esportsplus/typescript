@@ -55,7 +55,7 @@ describe("kernel config — severity defaults", () => {
 describe("kernel config — channels and options", () => {
     it("collects non-severity keys as opaque channel options", () => {
         let config = configFromObject(
-            { exceptions: { severity: "error", report: "all" } },
+            { exceptions: { report: "all", severity: "error" } },
             ROOT,
         );
         expect(config.channels["exceptions"]!.options).toEqual({ report: "all" });
@@ -113,7 +113,7 @@ describe("kernel config — tsconfig discovery and merge", () => {
             fs.mkdirSync(pkg, { recursive: true });
             fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "shared-config" }));
             fs.writeFileSync(path.join(pkg, "tsconfig.json"), JSON.stringify({
-                "tsc-guard": { exceptions: { severity: "error", report: "cross-module" } },
+                "tsc-guard": { exceptions: { report: "cross-module", severity: "error" } },
             }));
             fs.writeFileSync(tsconfig, JSON.stringify({ extends: "shared-config/tsconfig.json" }));
 
@@ -137,7 +137,7 @@ describe("kernel config — tsconfig discovery and merge", () => {
             fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "shared-config" }));
             fs.writeFileSync(path.join(pkg, "tsconfig.json"), JSON.stringify({
                 "tsc-guard": {
-                    exceptions: { severity: "error", report: "cross-module" },
+                    exceptions: { report: "cross-module", severity: "error" },
                     resources: { severity: "error" },
                 },
             }));

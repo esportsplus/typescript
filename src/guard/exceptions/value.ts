@@ -66,18 +66,18 @@ function mergeOrigins(
 }
 
 function bottom(): ExceptionsValue {
-    return { top: false, types: new Map(), origins: NO_ORIGINS };
+    return { origins: NO_ORIGINS, top: false, types: new Map() };
 }
 
 function top(): ExceptionsValue {
-    return { top: true, types: new Map(), origins: NO_ORIGINS };
+    return { origins: NO_ORIGINS, top: true, types: new Map() };
 }
 
 function single(key: string, display: string): ExceptionsValue {
     return {
+        origins: NO_ORIGINS,
         top: false,
         types: new Map([[key, display]]),
-        origins: NO_ORIGINS,
     };
 }
 
@@ -94,7 +94,7 @@ function withOrigin(
         if (prev.some((o) => originId(o) === originId(origin))) continue;
         origins.set(k, prev.length < ORIGIN_CAP ? [...prev, origin] : prev);
     }
-    return { top: false, types: v.types, origins };
+    return { origins, top: false, types: v.types };
 }
 
 // Every distinct origin across all types, deduped — the diagnostic's throw list.
@@ -121,9 +121,9 @@ function join(a: ExceptionsValue, b: ExceptionsValue): ExceptionsValue {
     // for the fixpoint's `widen`).
     if (m.size > WIDEN_CAP) return top();
     return {
+        origins: mergeOrigins(a.origins, b.origins),
         top: false,
         types: m,
-        origins: mergeOrigins(a.origins, b.origins),
     };
 }
 
@@ -162,7 +162,7 @@ function subtract(
         const o = a.origins.get(k);
         if (o) origins.set(k, o);
     }
-    return { top: false, types: m, origins };
+    return { origins, top: false, types: m };
 }
 
 function isEmpty(v: ExceptionsValue): boolean {
@@ -212,10 +212,10 @@ function refOfType(
             name && name !== '__type' ? name : checker.typeToString(t);
         const display =
             name && name !== '__type' ? name : checker.typeToString(t);
-        return { top: false, key: `${file}:${qname}`, display };
+        return { display, key: `${file}:${qname}`, top: false };
     }
     const s = checker.typeToString(t);
-    return { top: false, key: s, display: s };
+    return { display: s, key: s, top: false };
 }
 
 // Union-split reference list; `any`/`unknown` constituents surface the TOP marker.
@@ -226,8 +226,8 @@ function typeRef(
     const out: { key: string; display: string }[] = [];
     for (const t of constituents(type)) {
         const r = refOfType(checker, t);
-        if (r.top) out.push({ key: TOP_KEY, display: TOP_DISPLAY });
-        else out.push({ key: r.key, display: r.display });
+        if (r.top) out.push({ display: TOP_DISPLAY, key: TOP_KEY });
+        else out.push({ display: r.display, key: r.key });
     }
     return out;
 }

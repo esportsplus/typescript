@@ -62,11 +62,11 @@ function makeFunctionInfo(
     sourceFile: ts.SourceFile,
 ): FunctionInfo {
     return {
+        fileName: sourceFile.fileName,
         id: functionId(node, sourceFile),
+        name: functionName(node),
         node,
         sourceFile,
-        name: functionName(node),
-        fileName: sourceFile.fileName,
     };
 }
 
@@ -77,11 +77,11 @@ function locationOf(
     const start = node.getStart(sourceFile);
     const { line, character } = sourceFile.getLineAndCharacterOfPosition(start);
     return {
+        column: character + 1,
+        end: node.getEnd(),
         fileName: sourceFile.fileName,
         line: line + 1,
-        column: character + 1,
         pos: start,
-        end: node.getEnd(),
     };
 }
 

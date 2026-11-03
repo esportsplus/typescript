@@ -1,11 +1,11 @@
 import * as NodeFS from 'node:fs';
 import * as NodePath from 'node:path';
 
-import { CodeActionKind, createConnection, ProposedFeatures, StreamMessageReader, StreamMessageWriter, TextDocuments, TextDocumentSyncKind } from 'vscode-languageserver/node';
+import { CodeActionKind, ProposedFeatures, StreamMessageReader, StreamMessageWriter, TextDocumentSyncKind, TextDocuments, createConnection } from 'vscode-languageserver/node';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
-import { codeActionsAt, DiagnosticSeverity, groupByFile, hoverAt } from './diagnostics';
+import { DiagnosticSeverity, codeActionsAt, groupByFile, hoverAt } from './diagnostics';
 import { AnalyzeWorkspace } from './workspace';
 
 import type { Connection } from 'vscode-languageserver/node';
@@ -69,7 +69,7 @@ function createServer(connection: Connection): void {
         let uri = pathToFileURL(workspace.configPath).toString();
 
         if (workspace.configError) {
-            connection.sendDiagnostics({
+            void connection.sendDiagnostics({
                 diagnostics: [{
                     message: workspace.configError,
                     range: { end: { character: 0, line: 0 }, start: { character: 0, line: 0 } },
@@ -81,7 +81,7 @@ function createServer(connection: Connection): void {
             published.add(uri);
         }
         else if (published.has(uri)) {
-            connection.sendDiagnostics({ diagnostics: [], uri });
+            void connection.sendDiagnostics({ diagnostics: [], uri });
             published.delete(uri);
         }
     }
@@ -153,12 +153,12 @@ function createServer(connection: Connection): void {
             let uri = uriOf(fileName);
 
             next.add(uri);
-            connection.sendDiagnostics({ diagnostics, uri });
+            void connection.sendDiagnostics({ diagnostics, uri });
         }
 
         for (let uri of published) {
             if (!next.has(uri)) {
-                connection.sendDiagnostics({ diagnostics: [], uri });
+                void connection.sendDiagnostics({ diagnostics: [], uri });
             }
         }
 

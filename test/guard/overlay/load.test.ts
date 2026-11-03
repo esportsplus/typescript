@@ -102,7 +102,7 @@ describe("overlay lookup — global fallback for node-declared globals", () => {
             expect(sym).toBeDefined();
             const found = loadOverlays().lookup(sym!, "exceptions");
             expect(found?.pkg).toBe("global");
-            expect((found?.entry as { exceptions: string[] }).exceptions).toEqual(["TypeError"]);
+            expect((found!.entry as { exceptions: string[] }).exceptions).toEqual(["TypeError"]);
         }
         finally {
             if (!dispose) {

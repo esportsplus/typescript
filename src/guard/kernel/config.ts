@@ -4,9 +4,9 @@ import { readGuardConfig } from '../../tsconfig';
 import { stripJsonc } from '../../jsonc';
 
 import type {
+    AnalyzeConfig,
     ChannelConfig,
     Severity,
-    AnalyzeConfig,
 } from './types';
 
 // The known channel names. `tsc-guard`'s keys are exactly these; any other key
@@ -61,7 +61,7 @@ function parseChannel(name: string, raw: unknown): ChannelConfig {
         }
         options[key] = raw[key];
     }
-    return { severity: parseSeverity(raw['severity'], name), options };
+    return { options, severity: parseSeverity(raw['severity'], name) };
 }
 
 // Turn the raw parsed `tsc-guard` object into a validated, defaulted config.
@@ -82,15 +82,15 @@ function normalizeConfig(raw: RawConfig, projectRoot: string): AnalyzeConfig {
     const channels: Record<string, ChannelConfig> = {};
     for (const name of CHANNEL_NAMES) {
         channels[name] = absent(raw[name])
-            ? { severity: 'off', options: {} }
+            ? { options: {}, severity: 'off' }
             : parseChannel(name, raw[name]);
     }
     return {
+        channels,
         projectRoot,
         // Always overridden by loadConfigFromTsconfig with the invoking tsconfig;
         // this default only applies to direct configFromObject/parseConfig use.
         tsconfigPath: NodePath.join(projectRoot, 'tsconfig.json'),
-        channels,
     };
 }
 

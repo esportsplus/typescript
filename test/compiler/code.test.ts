@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import code from '~/compiler/code';
+import vm from 'node:vm';
 
 
 describe('code', () => {
@@ -102,7 +103,7 @@ describe('code.escape', () => {
     it('round-trips through single-quote literal semantics', () => {
         let original = "it's a \\test\\ with\nnewlines\r\nand   separators   too",
             escaped = code.escape(original),
-            reparsed = new Function(`'use strict'; return '${escaped}';`)() as string;
+            reparsed = vm.runInNewContext(`'use strict'; '${escaped}';`) as string;
 
         expect(reparsed).toBe(original);
     });

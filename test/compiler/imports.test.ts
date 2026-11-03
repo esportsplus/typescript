@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { SymbolFlags, type Checker } from 'typescript/unstable/sync';
+import { type Checker, SymbolFlags } from 'typescript/unstable/sync';
 import type { Identifier, Node, SourceFile } from 'typescript/unstable/ast';
 import { SyntaxKind } from 'typescript/unstable/ast';
 import { isIdentifier, isImportClause, isImportSpecifier, isNamespaceImport } from 'typescript/unstable/ast/is';
@@ -231,11 +231,11 @@ describe('imports.includes', () => {
         expect(node).toBeDefined();
 
         let checker = {
+            getAliasedSymbol: () => { throw new Error('not an alias'); },
             getSymbolAtLocation: () => ({
                 declarations: [],
                 flags: SymbolFlags.None
-            }),
-            getAliasedSymbol: () => { throw new Error('not an alias'); }
+            })
         } as unknown as Checker;
 
         expect(imports.includes(checker, node!, 'my-pkg')).toBe(false);
@@ -249,11 +249,11 @@ describe('imports.includes', () => {
 
         let aliased = { declarations: [{ path: root + '/node_modules/my-pkg/index.d.ts' }] },
             checker = {
+                getAliasedSymbol: () => aliased,
                 getSymbolAtLocation: () => ({
                     declarations: [],
                     flags: SymbolFlags.Alias
-                }),
-                getAliasedSymbol: () => aliased
+                })
             } as unknown as Checker;
 
         expect(imports.includes(checker, node!, 'my-pkg')).toBe(true);

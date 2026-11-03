@@ -2,13 +2,13 @@ import * as ts from '../adapter';
 
 import type { FunctionLike } from '../kernel/types';
 import {
+    type ExceptionsValue,
+    TOP_KEY,
     bottom,
     join,
     single,
     top,
-    TOP_KEY,
     typeRef,
-    type ExceptionsValue,
 } from './value';
 
 // Parse `@throws {TypeName}` / `@throws TypeName` (and `@exception`) tags on a
@@ -42,7 +42,7 @@ function declaredExceptions(
         const bare = (text ?? '').trim().split(/[\s,|]+/)[0];
         if (bare) value = join(value, single(bare, bare));
     }
-    return { value, declared };
+    return { declared, value };
 }
 
 function refsToValue(

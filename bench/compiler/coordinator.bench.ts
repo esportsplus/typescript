@@ -1,4 +1,4 @@
-import { afterAll, test, describe } from 'vitest';
+import { afterAll, describe, test } from 'vitest';
 import type { Checker, Program } from 'typescript/unstable/sync';
 import type { Plugin, TransformContext } from '~/compiler/types';
 import type { SourceFile } from 'typescript/unstable/ast';

@@ -181,7 +181,7 @@ describe('plugin.vite', () => {
             plugin = vite({ name: 'test-pkg', plugins: [] })(explicit ? { root: app } : {});
 
         vi.mocked(languageService.findConfig).mockReturnValueOnce(configPath);
-        plugin.configResolved({ root: app, configFile: resolve(docs, 'custom.vite.config.ts') });
+        plugin.configResolved({ configFile: resolve(docs, 'custom.vite.config.ts'), root: app });
         plugin.transform.handler('let x = 1;', resolve(docs, 'src/app.ts'));
         plugin.watchChange(resolve(docs, 'src/app.ts'));
         plugin.closeBundle();
@@ -195,7 +195,7 @@ describe('plugin.vite', () => {
     it('uses the app root when config loading is disabled', () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
-        plugin.configResolved({ root: '/project', configFile: false });
+        plugin.configResolved({ configFile: false, root: '/project' });
 
         expect(languageService.findConfig).toHaveBeenCalledWith('/project');
     });

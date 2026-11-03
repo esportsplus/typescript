@@ -1,6 +1,6 @@
 import { CodeActionKind, DiagnosticSeverity, MarkupKind } from 'vscode-languageserver/node';
 
-import type { CodeAction, Diagnostic as LspDiagnostic, DiagnosticRelatedInformation, Hover, Position, Range, TextEdit } from 'vscode-languageserver/node';
+import type { CodeAction, DiagnosticRelatedInformation, Hover, Diagnostic as LspDiagnostic, Position, Range, TextEdit } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { Diagnostic as AnalyzeDiagnostic, SourceLocation } from '../guard/kernel/types';
 
@@ -13,12 +13,12 @@ export type DocumentResolver = (fileName: string) => TextDocument | undefined;
 // offset mapping and fall back to the 1-based line/column when the file is closed.
 function rangeOf(location: SourceLocation, document: TextDocument | undefined): Range {
     if (document) {
-        return { start: document.positionAt(location.pos), end: document.positionAt(location.end) };
+        return { end: document.positionAt(location.end), start: document.positionAt(location.pos) };
     }
 
-    let start: Position = { line: Math.max(0, location.line - 1), character: Math.max(0, location.column - 1) };
+    let start: Position = { character: Math.max(0, location.column - 1), line: Math.max(0, location.line - 1) };
 
-    return { start, end: { line: start.line, character: start.character + 1 } };
+    return { end: { character: start.character + 1, line: start.line }, start };
 }
 
 function relatedOf(diagnostic: AnalyzeDiagnostic, resolve: DocumentResolver, uriOf: (fileName: string) => string): DiagnosticRelatedInformation[] {
@@ -110,7 +110,7 @@ function codeActionsAt(
 
             for (let edit of fix.edits) {
                 let uri = uriOf(edit.fileName),
-                    range: Range = { start: document.positionAt(edit.pos), end: document.positionAt(edit.end) };
+                    range: Range = { end: document.positionAt(edit.end), start: document.positionAt(edit.pos) };
 
                 (changes[uri] ??= []).push({ newText: edit.newText, range });
             }

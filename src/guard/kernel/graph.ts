@@ -3,8 +3,8 @@ import * as ts from '../adapter';
 import { hasModifier, unwrap } from './ast';
 import { isFunctionLike, makeFunctionInfo } from './ids';
 import type {
-    CalleeResolution,
     CallGraph,
+    CalleeResolution,
     FunctionInfo,
     FunctionLike,
     OverlaySet,
@@ -140,9 +140,9 @@ function buildCallGraph(
         if (!sym) {
             // No symbol: the callee flows through `any` or an untracked value.
             return {
+                functionArgs: resolveFunctionArgs,
                 symbol: undefined,
                 targets: [],
-                functionArgs: resolveFunctionArgs,
                 unresolved: true,
             };
         }
@@ -159,19 +159,19 @@ function buildCallGraph(
         }
 
         if (targets.length > 0) {
-            return { symbol: sym, targets, functionArgs: resolveFunctionArgs, unresolved: false };
+            return { functionArgs: resolveFunctionArgs, symbol: sym, targets, unresolved: false };
         }
         if (fns.length === 0) {
             // Symbol resolves to a non-function (parameter/variable holding a
             // function) — an untracked function value.
-            return { symbol: sym, targets: [], functionArgs: resolveFunctionArgs, unresolved: true };
+            return { functionArgs: resolveFunctionArgs, symbol: sym, targets: [], unresolved: true };
         }
         if (fns.some((fn) => hasModifier(fn, ts.SyntaxKind.AbstractKeyword))) {
             // Abstract/overridable with no single implementation.
-            return { symbol: sym, targets: [], functionArgs: resolveFunctionArgs, unresolved: true };
+            return { functionArgs: resolveFunctionArgs, symbol: sym, targets: [], unresolved: true };
         }
         // Real declaration, no analyzable body: an external/lib leaf.
-        return { symbol: sym, targets: [], functionArgs: resolveFunctionArgs, unresolved: false };
+        return { functionArgs: resolveFunctionArgs, symbol: sym, targets: [], unresolved: false };
     }
 
     function getCore(call: ts.CallExpression | ts.NewExpression): CallCore {
@@ -322,9 +322,9 @@ function buildCallGraph(
 
         if (core.targets.length > 0) {
             result = {
-                targets: core.targets,
-                overlay: undefined,
                 get functionArgs() { return core.functionArgs(); },
+                overlay: undefined,
+                targets: core.targets,
                 unresolved: false,
             };
         }
@@ -334,14 +334,14 @@ function buildCallGraph(
                 : undefined;
 
             result = overlay ? {
-                targets: [],
-                overlay,
                 get functionArgs() { return core.functionArgs(); },
+                overlay,
+                targets: [],
                 unresolved: false,
             } : {
-                targets: [],
-                overlay: undefined,
                 get functionArgs() { return core.functionArgs(); },
+                overlay: undefined,
+                targets: [],
                 unresolved: core.unresolved,
             };
         }
@@ -378,10 +378,10 @@ function buildCallGraph(
     }
 
     return {
+        calleesOf,
         reachedFunctions() {
             return reachedList;
         },
-        calleesOf,
         resolveCall,
     };
 }

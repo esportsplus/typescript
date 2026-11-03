@@ -55,11 +55,11 @@ export function consumer(): void { producer(); }
         expect(toBoundary(analyzeFixture(sameFile, { report: "cross-module" }), "consumer").length).toBe(0);
 
         const crossFile = {
-            "producer.ts": `export function producer(): void { throw new TypeError('x'); }
-`,
             "a.ts": `import { producer } from "./producer";
 
 export function consumer(): void { producer(); }
+`,
+            "producer.ts": `export function producer(): void { throw new TypeError('x'); }
 `,
         };
         // producer is authored in another file — consumer is a foreign caller that must handle it.
@@ -68,11 +68,11 @@ export function consumer(): void { producer(); }
 
     it("`consumers` keys on the package, silencing a same-package cross-file call that `cross-module` flags", () => {
         const crossFile = {
-            "producer.ts": `export function producer(): void { throw new TypeError('x'); }
-`,
             "a.ts": `import { producer } from "./producer";
 
 export function consumer(): void { producer(); }
+`,
+            "producer.ts": `export function producer(): void { throw new TypeError('x'); }
 `,
         };
         // Different file, same package (both resolve to the fixture's package root):
@@ -222,7 +222,7 @@ export function b(): string {
     return readFileSync('x', 'utf8');
 }
 `,
-        }, { report: "all", nodeTypes: true });
+        }, { nodeTypes: true, report: "all" });
         const atB = toBoundary(diags, "b");
         expect(atB.length).toBe(1);
         expect(atB[0]!.message).toContain("Error");

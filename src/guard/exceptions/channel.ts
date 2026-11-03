@@ -5,8 +5,11 @@ import * as ts from '../adapter';
 import { bodyOf, constituents, isAwaited, paramSymbols } from '../kernel/ast';
 import { isFunctionLike, locationOf } from '../kernel/ids';
 import { declaredExceptions } from './jsdoc';
-import { deriveThrows, type ThrowIndex } from './derive';
+import { type ThrowIndex, deriveThrows } from './derive';
 import {
+    type ExceptionOrigin,
+    type ExceptionsValue,
+    TOP_KEY,
     bottom,
     equals,
     isEmpty,
@@ -18,19 +21,16 @@ import {
     single,
     subtract,
     top,
-    TOP_KEY,
     widen,
     withOrigin,
-    type ExceptionOrigin,
-    type ExceptionsValue,
 } from './value';
 
 import type {
     CalleeResolution,
     Channel,
+    DiagnoseContext,
     Diagnostic,
     DiagnosticRelated,
-    DiagnoseContext,
     FunctionInfo,
     Summary,
     TransferContext,
@@ -206,37 +206,11 @@ function createExceptionsChannel(throwIndex: ThrowIndex): Channel<ExceptionsValu
             for (const o of originsOf(ctx.summaryOf(r).value))
                 origins.add(`${o.fileName}:${o.pos}`);
         }
-        unhandledCache = { origins, active: roots.length > 0 };
+        unhandledCache = { active: roots.length > 0, origins };
         return unhandledCache;
     };
     return {
-        name: 'exceptions',
         bottom,
-        equals,
-        widen,
-        transfer(
-            ctx: TransferContext<ExceptionsValue>,
-        ): Summary<ExceptionsValue> {
-            const env = makeEnv(
-                ctx.checker,
-                throwIndex,
-                ctx.fn,
-                ctx.summaryOf,
-                ctx.resolveCall,
-                typeAt,
-                undefined,
-                undefined,
-                importsFor,
-                namedTypeAt,
-            );
-            const body = bodyOf(ctx.fn.node);
-            let value = body ? escapeOf(env, body, undefined) : bottom();
-            // A `@throws` declaration is taken as the checked summary; inference beyond
-            // it is reported in diagnose, not folded back into the summary.
-            const decl = declaredExceptions(ctx.fn.node, ctx.checker);
-            if (decl.declared) value = decl.value;
-            return { value, fromCallbacks: env.fromCallbacks };
-        },
         diagnose(
             ctx: DiagnoseContext<ExceptionsValue>,
         ): ReadonlyArray<Diagnostic> {
@@ -280,11 +254,11 @@ function createExceptionsChannel(throwIndex: ThrowIndex): Channel<ExceptionsValu
                     const nn = (ctx.fn.node as { name?: ts.Node }).name;
                     out.push({
                         channel: 'exceptions',
-                        message: `Throws ${render(excess)} but declares only ${render(decl.value)}`,
                         location: locationOf(
                             nn ?? ctx.fn.node,
                             ctx.fn.sourceFile,
                         ),
+                        message: `Throws ${render(excess)} but declares only ${render(decl.value)}`,
                         related: [],
                     });
                 }
@@ -301,6 +275,32 @@ function createExceptionsChannel(throwIndex: ThrowIndex): Channel<ExceptionsValu
             }
             return out;
         },
+        equals,
+        name: 'exceptions',
+        transfer(
+            ctx: TransferContext<ExceptionsValue>,
+        ): Summary<ExceptionsValue> {
+            const env = makeEnv(
+                ctx.checker,
+                throwIndex,
+                ctx.fn,
+                ctx.summaryOf,
+                ctx.resolveCall,
+                typeAt,
+                undefined,
+                undefined,
+                importsFor,
+                namedTypeAt,
+            );
+            const body = bodyOf(ctx.fn.node);
+            let value = body ? escapeOf(env, body, undefined) : bottom();
+            // A `@throws` declaration is taken as the checked summary; inference beyond
+            // it is reported in diagnose, not folded back into the summary.
+            const decl = declaredExceptions(ctx.fn.node, ctx.checker);
+            if (decl.declared) value = decl.value;
+            return { fromCallbacks: env.fromCallbacks, value };
+        },
+        widen,
     };
 }
 
@@ -327,24 +327,24 @@ function makeEnv(
         name: string,
         location: ts.Node,
     ) => ts.Type | undefined,
-    report: string | undefined = undefined,
+    report?: string,
 ): Env {
     const symbols = paramSymbols(checker, fn.node);
     return {
-        checker,
-        throwIndex,
-        fn,
-        summaryOf,
-        resolveCall,
-        escapeCache,
         callCache,
+        checker,
+        escapeCache,
+        fn,
+        fromCallbacks: new Set(),
         importsFor,
         namedTypeAt: (name, location) => namedTypeAt(checker, name, location),
-        typeTable: new Map(),
-        typeAt: (node) => typeAt(checker, node),
         paramSymbols: symbols,
-        fromCallbacks: new Set(),
         reportMode: report,
+        resolveCall,
+        summaryOf,
+        throwIndex,
+        typeAt: (node) => typeAt(checker, node),
+        typeTable: new Map(),
     };
 }
 // Aggregate escape computation (summary + try scoping)
@@ -528,7 +528,7 @@ function guardsFor(
         child = parent;
         parent = parent.parent;
     }
-    return { positives, negatives, unresolved };
+    return { negatives, positives, unresolved };
 }
 
 // Parse `e instanceof T` / `!(e instanceof T)` where `e` is the binding into the
@@ -546,7 +546,7 @@ function parseInstanceof(
     ) {
         const inner = parseInstanceof(env, expr.operand, bindSym);
         return inner
-            ? { type: inner.type, positive: !inner.positive }
+            ? { positive: !inner.positive, type: inner.type }
             : undefined;
     }
     if (
@@ -563,7 +563,7 @@ function parseInstanceof(
         const type = ctorSig
             ? (env.checker.getReturnTypeOfSignature(ctorSig) ?? rhsType)
             : rhsType;
-        return { type, positive: true };
+        return { positive: true, type };
     }
     return undefined;
 }
@@ -580,7 +580,7 @@ function guardExit(
     const info = parseInstanceof(env, stmt.expression, bindSym);
     if (!info) return undefined;
     // then-branch runs (and exits) when the condition holds; below, it does not.
-    return { type: info.type, positive: !info.positive };
+    return { positive: !info.positive, type: info.type };
 }
 
 // True when control cannot fall through the statement (return/throw/break/continue).
@@ -840,9 +840,9 @@ function checkErrorCause(node: ts.Node, out: Diagnostic[]): void {
                 ) {
                     out.push({
                         channel: 'exceptions',
+                        location: locationOf(m, m.getSourceFile()),
                         message:
                             'Rethrow drops the caught error — pass `{ cause }` to preserve it',
-                        location: locationOf(m, m.getSourceFile()),
                         related: [],
                     });
                 }
@@ -1011,14 +1011,14 @@ function relatedFromOrigins(
     origins: ReadonlyArray<ExceptionOrigin>,
 ): DiagnosticRelated[] {
     return origins.map((o) => ({
-        message: o.text,
         location: {
+            column: o.column,
+            end: o.end,
             fileName: o.fileName,
             line: o.line,
-            column: o.column,
             pos: o.pos,
-            end: o.end,
         },
+        message: o.text,
     }));
 }
 
@@ -1034,8 +1034,8 @@ function callDiagnostic(
     const origins = originsOf(rem);
     return {
         channel: 'exceptions',
-        message: `Call may throw ${render(rem)}${suffix} with no catch on the path to \`${ctx.fn.name}\``,
         location: locationOf(call, call.getSourceFile()),
+        message: `Call may throw ${render(rem)}${suffix} with no catch on the path to \`${ctx.fn.name}\``,
         related:
             origins.length > 0
                 ? relatedFromOrigins(origins)
@@ -1050,8 +1050,8 @@ function throwDiagnostic(
 ): Diagnostic {
     return {
         channel: 'exceptions',
-        message: `Throw may throw ${render(rem)} with no catch on the path to \`${ctx.fn.name}\``,
         location: locationOf(node, node.getSourceFile()),
+        message: `Throw may throw ${render(rem)} with no catch on the path to \`${ctx.fn.name}\``,
         related: [],
     };
 }
@@ -1078,8 +1078,8 @@ function buildRelated(
     const related: DiagnosticRelated[] = [];
     for (const t of targets) {
         related.push({
-            message: `may throw here in ${t.name}`,
             location: locationOf(t.node, t.sourceFile),
+            message: `may throw here in ${t.name}`,
         });
     }
     return related;

@@ -3,9 +3,9 @@ import * as ts from '../adapter';
 import type {
     CalleeResolution,
     Channel,
+    DiagnoseContext,
     Diagnostic,
     DiagnosticFix,
-    DiagnoseContext,
     FunctionInfo,
     FunctionLike,
     Summary,
@@ -13,7 +13,7 @@ import type {
 } from '../kernel/types';
 import { bodyOf, constituents, hasModifier, isAwaited, unwrap } from '../kernel/ast';
 import { isFunctionLike, locationOf } from '../kernel/ids';
-import { bottom, equals, promise, widen, type AsyncValue } from './value';
+import { type AsyncValue, bottom, equals, promise, widen } from './value';
 
 // The async aggregators whose input decides fan-out width, and whose result is a
 // promise ownership moves into.
@@ -345,16 +345,16 @@ function orphanFixes(
     const pos = call.getStart(sf);
     const fixes: DiagnosticFix[] = [
         {
+            edits: [{ end: pos, fileName: sf.fileName, newText: 'void ', pos }],
             title: 'Ignore the result with `void`',
-            edits: [{ fileName: sf.fileName, pos, end: pos, newText: 'void ' }],
         },
     ];
     if (enclosingAsync(call)) {
         fixes.push({
-            title: 'Await the promise',
             edits: [
-                { fileName: sf.fileName, pos, end: pos, newText: 'await ' },
+                { end: pos, fileName: sf.fileName, newText: 'await ', pos },
             ],
+            title: 'Await the promise',
         });
     }
     return fixes;
@@ -365,10 +365,10 @@ function orphanDiagnostic(
 ): Diagnostic {
     return {
         channel: 'async',
-        message: `result of \`${calleeText(call)}()\` is neither awaited nor voided — rejections will be unhandled`,
-        location: locationOf(call, call.getSourceFile()),
-        related: [],
         fixes: orphanFixes(call),
+        location: locationOf(call, call.getSourceFile()),
+        message: `result of \`${calleeText(call)}()\` is neither awaited nor voided — rejections will be unhandled`,
+        related: [],
     };
 }
 
@@ -378,8 +378,8 @@ function fanOutDiagnostic(
 ): Diagnostic {
     return {
         channel: 'async',
-        message: `unbounded fan-out: \`Promise.${aggregator}\` over a dynamically-sized input — cap concurrency with a pool or bound the input`,
         location: locationOf(call, call.getSourceFile()),
+        message: `unbounded fan-out: \`Promise.${aggregator}\` over a dynamically-sized input — cap concurrency with a pool or bound the input`,
         related: [],
     };
 }
@@ -414,8 +414,8 @@ function signalFix(
 
         return [
             {
+                edits: [{ end: at, fileName: sf.fileName, newText, pos: at }],
                 title: 'Forward the AbortSignal',
-                edits: [{ fileName: sf.fileName, pos: at, end: at, newText }],
             },
         ];
     }
@@ -425,8 +425,8 @@ function signalFix(
 
     return [
         {
+            edits: [{ end: close, fileName: sf.fileName, newText, pos: close }],
             title: 'Forward the AbortSignal',
-            edits: [{ fileName: sf.fileName, pos: close, end: close, newText }],
         },
     ];
 }
@@ -437,10 +437,10 @@ function cancellationDiagnostic(
 ): Diagnostic {
     return {
         channel: 'async',
-        message: `\`${calleeText(call)}()\` is awaited without the AbortSignal this function holds — the work cannot be cancelled`,
-        location: locationOf(call, call.getSourceFile()),
-        related: [],
         fixes,
+        location: locationOf(call, call.getSourceFile()),
+        message: `\`${calleeText(call)}()\` is awaited without the AbortSignal this function holds — the work cannot be cancelled`,
+        related: [],
     };
 }
 
@@ -526,16 +526,7 @@ function createAsyncChannel(): Channel<AsyncValue> {
         return held;
     };
     return {
-        name: 'async',
         bottom,
-        equals,
-        widen,
-        transfer(ctx: TransferContext<AsyncValue>): Summary<AsyncValue> {
-            const value = returnsPromise(ctx.checker, ctx.fn.node)
-                ? promise()
-                : bottom();
-            return { value, fromCallbacks: new Set() };
-        },
         diagnose(ctx: DiagnoseContext<AsyncValue>): ReadonlyArray<Diagnostic> {
             const body = bodyOf(ctx.fn.node);
             if (!body) {
@@ -543,15 +534,24 @@ function createAsyncChannel(): Channel<AsyncValue> {
             }
             const env: Env = {
                 checker: ctx.checker,
-                summaryOf: ctx.summaryOf,
-                resolveCall: ctx.resolveCall,
-                heldSignalNames: (fn) => getHeldSignalNames(ctx.checker, fn),
                 held: getHeldSignalNames(ctx.checker, ctx.fn),
+                heldSignalNames: (fn) => getHeldSignalNames(ctx.checker, fn),
+                resolveCall: ctx.resolveCall,
+                summaryOf: ctx.summaryOf,
             };
             const out: Diagnostic[] = [];
             walk(env, body, out);
             return out;
         },
+        equals,
+        name: 'async',
+        transfer(ctx: TransferContext<AsyncValue>): Summary<AsyncValue> {
+            const value = returnsPromise(ctx.checker, ctx.fn.node)
+                ? promise()
+                : bottom();
+            return { fromCallbacks: new Set(), value };
+        },
+        widen,
     };
 }
 

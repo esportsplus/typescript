@@ -10,11 +10,11 @@ import timing from '../../timing';
 
 import type {
     Analysis,
+    AnalyzeConfig,
     Channel,
     ChannelConfig,
     Diagnostic,
     SummaryStore,
-    AnalyzeConfig,
 } from './types';
 import type { ThrowIndex } from '../exceptions/derive';
 

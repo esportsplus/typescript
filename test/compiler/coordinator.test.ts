@@ -231,7 +231,7 @@ describe('coordinator.transform', () => {
             plugin2 = makePlugin((ctx) => {
                 let val = ctx.shared.get('key');
 
-                return { prepend: [`const B = '${val}';`] };
+                return { prepend: [`const B = '${String(val)}';`] };
             }),
             result = coordinator.transform([plugin1, plugin2], code, file, project, root, shared);
 

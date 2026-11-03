@@ -16,11 +16,11 @@ function buildProgram(tsconfigPath: string): BuiltProgram {
     const { program, checker } = opened.project;
 
     return {
-        program,
         checker,
         dispose() {
             opened.dispose();
         },
+        program,
     };
 }
 

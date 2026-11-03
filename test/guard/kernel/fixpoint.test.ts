@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildAnalysis, type BuiltAnalysis } from "./harness";
+import { type BuiltAnalysis, buildAnalysis } from "./harness";
 import { runChannel } from "~/guard/kernel/fixpoint";
 
 import type { Channel, Diagnostic } from "~/guard/kernel/types";
@@ -21,15 +21,15 @@ afterEach(() => {
 // function, so a test can assert reverse-topological (callee-before-caller) order.
 function orderRecorder(order: string[]): Channel<Growable> {
     return {
-        name: "recorder",
         bottom: () => ({ count: 0, top: false }),
+        diagnose: (): ReadonlyArray<Diagnostic> => [],
         equals: (a, b) => (a.top || b.top ? a.top === b.top : a.count === b.count),
-        widen: (_prev, next) => next,
+        name: "recorder",
         transfer(ctx) {
             order.push(ctx.fn.name);
-            return { value: { count: 0, top: false }, fromCallbacks: new Set() };
+            return { fromCallbacks: new Set(), value: { count: 0, top: false } };
         },
-        diagnose: (): ReadonlyArray<Diagnostic> => [],
+        widen: (_prev, next) => next,
     };
 }
 
@@ -37,9 +37,17 @@ function orderRecorder(order: string[]): Channel<Growable> {
 // settle on its own — the widening backstop must fold it to `top`.
 function everGrowing(): Channel<Growable> {
     return {
-        name: "grower",
         bottom: () => ({ count: 0, top: false }),
+        diagnose: (): ReadonlyArray<Diagnostic> => [],
         equals: (a, b) => (a.top || b.top ? a.top === b.top : a.count === b.count),
+        name: "grower",
+        transfer(ctx) {
+            const cur = ctx.summaryOf(ctx.fn).value;
+            if (cur.top) {
+                return { fromCallbacks: new Set(), value: cur };
+            }
+            return { fromCallbacks: new Set(), value: { count: cur.count + 1, top: false } };
+        },
         widen: (prev, next, round) => {
             if (next.top) {
                 return next;
@@ -49,14 +57,6 @@ function everGrowing(): Channel<Growable> {
             }
             return next;
         },
-        transfer(ctx) {
-            const cur = ctx.summaryOf(ctx.fn).value;
-            if (cur.top) {
-                return { value: cur, fromCallbacks: new Set() };
-            }
-            return { value: { count: cur.count + 1, top: false }, fromCallbacks: new Set() };
-        },
-        diagnose: (): ReadonlyArray<Diagnostic> => [],
     };
 }
 

@@ -6,7 +6,7 @@ it.each([
     ['{"a": 1, // comment\r\n}', { a: 1 }],
     ['{"a": ",} // /*", "b": "escaped\\\"quote",}', { a: ',} // /*', b: 'escaped"quote' }],
     ['[1, /* comment */ 2,\n]', [1, 2]],
-    ['{"nested": {"a": [],}, "b": true}', { nested: { a: [] }, b: true }],
+    ['{"nested": {"a": [],}, "b": true}', { b: true, nested: { a: [] } }],
 ])('parses comments and trailing commas: %s', (input, expected) => {
     expect(JSON.parse(stripJsonc(input as string))).toEqual(expected);
 });

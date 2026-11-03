@@ -8,16 +8,16 @@ export * from 'typescript/unstable/sync';
 export { ModifierFlags } from 'typescript/unstable/sync';
 
 import {
-    SyntaxKind,
     type Node,
     type SourceFile,
+    SyntaxKind,
 } from 'typescript/unstable/ast';
 import {
-    TypeFlags,
     type Checker,
     type Program,
     type Symbol,
     type Type,
+    TypeFlags,
     type UnionType,
 } from 'typescript/unstable/sync';
 

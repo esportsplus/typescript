@@ -20,6 +20,11 @@ const FILES: Record<string, string> = {
     // A library's own barrel renames what its internal module declares
     'node_modules/fake-pkg/internal.d.ts': 'export declare function signal(value: number): number;',
     'node_modules/fake-pkg/package.json': JSON.stringify({ name: 'fake-pkg', types: './index.d.ts' }),
+    'src/alias.ts': [
+        "import { make as m, tag } from 'fake-pkg';",
+        'export let a = m(1);',
+        'export let b = tag`x`;'
+    ].join('\n'),
     // A central module re-exporting under other names, the way an app's `app.ts` does
     'src/app.ts': [
         "import { make } from 'fake-pkg';",
@@ -35,6 +40,12 @@ const FILES: Record<string, string> = {
         'x = make(0);',
         'export let after = x;'
     ].join('\n'),
+    'src/barrel.ts': [
+        "export { make as build } from 'fake-pkg';",
+        "export * from 'fake-pkg';",
+        "import * as P from 'fake-pkg';",
+        'export { P };'
+    ].join('\n'),
     'src/chain.ts': [
         "import * as P from 'fake-pkg';",
         'const a = P.make;',
@@ -43,6 +54,27 @@ const FILES: Record<string, string> = {
         'export let r1 = b(1);',
         'export let r2 = c`x`;',
         'export let r3 = { a };'
+    ].join('\n'),
+    'src/consumer.ts': [
+        "import { build, make, P } from './barrel';",
+        "import * as B from './barrel';",
+        "import fallback from 'fake-pkg';",
+        'export let c = build(1);',
+        'export let d = B.build(2);',
+        'export let e = B.P.make(3);',
+        'export let f = P.make(4);',
+        'export let g = make(5);',
+        'export let h = fallback(6);',
+        'const alias = build;',
+        'const { make: destructured } = B;',
+        'export let i = [build];',
+        'export type T = typeof build;',
+        'export let j = (value: typeof make) => value(7);',
+        "export let l = B['build'](8);",
+        'export let m = alias(9);',
+        'export let o = destructured(10);',
+        'let loose = build;',
+        'export let q = loose(11);'
     ].join('\n'),
     'src/defaulted.ts': [
         "import { make } from 'fake-pkg';",
@@ -93,47 +125,15 @@ const FILES: Record<string, string> = {
         'export let s3 = make(2);',
         'export let s4 = tag`d`;'
     ].join('\n'),
+    // `export *` two modules deep before reaching the package
+    'src/star.ts': "export * from './star2';",
+    'src/star2.ts': "export * from 'fake-pkg';",
     // Parameters typed as a module namespace: a member of one is the export itself
     'src/typed.ts': [
         "import * as B from './barrel';",
         "export let t1 = (P: typeof import('fake-pkg')) => P.make(1);",
         'export let t2 = (N: typeof B) => N.P.make(2);',
         "export let t3 = ({ make }: typeof import('fake-pkg')) => make(3);"
-    ].join('\n'),
-    // `export *` two modules deep before reaching the package
-    'src/star.ts': "export * from './star2';",
-    'src/star2.ts': "export * from 'fake-pkg';",
-    'src/alias.ts': [
-        "import { make as m, tag } from 'fake-pkg';",
-        'export let a = m(1);',
-        'export let b = tag`x`;'
-    ].join('\n'),
-    'src/barrel.ts': [
-        "export { make as build } from 'fake-pkg';",
-        "export * from 'fake-pkg';",
-        "import * as P from 'fake-pkg';",
-        'export { P };'
-    ].join('\n'),
-    'src/consumer.ts': [
-        "import { build, make, P } from './barrel';",
-        "import * as B from './barrel';",
-        "import fallback from 'fake-pkg';",
-        'export let c = build(1);',
-        'export let d = B.build(2);',
-        'export let e = B.P.make(3);',
-        'export let f = P.make(4);',
-        'export let g = make(5);',
-        'export let h = fallback(6);',
-        'const alias = build;',
-        'const { make: destructured } = B;',
-        'export let i = [build];',
-        'export type T = typeof build;',
-        'export let j = (value: typeof make) => value(7);',
-        "export let l = B['build'](8);",
-        'export let m = alias(9);',
-        'export let o = destructured(10);',
-        'let loose = build;',
-        'export let q = loose(11);'
     ].join('\n'),
     'src/unrelated.ts': [
         'function make(value: number) { return value; }',

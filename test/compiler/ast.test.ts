@@ -58,19 +58,19 @@ describe('ast.expression.name', () => {
 
 describe('ast.inRange', () => {
     it('returns true when node is within range', () => {
-        expect(ast.inRange([{ start: 0, end: 100 }], 10, 50)).toBe(true);
+        expect(ast.inRange([{ end: 100, start: 0 }], 10, 50)).toBe(true);
     });
 
     it('returns true at exact boundaries', () => {
-        expect(ast.inRange([{ start: 10, end: 50 }], 10, 50)).toBe(true);
+        expect(ast.inRange([{ end: 50, start: 10 }], 10, 50)).toBe(true);
     });
 
     it('returns false when node is outside range', () => {
-        expect(ast.inRange([{ start: 10, end: 50 }], 0, 9)).toBe(false);
+        expect(ast.inRange([{ end: 50, start: 10 }], 0, 9)).toBe(false);
     });
 
     it('returns false when node partially overlaps', () => {
-        expect(ast.inRange([{ start: 10, end: 50 }], 5, 30)).toBe(false);
+        expect(ast.inRange([{ end: 50, start: 10 }], 5, 30)).toBe(false);
     });
 
     it('returns false for empty ranges', () => {
@@ -78,7 +78,7 @@ describe('ast.inRange', () => {
     });
 
     it('checks multiple ranges', () => {
-        let ranges = [{ start: 0, end: 10 }, { start: 20, end: 30 }];
+        let ranges = [{ end: 10, start: 0 }, { end: 30, start: 20 }];
 
         expect(ast.inRange(ranges, 0, 10)).toBe(true);
         expect(ast.inRange(ranges, 25, 28)).toBe(true);

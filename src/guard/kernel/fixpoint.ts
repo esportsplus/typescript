@@ -1,8 +1,8 @@
 import type {
     Analysis,
     Channel,
-    Diagnostic,
     DiagnoseContext,
+    Diagnostic,
     FunctionInfo,
     Summary,
     SummaryStore,
@@ -53,7 +53,7 @@ function tarjanSccs(
         counter += 1;
         stack.push(node);
         onStack.add(node.id);
-        return { node, succ: successors(node), i: 0 };
+        return { i: 0, node, succ: successors(node) };
     };
 
     for (const start of nodes) {
@@ -116,8 +116,8 @@ function runChannel<V>(
 
     const summaries = new Map<string, Summary<V>>();
     const bottomSummary = (): Summary<V> => ({
-        value: channel.bottom(),
         fromCallbacks: new Set<number>(),
+        value: channel.bottom(),
     });
     const summaryOf = (fn: FunctionInfo): Summary<V> =>
         summaries.get(fn.id) ?? bottomSummary();
@@ -125,12 +125,12 @@ function runChannel<V>(
     const makeTransferContext = (fn: FunctionInfo): TransferContext<V> => ({
         checker: analysis.checker,
         fn,
-        summaryOf,
+        peerSummaryValue: (peerChannel, fnId) =>
+            peers.get(peerChannel)?.get(fnId).value,
         resolveCall: (call) => graph.resolveCall(call, channel.name),
         resolveCallFor: (peerChannel, call) =>
             graph.resolveCall(call, peerChannel),
-        peerSummaryValue: (peerChannel, fnId) =>
-            peers.get(peerChannel)?.get(fnId).value,
+        summaryOf,
     });
 
     // Reverse-topological order: callees before callers.
@@ -163,8 +163,8 @@ function runChannel<V>(
                         ? channel.widen(prev.value, computed.value, round)
                         : computed.value;
                 const next: Summary<V> = {
-                    value: nextValue,
                     fromCallbacks: computed.fromCallbacks,
+                    value: nextValue,
                 };
                 summaries.set(fn.id, next);
                 if (
@@ -207,16 +207,16 @@ function runChannel<V>(
     const seen = new Set<string>();
     for (const fn of reached) {
         const ctx: DiagnoseContext<V> = {
+            channelConfig,
             checker: analysis.checker,
             fn,
-            channelConfig,
-            summaryOf,
+            peerSummaryValue: (peerChannel, fnId) =>
+                peers.get(peerChannel)?.get(fnId).value,
             resolveCall: (call) => graph.resolveCall(call, channel.name),
             resolveCallFor: (peerChannel, call) =>
                 graph.resolveCall(call, peerChannel),
-            peerSummaryValue: (peerChannel, fnId) =>
-                peers.get(peerChannel)?.get(fnId).value,
             roots: () => roots,
+            summaryOf,
         };
         for (const d of channel.diagnose(ctx)) {
             const key = `${d.channel}\u0000${d.location.fileName}\u0000${d.location.pos}\u0000${d.message}`;
@@ -231,7 +231,7 @@ function runChannel<V>(
     const store: SummaryStore<V> = {
         get: (id) => summaries.get(id) ?? bottomSummary(),
     };
-    return { store, diagnostics };
+    return { diagnostics, store };
 }
 
 
