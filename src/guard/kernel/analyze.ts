@@ -6,6 +6,7 @@ import { buildProgram } from './program';
 import { createThrowIndex, disposeThrowIndex } from '../exceptions/derive';
 import { runChannel } from './fixpoint';
 import { loadOverlays } from '../overlay/load';
+import timing from '../../timing';
 
 import type {
     Analysis,
@@ -48,8 +49,11 @@ function runAnalysis(
     config: AnalyzeConfig,
     throwIndex: ThrowIndex,
 ): AnalyzeResult {
+    const total = timing('analyze');
     const overlays = loadOverlays();
+    const graphed = timing('analyze: call graph');
     const graph = buildCallGraph(program, checker, overlays);
+    graphed();
     const analysis: Analysis = { checker, graph };
 
     const built = new Map<string, [ChannelConfig, Channel<unknown>]>();
@@ -104,12 +108,14 @@ function runAnalysis(
     const peers = new Map<string, SummaryStore<unknown>>();
     for (const name of runnable) {
         const [channelConfig, channel] = instance(name)!;
+        const ran = timing(`analyze: ${name}`);
         const result = runChannel(
             analysis,
             channel,
             channelConfig.options,
             peers,
         );
+        ran();
         peers.set(name, result.store);
         // Silent peer: pulled in only as a dependency of an enabled channel; keep
         // its summaries for that channel, discard its own diagnostics.
@@ -117,6 +123,8 @@ function runAnalysis(
             diagnostics.push(...result.diagnostics);
         }
     }
+
+    total(`${ts.getSourceFiles(program).length} files`);
 
     return { diagnostics };
 }

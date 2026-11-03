@@ -13,6 +13,7 @@ import languageService from '../compiler/language-service';
 import path from 'path';
 import sourcemap from '../compiler/sourcemap';
 import specifiers from './specifiers';
+import timing from '../timing';
 import { analyze, analyzeProgram } from '../guard/kernel/analyze';
 import { formatDiagnostics } from '../guard/kernel/format';
 import { loadConfigFromTsconfig } from '../guard/kernel/config';
@@ -78,7 +79,8 @@ function aliases(options: ResolvedOptions): string[] {
 }
 
 async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API, noEmit = false): Promise<void> {
-    let opened = instance === undefined ? languageService.open(tsconfig) : undefined,
+    let stop = timing('open program'),
+        opened = instance === undefined ? languageService.open(tsconfig) : undefined,
         root = path.dirname(path.resolve(tsconfig)),
         owned = instance === undefined,
         api = opened?.api ?? instance!,
@@ -99,6 +101,8 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         process.exit(1);
     }
 
+    stop();
+
     let { fileNames, options } = api.parseConfigFile(tsconfig),
         plugins: Plugin[],
         shared: SharedContext = new Map(),
@@ -114,6 +118,8 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         teardown(snapshot, tsconfig, owned);
         process.exit(1);
     }
+
+    stop = timing('transform');
 
     for (let i = 0, n = plugins.length > 0 ? fileNames.length : 0; i < n; i++) {
         let fileName = fileNames[i],
@@ -137,6 +143,9 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         }
     }
 
+    stop(`${transformedFiles.size} of ${fileNames.length} files changed`);
+    stop = timing('diagnostics');
+
     let program = transformedFiles.size === 0
         ? project.program
         : languageService.updateMany(tsconfig, new Map([...transformedFiles].map(([fileName, entry]) => [fileName, entry.code]))).program;
@@ -153,6 +162,8 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         ...(options.declaration === true || options.composite === true ? program.getDeclarationDiagnostics() : [])
     ];
 
+    stop();
+
     if (diagnostics.length > 0) {
         console.error(format(diagnostics, root, transformedFiles));
     }
@@ -167,7 +178,11 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         process.exit(0);
     }
 
+    stop = timing('emit (tsc.js --noCheck)');
+
     let code = await emit(tsconfig, fileNames, transformedFiles, root, options);
+
+    stop();
 
     teardown(snapshot, tsconfig, owned);
     process.exit(code);
