@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { API } from 'typescript/unstable/sync';
 import { build } from '~/cli/tsc';
 import { createFixture, createFixtureDir, MARKER_PLUGIN, snapshotTree } from './fixtures';
+import { pathToFileURL } from 'url';
 
 import fs from 'fs';
 import os from 'os';
@@ -278,8 +279,8 @@ describe('emit contract', () => {
         expect(fs.readFileSync(path.join(buildDir, 'index.d.ts'), 'utf8')).not.toMatch(/from '\.\/[a-z]+'/);
     });
 
-    it('a ~/ specifier left in emitted output fails the build naming the file', async () => {
-        let errors: string[] = [],
+    it('a plugin-injected ~/ specifier is rewritten to the emitted relative path', async () => {
+        let buildDir = path.join(tmpDir, 'build'),
             tsconfigPath = createFixture(tmpDir, {
                 compilerOptions: { noUnusedLocals: false },
                 sources: {
@@ -289,16 +290,127 @@ describe('emit contract', () => {
                 }
             });
 
-        vi.spyOn(console, 'error').mockImplementation((message: unknown) => {
-            errors.push(String(message));
-        });
         fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), ALIAS_INJECT_PLUGIN);
         process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
 
         await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
 
-        expect(exits).toEqual([1]);
-        expect(errors.join('\n')).toMatch(/index\.js imports '~\/runtime'/);
+        let emitted = fs.readFileSync(path.join(buildDir, 'index.js'), 'utf8');
+
+        expect(exits).toEqual([0]);
+        expect(emitted).toContain("from './runtime.js'");
+        expect(emitted).not.toContain('~/');
+    });
+
+    it('rewrites ~/ type imports in .d.ts and value imports in .js to relative .js specifiers', async () => {
+        let buildDir = path.join(tmpDir, 'build'),
+            tsconfigPath = createFixture(tmpDir, {
+                sources: {
+                    'make.ts': "import type { Shape } from '~/types';\n\nexport const make = (): Shape => ({ size: 1 });\n",
+                    'nested/use.ts': "import type { Shape } from '~/types';\nimport { make } from '~/make';\n\nexport const shape: Shape = make();\nexport type Lazy = import('~/types').Shape;\n",
+                    'types.ts': 'export type Shape = { size: number };\n'
+                }
+            });
+
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), MARKER_PLUGIN);
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
+
+        for (let plugins of [[], [{ transform: './plugin.mjs' }]]) {
+            fs.rmSync(buildDir, { force: true, recursive: true });
+            exits.length = 0;
+
+            await expect(build(tsconfigPath, plugins, api)).rejects.toThrow(/process\.exit/);
+
+            let declaration = fs.readFileSync(path.join(buildDir, 'make.d.ts'), 'utf8'),
+                nested = fs.readFileSync(path.join(buildDir, 'nested', 'use.d.ts'), 'utf8'),
+                value = fs.readFileSync(path.join(buildDir, 'nested', 'use.js'), 'utf8');
+
+            expect(exits).toEqual([0]);
+            expect(declaration).toContain("from './types.js'");
+            expect(nested).toContain("from '../types.js'");
+            expect(nested).toContain("import('../types.js')");
+            expect(value).toContain("from '../make.js'");
+            expect(declaration + nested + value).not.toContain('~/');
+
+            let module = await import(pathToFileURL(path.join(buildDir, 'nested', 'use.js')).href + '?' + plugins.length) as { shape: unknown };
+
+            expect(module.shape).toEqual({ size: 1 });
+        }
+    });
+
+    it('resolves a wildcard alias naming a directory to its index', async () => {
+        let buildDir = path.join(tmpDir, 'build'),
+            tsconfigPath = createFixture(tmpDir, {
+                sources: {
+                    'dir/index.ts': 'export const value = 1;\n',
+                    'dir/types.ts': 'export type Value = number;\n',
+                    'index.ts': "import { value } from '~/dir';\n\nexport { value };\nexport type { Value } from '~/dir/types';\n"
+                }
+            });
+
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
+
+        await expect(build(tsconfigPath, [], api)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toEqual([0]);
+        expect(fs.readFileSync(path.join(buildDir, 'index.js'), 'utf8')).toContain("from './dir/index.js'");
+        expect(fs.readFileSync(path.join(buildDir, 'index.d.ts'), 'utf8')).toContain("from './dir/index.js'");
+        expect(fs.readFileSync(path.join(buildDir, 'index.d.ts'), 'utf8')).toContain("from './dir/types.js'");
+    });
+
+    it('rewrites an exact alias, trying targets in order and resolving relative targets without baseUrl', async () => {
+        let buildDir = path.join(tmpDir, 'build'),
+            tsconfigPath = createFixture(tmpDir, {
+                compilerOptions: {
+                    paths: {
+                        '#settings': ['./src/missing', './src/config/settings'],
+                        '~/*': ['./src/*']
+                    }
+                },
+                sources: {
+                    'config/settings.ts': 'export const settings = { debug: false };\n',
+                    'index.ts': "import { settings } from '#settings';\n\nexport const debug = settings.debug;\n"
+                }
+            });
+
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
+
+        await expect(build(tsconfigPath, [], api)).rejects.toThrow(/process\.exit/);
+
+        expect(exits).toEqual([0]);
+        expect(fs.readFileSync(path.join(buildDir, 'index.js'), 'utf8')).toContain("from './config/settings.js'");
+    });
+
+    it('points .d.ts specifiers at declarationDir when it differs from outDir', async () => {
+        let outDir = path.join(tmpDir, 'build'),
+            typesDir = path.join(tmpDir, 'types'),
+            tsconfigPath = createFixture(tmpDir, {
+                compilerOptions: { declarationDir: './types' },
+                sources: {
+                    'nested/index.ts': "import type { Shape } from '~/types';\nimport { size } from '~/size';\n\nexport const shape: Shape = { size };\nexport { size };\n",
+                    'size.ts': 'export const size = 1;\n',
+                    'types.ts': 'export type Shape = { size: number };\n'
+                }
+            });
+
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'), MARKER_PLUGIN);
+        process.argv = [process.execPath, 'esportsplus-tsc', '-p', tsconfigPath];
+
+        for (let plugins of [[], [{ transform: './plugin.mjs' }]]) {
+            fs.rmSync(outDir, { force: true, recursive: true });
+            fs.rmSync(typesDir, { force: true, recursive: true });
+            exits.length = 0;
+
+            await expect(build(tsconfigPath, plugins, api)).rejects.toThrow(/process\.exit/);
+
+            let declaration = fs.readFileSync(path.join(typesDir, 'nested', 'index.d.ts'), 'utf8');
+
+            expect(exits).toEqual([0]);
+            expect(snapshotTree(outDir).filter((entry) => entry.endsWith('.d.ts'))).toEqual([]);
+            expect(fs.readFileSync(path.join(outDir, 'nested', 'index.js'), 'utf8')).toContain("from '../size.js'");
+            expect(declaration).toContain("from '../types.js'");
+            expect(declaration).toContain("from '../size.js'");
+        }
     });
 
     it('literal-relative include shape exits 0 and keeps tree parity (TS6059 regression)', async () => {

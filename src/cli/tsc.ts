@@ -1,6 +1,7 @@
 import type { Plugin, SharedContext } from '../compiler/types';
 import type { PositionMapping } from '../compiler/sourcemap';
 import type { Diagnostic as AnalyzeDiagnostic } from '../guard/kernel/types';
+import type { Config } from './specifiers';
 import { API, type Checker, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
@@ -56,6 +57,13 @@ const EMITTED_PREFIX = 'TSFILE: ';
 
 const INFORMATIONAL_FLAGS = new Set(['--help', '--init', '--showConfig', '--version', '-h', '-v']);
 
+const LAYOUT_FLAGS: Record<string, string> = {
+    '--baseurl': 'baseUrl',
+    '--declarationdir': 'declarationDir',
+    '--outdir': 'outDir',
+    '--rootdir': 'rootDir'
+};
+
 const NO_EMIT_FLAGS = new Set(['--noEmit', '-noEmit']);
 
 const PROJECT_FLAGS = new Set(['--project', '-p']);
@@ -65,20 +73,6 @@ const WATCH_FLAGS = new Set(['--watch', '-w']);
 
 let require = createRequire(import.meta.url);
 
-
-// tsconfig `paths` prefixes: emit keeps them verbatim and nothing rewrites them afterwards
-function aliases(options: ResolvedOptions): string[] {
-    let keys = Object.keys(options.paths ?? {}),
-        prefixes: string[] = [];
-
-    for (let i = 0, n = keys.length; i < n; i++) {
-        if (keys[i].endsWith('*')) {
-            prefixes.push(keys[i].slice(0, -1));
-        }
-    }
-
-    return prefixes;
-}
 
 async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API, noEmit = false): Promise<void> {
     let stop = timing('open program'),
@@ -286,7 +280,11 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
     if (transformedFiles.size === 0) {
         let { code, files } = await spawnTsc(tscJs, ['-p', tsconfig, '--noCheck']);
 
-        return code === 0 ? finalize(files, aliases(options)) : code;
+        if (code === 0) {
+            await rewrite(files, specifiers.configure(options, fileNames));
+        }
+
+        return code;
     }
 
     let mirror = fs.mkdtempSync(path.join(root, '.esportsplus-tsc-'));
@@ -353,40 +351,65 @@ async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map
 
         let { code, files: emitted } = await spawnTsc(tscJs, ['-p', path.join(mirror, 'tsconfig.json'), '--noCheck']);
 
-        if (code === 0) {
-            code = finalize(emitted, aliases(options));
+        if (code !== 0) {
+            return code;
         }
 
-        if (code === 0) {
-            if (fs.existsSync(mirrorOut)) {
-                composeSourceMaps(mirrorOut, mirror, root, transformedFiles);
-                fs.cpSync(mirrorOut, realOutDir, { force: true, recursive: true });
-            }
-
-            if (separateDecl && realDeclDir !== undefined && fs.existsSync(mirrorDecl)) {
-                fs.cpSync(mirrorDecl, realDeclDir, { force: true, recursive: true });
-            }
+        if (fs.existsSync(mirrorOut)) {
+            composeSourceMaps(mirrorOut, mirror, root, transformedFiles);
+            fs.cpSync(mirrorOut, realOutDir, { force: true, recursive: true });
         }
 
-        return code;
+        if (separateDecl && realDeclDir !== undefined && fs.existsSync(mirrorDecl)) {
+            fs.cpSync(mirrorDecl, realDeclDir, { force: true, recursive: true });
+        }
+
+        // Rewritten in place after the copy, so specifiers are computed against the real layout
+        for (let i = 0, n = emitted.length; i < n; i++) {
+            let file = path.resolve(emitted[i]),
+                decl = path.relative(mirrorDecl, file);
+
+            emitted[i] = separateDecl && realDeclDir !== undefined && !decl.startsWith('..')
+                ? path.join(realDeclDir, decl)
+                : path.join(realOutDir, path.relative(mirrorOut, file));
+        }
+
+        await rewrite(emitted, specifiers.configure(options, fileNames));
+
+        return 0;
     }
     finally {
         fs.rmSync(mirror, { force: true, recursive: true });
     }
 }
 
-function finalize(files: string[], prefixes: string[]): number {
-    let aliased = specifiers.rewrite(files, prefixes);
-
-    for (let i = 0, n = aliased.length; i < n; i++) {
-        console.error(`${PACKAGE_NAME}: ${normalizePath(aliased[i].file)} imports '${aliased[i].specifier}', a path alias nothing rewrites after emit; use a relative import`);
-    }
-
-    return aliased.length === 0 ? 0 : 1;
-}
-
 function isPlugin(value: unknown): value is Plugin {
     return typeof value === 'object' && value !== null && 'transform' in value && typeof (value as Plugin).transform === 'function';
+}
+
+// The project's resolved options with the layout flags given on the command line applied, as tsc.js
+// applies them
+function layout(tsconfig: string, args: string[]): [ResolvedOptions, string[]] {
+    let api = new API({ cwd: process.cwd() });
+
+    try {
+        let { fileNames, options } = api.parseConfigFile(tsconfig);
+
+        options = { ...options };
+
+        for (let i = 0, n = args.length - 1; i < n; i++) {
+            let key = LAYOUT_FLAGS[args[i].toLowerCase()];
+
+            if (key !== undefined) {
+                options[key] = path.resolve(args[++i]);
+            }
+        }
+
+        return [options, fileNames];
+    }
+    finally {
+        api.close();
+    }
 }
 
 // The mirror only needs untransformed sources readable at their mirrored path: a hard link shares
@@ -458,7 +481,7 @@ function main(): void {
         tsconfig = projectPath(args) ?? languageService.findConfig(process.cwd());
 
     if (!tsconfig || flags.informational) {
-        return passthrough(false);
+        return passthrough(null);
     }
 
     let pluginConfigs = resolvePluginConfigs(tsconfig);
@@ -473,7 +496,7 @@ function main(): void {
             runAnalyze(tsconfig);
         }
 
-        return passthrough(!flags.noEmit && !flags.watch);
+        return passthrough(flags.noEmit || flags.watch ? null : tsconfig);
     }
 
     if (pluginConfigs.length > 0) {
@@ -512,6 +535,13 @@ function projectPath(args: string[]): string | null {
     }
 
     return null;
+}
+
+async function rewrite(files: string[], config: Config): Promise<void> {
+    let stop = timing('rewrite specifiers');
+
+    await specifiers.rewrite(files, config);
+    stop(`over ${files.length} emitted files`);
 }
 
 function runAnalyze(tsconfig: string, program?: Program, checker?: Checker): void {
@@ -560,18 +590,29 @@ function runAnalyze(tsconfig: string, program?: Program, checker?: Checker): voi
     }
 }
 
-function passthrough(emits: boolean): void {
+// `tsconfig` is the project whose emit is post-processed, or null when tsc.js emits nothing to rewrite
+function passthrough(tsconfig: string | null): void {
     let args = process.argv.slice(2),
         tscJs = path.join(path.dirname(require.resolve('typescript/package.json')), 'lib', 'tsc.js');
 
-    if (!emits) {
+    if (tsconfig === null) {
         spawn(process.execPath, [tscJs, ...args], { stdio: 'inherit' })
             .on('exit', (code) => process.exit(code ?? 0));
 
         return;
     }
 
-    void spawnTsc(tscJs, args).then(({ code, files }) => process.exit(code === 0 ? finalize(files, []) : code));
+    // Started first so the config is read while tsc.js runs
+    let emitted = spawnTsc(tscJs, args),
+        config = specifiers.configure(...layout(tsconfig, args));
+
+    void emitted.then(async ({ code, files }) => {
+        if (code === 0) {
+            await rewrite(files, config);
+        }
+
+        process.exit(code);
+    });
 }
 
 function resolvePluginConfigs(tsconfig: string): PluginConfig[] {

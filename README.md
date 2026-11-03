@@ -83,7 +83,12 @@ tsc
 
 The CLI detects plugins in `tsconfig.json` `compilerOptions.plugins`, loads them and runs coordinated compilation. The package installs a `tsc` bin (also under the unambiguous `esportsplus-tsc` name).
 
-The wrapper does **not** rewrite path aliases (`tsc-alias` and its bins were removed): emit keeps every specifier verbatim, declarations included. In a package that emits, every import in `src` — `import type` too — must be relative; `~/` aliases are for code that is never emitted (tests, benches, apps bundled by Vite).
+After emit, the wrapper rewrites module specifiers in every emitted `.js`, `.cjs`, `.mjs`, `.d.ts`, `.d.cts` and `.d.mts` file, in one built-in pass (no `tsc-alias`, no extra process), on both the plugin and the passthrough path:
+
+- **`paths` aliases.** A static `import`/`export … from`, `import()` or `require()` specifier matching a `compilerOptions.paths` pattern (exact or wildcard, from the whole `extends` chain, `${configDir}` substituted, relative targets resolved against `baseUrl` or, without it, the config that declares `paths`) becomes a path relative to the emitting file, naming the target's emitted location (`rootDir` mapped to `outDir`, or to `declarationDir` in declarations). Targets are tried in order; the first that resolves wins. `~/types` from `build/nested/use.d.ts` becomes `../types.js`; `~/dir` naming a directory becomes `./dir/index.js`. An alias that resolves to nothing is left as written.
+- **Extensions.** Extensionless relative specifiers gain `.js` (or `/index.js`), so the output loads in Node's ESM loader; declarations get the same `.js` specifiers, which TypeScript resolves to the `.d.ts`.
+
+Source maps are not rewritten (only specifier lengths change, within their line). Watch mode does not post-process.
 
 ## analyze
 

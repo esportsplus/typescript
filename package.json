@@ -67,7 +67,7 @@
         "agent:build": "pnpm build",
         "agent:test": "pnpm typecheck && pnpm test",
         "bench:run": "vitest bench --run",
-        "build": "tsc -p tsconfig.package.json && node build/cli/specifiers.js build \"~/\" && node -e \"const fs=require('fs');fs.cpSync('src/guard/overlay','build/guard/overlay',{recursive:true,filter:(s)=>!/\\.[cm]?tsx?$/.test(s)})\"",
+        "build": "tsc -p tsconfig.package.json && node build/cli/specifiers.js tsconfig.package.json && node -e \"const fs=require('fs');fs.cpSync('src/guard/overlay','build/guard/overlay',{recursive:true,filter:(s)=>!/\\.[cm]?tsx?$/.test(s)})\"",
         "lint": "oxlint -c oxlintrc.json --type-aware --deny-warnings --ignore-pattern=\"test/**/fixtures/**\"",
         "prepare": "pnpm build",
         "prepublishOnly": "pnpm build",
