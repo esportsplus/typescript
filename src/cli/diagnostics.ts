@@ -1,11 +1,11 @@
-import { lineOfPosition } from '~/compiler/position';
+import { lineOfPosition } from '../compiler/position';
 import { readFileSync } from 'fs';
 import { computeLineStarts } from 'typescript/unstable/ast/scanner';
 import { type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
 import type { PositionMapping } from '~/compiler/sourcemap';
 
 import path from 'path';
-import { resolveOffset } from '~/compiler/sourcemap';
+import { resolveOffset } from '../compiler/sourcemap';
 
 
 const ANSI_BLUE = '\x1b[94m';

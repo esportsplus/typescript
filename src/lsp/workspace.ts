@@ -1,11 +1,11 @@
 import * as NodePath from 'node:path';
 
-import * as ts from '~/guard/adapter';
+import * as ts from '../guard/adapter';
 
-import { analyzeProgram } from '~/guard/kernel/analyze';
-import { createThrowIndex, disposeThrowIndex } from '~/guard/exceptions/derive';
-import { loadConfigFromTsconfig } from '~/guard/kernel/config';
-import { open } from '~/compiler/language-service';
+import { analyzeProgram } from '../guard/kernel/analyze';
+import { createThrowIndex, disposeThrowIndex } from '../guard/exceptions/derive';
+import { loadConfigFromTsconfig } from '../guard/kernel/config';
+import { open } from '../compiler/language-service';
 
 import type { AnalyzeResult } from '~/guard/kernel/analyze';
 import type { ThrowIndex } from '~/guard/exceptions/derive';

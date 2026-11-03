@@ -1,7 +1,7 @@
 import * as NodePath from 'node:path';
 
-import { readGuardConfig } from '~/tsconfig';
-import { stripJsonc } from '~/jsonc';
+import { readGuardConfig } from '../../tsconfig';
+import { stripJsonc } from '../../jsonc';
 
 import type {
     ChannelConfig,

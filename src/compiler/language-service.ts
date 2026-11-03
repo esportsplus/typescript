@@ -1,7 +1,7 @@
 import type { SourceFile } from 'typescript/unstable/ast';
 import type { FileSystem } from 'typescript/unstable/fs';
 import { API, DiagnosticCategory, type Checker, type Program, type Project, type Snapshot } from 'typescript/unstable/sync';
-import { PACKAGE_NAME } from '~/constants';
+import { PACKAGE_NAME } from '../constants';
 
 import fs from 'fs';
 import path from 'path';

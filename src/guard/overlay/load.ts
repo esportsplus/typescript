@@ -2,8 +2,8 @@ import * as NodeFS from 'node:fs';
 import * as NodePath from 'node:path';
 import * as NodeURL from 'node:url';
 
-import * as ts from '~/guard/adapter';
-import { stripJsonc } from '~/jsonc';
+import * as ts from '../adapter';
+import { stripJsonc } from '../../jsonc';
 
 import type {
     OverlayLookup,

@@ -1,6 +1,6 @@
 import * as NodeFS from 'node:fs';
 
-import * as ts from '~/guard/adapter';
+import * as ts from '../adapter';
 
 import { bodyOf, constituents, isAwaited, paramSymbols } from '../kernel/ast';
 import { isFunctionLike, locationOf } from '../kernel/ids';

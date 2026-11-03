@@ -2,7 +2,7 @@ import { dirname } from 'node:path';
 
 import * as NodeFS from 'node:fs';
 
-import * as ts from '~/guard/adapter';
+import * as ts from '../adapter';
 import { API } from 'typescript/unstable/sync';
 
 import { bodyOf, hasModifier, isAwaited, unwrap } from '../kernel/ast';

@@ -1,4 +1,4 @@
-import * as ts from '~/guard/adapter';
+import * as ts from '../adapter';
 
 import { channelFor } from '../channels';
 import { buildCallGraph } from './graph';

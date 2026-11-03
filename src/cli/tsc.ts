@@ -3,20 +3,20 @@ import type { PositionMapping } from '~/compiler/sourcemap';
 import { API, DiagnosticCategory, type Checker, type Program, type Snapshot } from 'typescript/unstable/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
-import { PACKAGE_NAME } from '~/constants';
+import { PACKAGE_NAME } from '../constants';
 import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
 
-import coordinator from '~/compiler/coordinator';
+import coordinator from '../compiler/coordinator';
 import fs from 'fs';
-import languageService from '~/compiler/language-service';
+import languageService from '../compiler/language-service';
 import path from 'path';
-import sourcemap from '~/compiler/sourcemap';
-import { analyze, analyzeProgram } from '~/guard/kernel/analyze';
-import { formatDiagnostics } from '~/guard/kernel/format';
-import { loadConfigFromTsconfig } from '~/guard/kernel/config';
-import { stripJsonc } from '~/jsonc';
-import { readPlugins } from '~/tsconfig';
+import sourcemap from '../compiler/sourcemap';
+import { analyze, analyzeProgram } from '../guard/kernel/analyze';
+import { formatDiagnostics } from '../guard/kernel/format';
+import { loadConfigFromTsconfig } from '../guard/kernel/config';
+import { stripJsonc } from '../jsonc';
+import { readPlugins } from '../tsconfig';
 
 
 type PluginConfig = {

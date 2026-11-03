@@ -1,4 +1,4 @@
-import * as ts from '~/guard/adapter';
+import * as ts from '../adapter';
 
 import { constituents } from '../kernel/ast';
 import { locationOf } from '../kernel/ids';
