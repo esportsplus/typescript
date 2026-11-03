@@ -268,7 +268,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                             plugins,
                             code,
                             sourceFile,
-                            { checker, configPath: configPath ?? undefined, program },
+                            { checker, program },
                             shared,
                             ctx
                         ),

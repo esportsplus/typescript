@@ -217,7 +217,7 @@ describe('coordinator composition', () => {
         let config = fixture + '/tsconfig.json',
             file = fixture + '/src/view.ts',
             { checker, program } = languageService.update(config, file, VIEW),
-            result = coordinator.transform([reactivity(), template()], VIEW, program.getSourceFile(file)!, { checker, configPath: config, program }, fixture, new Map());
+            result = coordinator.transform([reactivity(), template()], VIEW, program.getSourceFile(file)!, { checker, program }, fixture, new Map());
 
         expect(result.code).toBe(STAGED);
     });

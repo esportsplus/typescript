@@ -10,10 +10,10 @@ pnpm add @esportsplus/typescript
 
 ## Overview
 
-Extends the TypeScript compiler with a plugin architecture for custom AST transformations. Plugins receive type-checked AST nodes with accurate positions at every stage, return declarative intents (replacements, imports, prepends), and the coordinator applies them in the correct order.
+Extends the TypeScript compiler with a plugin architecture for custom AST transformations. Every plugin analyses the same type-checked program and returns declarative intents (replacements, imports, prepends) against its AST; the coordinator composes them in one pass.
 
 **Key features:**
-- Multi-plugin coordination with fresh AST positions between stages
+- Multi-plugin composition on one program: nested replacements from different plugins compose, no second program per stage
 - Declarative import management (add/remove specifiers, namespace imports)
 - Vite plugin for dev/build integration
 - CLI wrapper for `tsc` with automatic plugin detection
@@ -43,7 +43,8 @@ let plugin: Plugin = {
             replacements: [
                 {
                     node: someAstNode,
-                    generate: (sf) => `transformedCode()`
+                    // text(node): the node's source with every nested replacement applied
+                    generate: (sf, text) => `transformed(${text(someAstNode)})`
                 }
             ]
         };
@@ -180,19 +181,21 @@ No exports. Import the TypeScript compiler API directly from `typescript/unstabl
 
 ```typescript
 type Plugin = {
-    patterns?: string[];
+    name?: string;                     // names the plugin in coordinator errors
+    patterns?: string[];               // tested against the original source
     transform: (ctx: TransformContext) => TransformResult;
 };
 
 type TransformContext = {
-    checker: ts.TypeChecker;
-    code: string;
-    program: ts.Program;
+    checker: Checker;                  // memoized per program (checker.cached), shared by every plugin
+    code: string;                      // the original source, for every plugin
+    program: Program;
     shared: SharedContext;
-    sourceFile: ts.SourceFile;
+    sourceFile: SourceFile;            // the original AST, for every plugin
 };
 
 type TransformResult = {
+    dependencies?: string[];
     imports?: ImportIntent[];
     prepend?: string[];
     replacements?: ReplacementIntent[];
@@ -206,10 +209,12 @@ type ImportIntent = {
 };
 
 type ReplacementIntent = {
-    generate: (sourceFile: ts.SourceFile) => string;
-    node: ts.Node;
+    generate: (sourceFile: SourceFile, text: (node: Node) => string) => string;
+    node: Node;
 };
 ```
+
+**Composition.** All plugins' replacements are placed by range against the original source and applied in one generation. A replacement inside another nests: the outer intent's `text(node)` returns `node`'s source with every replacement inside it (from any plugin, or the same plugin's other intents) already applied, so any expression a generator copies into its output must be read with `text()`, not `node.getText()` (which returns the original source and drops nested replacements). On two equal ranges the ancestor node, then the later plugin, is outer. Ranges that overlap without nesting fail the transform naming both plugins. Prepends and imports then apply in plugin order. There is no staged second program: a later plugin never sees an earlier plugin's output.
 
 ## Shared Config
 

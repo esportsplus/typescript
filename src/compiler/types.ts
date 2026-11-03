@@ -11,14 +11,19 @@ type ImportIntent = {
 
 type Plugin = {
     /**
+     * Names the plugin in coordinator errors (e.g. two plugins' replacements overlapping).
+     */
+    name?: string;
+
+    /**
      * Optional patterns for quick-check optimization.
-     * If provided, transform() is only called when source contains at least one pattern.
+     * If provided, transform() is only called when the original source contains at least one pattern.
      */
     patterns?: string[];
 
     /**
-     * Transform a source file, returning replacement intents.
-     * Called with fresh AST - positions are always accurate.
+     * Transform a source file, returning intents against its AST. Every plugin receives the same
+     * original program and source file; the coordinator composes all of their replacements.
      */
     transform: (ctx: TransformContext) => TransformResult;
 };
@@ -36,10 +41,11 @@ type Replacement = Range & {
 
 type ReplacementIntent = {
     /**
-     * Generator function that produces the replacement text.
-     * Called at apply-time with current sourceFile for accurate positions.
+     * Produces the replacement text. `text(node)` is the node's source with every replacement
+     * nested inside it (from any plugin, or this plugin's other intents) already applied; use it
+     * instead of `node.getText()` for any expression copied into the output.
      */
-    generate: (sourceFile: SourceFile) => string;
+    generate: (sourceFile: SourceFile, text: (node: Node) => string) => string;
 
     /**
      * AST node to replace. Position resolved at apply-time.

@@ -1,10 +1,10 @@
-import type { SourceFile } from 'typescript/unstable/ast';
-import type { Checker, Program } from 'typescript/unstable/sync';
-import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
-import type { ImportInfo, ModifyOptions } from './imports';
 import { isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/unstable/ast/is';
-
+import { PACKAGE_NAME } from '../constants';
+import type { Node, SourceFile } from 'typescript/unstable/ast';
+import type { Checker, Program } from 'typescript/unstable/sync';
+import type { ImportInfo, ModifyOptions } from './imports';
 import type { OffsetAnchor, PositionMapping } from './sourcemap';
+import type { ImportIntent, Plugin, Replacement, ReplacementIntent, SharedContext } from './types';
 
 import checker from './checker';
 import imports from './imports';
@@ -23,6 +23,21 @@ type CoordinatorResult = {
 type EditBatch = {
     before: string;
     edits: Replacement[];
+};
+
+// A replacement intent placed among the others by range: `children` are the intents inside it
+type Intent = {
+    // Whether its generator is running, so text() reads inside it rather than its replacement
+    busy: boolean;
+    children: Intent[];
+    end: number;
+    generate: ReplacementIntent['generate'];
+    node: Node;
+    // Plugin position, then intent position, deciding which of two equal ranges is the outer one
+    order: number;
+    plugin: number;
+    start: number;
+    text: string | null;
 };
 
 // What applyPrepend and modify() read from a file: its import declarations and where the run of them
@@ -89,20 +104,6 @@ function applyImports(code: string, layout: Layout, intents: ImportIntent[]): { 
     return { batches: [{ before: code, edits }], code: replaceReverse(code, edits) };
 }
 
-function applyIntents(code: string, file: SourceFile, intents: ReplacementIntent[]): { code: string; edits: Replacement[] } {
-    if (intents.length === 0) {
-        return { code, edits: [] };
-    }
-
-    let edits = intents.map(intent => ({
-        end: intent.node.end,
-        newText: intent.generate(file),
-        start: intent.node.getStart(file)
-    }));
-
-    return { code: replaceReverse(code, edits), edits };
-}
-
 function applyPrepend(code: string, layout: Layout, prepend: string[]): { code: string; edits: Replacement[] } {
     if (prepend.length === 0) {
         return { code, edits: [] };
@@ -119,6 +120,104 @@ function applyPrepend(code: string, layout: Layout, prepend: string[]): { code: 
     let newText = '\n' + prepend.join('\n') + '\n';
 
     return { code: code.slice(0, position) + newText + code.slice(position), edits: [{ end: position, newText, start: position }] };
+}
+
+// Every plugin's replacements against the one original source: contained ranges nest (on equal
+// ranges an ancestor node, then a later plugin, is the outer one), and each intent generates with
+// text(node) returning the node's source with every replacement nested inside it applied. Two ranges
+// that overlap without nesting cannot both apply.
+function compose(code: string, file: SourceFile, names: string[], intents: Intent[]): Replacement[] {
+    intents.sort((a, b) => a.start - b.start || b.end - a.end || (encloses(a.node, b.node) ? -1 : encloses(b.node, a.node) ? 1 : b.order - a.order));
+
+    let roots: Intent[] = [],
+        stack: Intent[] = [];
+
+    for (let i = 0, n = intents.length; i < n; i++) {
+        let intent = intents[i];
+
+        while (stack.length > 0) {
+            let top = stack[stack.length - 1];
+
+            if (contains(top, intent)) {
+                break;
+            }
+
+            if (intent.start < top.end) {
+                throw new Error(
+                    `${PACKAGE_NAME}: replacements by ${names[top.plugin]} (${top.start}-${top.end}) and ${names[intent.plugin]} ` +
+                    `(${intent.start}-${intent.end}) in ${file.fileName} overlap without one containing the other`
+                );
+            }
+
+            stack.pop();
+        }
+
+        (stack.length > 0 ? stack[stack.length - 1].children : roots).push(intent);
+        stack.push(intent);
+    }
+
+    let generate = (intent: Intent): string => {
+        if (intent.text === null) {
+            intent.busy = true;
+            intent.text = intent.generate(file, text);
+            intent.busy = false;
+        }
+
+        return intent.text;
+    };
+
+    let splice = (start: number, end: number, within: Intent[], parts: string[], at: number): number => {
+        for (let i = 0, n = within.length; i < n; i++) {
+            let intent = within[i];
+
+            if (intent.end <= start || intent.start >= end) {
+                continue;
+            }
+
+            if (!intent.busy && intent.start >= start && intent.end <= end) {
+                parts.push(code.slice(at, intent.start), generate(intent));
+                at = intent.end;
+            }
+            else {
+                at = splice(start, end, intent.children, parts, at);
+            }
+        }
+
+        return at;
+    };
+
+    let text = (node: Node): string => {
+        let end = node.end,
+            parts: string[] = [],
+            start = node.getStart(file);
+
+        parts.push(code.slice(splice(start, end, roots, parts, start), end));
+
+        return parts.join('');
+    };
+
+    let edits: Replacement[] = [];
+
+    for (let i = 0, n = roots.length; i < n; i++) {
+        edits.push({ end: roots[i].end, newText: generate(roots[i]), start: roots[i].start });
+    }
+
+    return edits;
+}
+
+// Whether `inner` lies within `outer`: inside its range, and not merely touching its end
+function contains(outer: Intent, inner: Intent): boolean {
+    return inner.start >= outer.start && inner.end <= outer.end && (inner.start < outer.end || outer.start === outer.end);
+}
+
+function encloses(ancestor: Node, node: Node): boolean {
+    for (let parent = node.parent; parent; parent = parent.parent) {
+        if (parent === ancestor) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function hasPattern(code: string, patterns: string[]): boolean {
@@ -390,9 +489,8 @@ function shift(layout: Layout, edits: Replacement[]): Layout | null {
 }
 
 
-// True when at least one plugin could act on `code`. Plugins run in order on each other's output,
-// so if none matches the original source, none ever runs: hosts use this to skip syncing the file
-// into the language service at all.
+// True when at least one plugin could act on `code`. Every plugin analyses the original source, so
+// when none matches it none runs: hosts use this to skip syncing the file into the language service.
 const accepts = (plugins: Plugin[], code: string): boolean => {
     for (let i = 0, n = plugins.length; i < n; i++) {
         let patterns = plugins[i].patterns;
@@ -405,11 +503,13 @@ const accepts = (plugins: Plugin[], code: string): boolean => {
     return false;
 };
 
+// Every plugin analyses the same program and source and returns intents against that AST; their
+// replacements compose in one generation (see compose), then prepends and imports apply in plugin order
 const transform = (
     plugins: Plugin[],
     code: string,
     file: SourceFile,
-    project: { checker: Checker; configPath?: string; program: Program },
+    project: { checker: Checker; program: Program },
     root: string,
     shared: SharedContext
 ): CoordinatorResult => {
@@ -420,19 +520,18 @@ const transform = (
     uid.scope(root, file.fileName, code);
 
     let changed = false,
-        configPath = project.configPath ?? languageService.findConfig(root) ?? root,
-        dependencies = new Set<string>(),
         currentCode = code,
-        currentFile = file,
-        currentProject = project,
+        dependencies = new Set<string>(),
+        // currentCode is `outlined`'s text with `edited` applied in order; outline() and shift() follow it
+        // so it is re-parsed only when they cannot
+        edited: Replacement[][] = [],
         fileName = file.fileName,
         generations: OffsetAnchor[][] = [],
-        last = plugins.length - 1,
-        // currentCode is `outlined`'s text with `edited` applied in order; outline() and shift() follow it
-        // between a plugin's steps so it is re-parsed only when they cannot
-        edited: Replacement[][] = [],
-        outlined = currentFile,
-        staged = false;
+        intents: Intent[] = [],
+        memoized = checker.cached(project.checker, project.program),
+        names: string[] = [],
+        outlined = file,
+        steps: { imports: ImportIntent[]; prepend: string[] }[] = [];
 
     let layout = (): Layout => {
         let result: Layout | null = outline(outlined);
@@ -442,7 +541,7 @@ const transform = (
         }
 
         if (!result) {
-            currentFile = outlined = languageService.parse(fileName, currentCode);
+            outlined = languageService.parse(fileName, currentCode);
             edited = [];
             result = outline(outlined);
         }
@@ -453,20 +552,19 @@ const transform = (
     for (let i = 0, n = plugins.length; i < n; i++) {
         let plugin = plugins[i];
 
-        if (plugin.patterns && !hasPattern(currentCode, plugin.patterns)) {
+        names.push(plugin.name ?? `plugin #${i + 1}`);
+
+        if (plugin.patterns && !hasPattern(code, plugin.patterns)) {
             continue;
         }
 
-        let memoized = checker.cached(currentProject.checker, currentProject.program),
-            { dependencies: relied, imports, prepend, replacements } = plugin.transform({
+        let { dependencies: relied, imports, prepend, replacements } = plugin.transform({
                 checker: memoized,
-                code: currentCode,
-                program: currentProject.program,
+                code,
+                program: project.program,
                 shared,
-                sourceFile: currentFile
-            }),
-            importIntents = imports?.length ? resolveImports(currentFile, memoized, imports) : [],
-            pluginChanged = false;
+                sourceFile: file
+            });
 
         if (relied) {
             for (let j = 0, m = relied.length; j < m; j++) {
@@ -474,30 +572,47 @@ const transform = (
             }
         }
 
-        if (replacements?.length) {
-            let before = currentCode,
-                result = applyIntents(currentCode, currentFile, replacements);
+        if (replacements) {
+            for (let j = 0, m = replacements.length; j < m; j++) {
+                let { generate, node } = replacements[j];
 
-            if (result.edits.length > 0) {
-                generations.push(sourcemap.buildGeneration(before, result.edits));
+                intents.push({
+                    busy: false,
+                    children: [],
+                    end: node.end,
+                    generate,
+                    node,
+                    order: intents.length,
+                    plugin: i,
+                    start: node.getStart(file),
+                    text: null
+                });
             }
-
-            currentCode = result.code;
-            edited.push(result.edits);
-            pluginChanged = true;
         }
 
-        if (prepend?.length) {
+        steps.push({ imports: imports?.length ? resolveImports(file, memoized, imports) : [], prepend: prepend ?? [] });
+    }
+
+    if (intents.length > 0) {
+        let edits = compose(code, file, names, intents);
+
+        generations.push(sourcemap.buildGeneration(code, edits));
+        currentCode = replaceReverse(code, edits);
+        edited.push(edits);
+        changed = true;
+    }
+
+    for (let i = 0, n = steps.length; i < n; i++) {
+        let { imports: importIntents, prepend } = steps[i];
+
+        if (prepend.length > 0) {
             let before = currentCode,
                 result = applyPrepend(currentCode, layout(), prepend);
 
-            if (result.edits.length > 0) {
-                generations.push(sourcemap.buildGeneration(before, result.edits));
-            }
-
+            generations.push(sourcemap.buildGeneration(before, result.edits));
             currentCode = result.code;
             edited.push(result.edits);
-            pluginChanged = true;
+            changed = true;
         }
 
         if (importIntents.length > 0) {
@@ -509,26 +624,7 @@ const transform = (
             }
 
             currentCode = result.code;
-            pluginChanged = true;
-        }
-
-        if (pluginChanged) {
             changed = true;
-
-            // Later plugins check the intermediate output on a staged program: the project's own
-            // program is shared by every file the host transforms, and a later file that imports
-            // this one must see its source
-            if (i < last) {
-                if (!staged) {
-                    languageService.update(configPath, fileName, code);
-                    staged = true;
-                }
-
-                currentProject = languageService.stage(configPath, fileName, currentCode);
-                currentFile = outlined = currentProject.program.getSourceFile(fileName) ??
-                    languageService.parse(fileName, currentCode);
-                edited = [];
-            }
         }
     }
 

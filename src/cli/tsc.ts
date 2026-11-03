@@ -123,7 +123,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
             plugins,
             sourceFile.getFullText(),
             sourceFile,
-            { checker: project.checker, configPath: tsconfig, program: project.program },
+            { checker: project.checker, program: project.program },
             root,
             shared
         );

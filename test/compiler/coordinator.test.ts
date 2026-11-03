@@ -219,24 +219,6 @@ describe('coordinator.transform', () => {
         expect(result.code).toContain('const B = 2;');
     });
 
-    it('restores the original source in the language service after intermediate updates', () => {
-        let code = 'let x = 1;',
-            file = parse(code),
-            project = { ...makeProject(file), configPath: root + '/tsconfig.json' },
-            plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
-            plugin2 = makePlugin(() => ({ prepend: ['const B = 2;'] }));
-
-        coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
-
-        let otherProject = languageService.update(
-            root + '/tsconfig.json',
-            root + '/src/coordinator-fixture-other.ts',
-            'export {};'
-        );
-
-        expect(otherProject.program.getSourceFile(fileName)!.text).toBe(code);
-    });
-
     it('shares context between plugins', () => {
         let code = 'let x = 1;',
             file = parse(code),
@@ -639,7 +621,7 @@ describe('coordinator.transform', () => {
 
     // F-TEST-006: Multi-plugin pipeline
 
-    it('first plugin modifies code, second receives updated code', () => {
+    it('every plugin receives the original code and source file', () => {
         let code = 'let OLD = 1;',
             file = parse(code),
             project = makeProject(file),
@@ -665,18 +647,16 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
+            seen: [string, SourceFile][] = [],
             plugin2 = makePlugin((ctx) => {
-                if (ctx.code.includes('TRANSFORMED')) {
-                    return { prepend: ['const SEEN_BY_PLUGIN2 = true;'] };
-                }
+                seen.push([ctx.code, ctx.sourceFile]);
 
                 return {};
             }),
             result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
-        expect(result.changed).toBe(true);
-        expect(result.code).toContain('TRANSFORMED');
-        expect(result.code).toContain('const SEEN_BY_PLUGIN2 = true;');
+        expect(result.code).toBe('let TRANSFORMED = 1;');
+        expect(seen).toEqual([[code, file]]);
     });
 
     it('three plugins — first skipped, second and third run', () => {
@@ -848,47 +828,123 @@ describe('coordinator.transform', () => {
         expect(() => coordinator.transform([plugin], code, file, project, root, new Map())).toThrow('plugin crashed');
     });
 
-    it('falls back to parse when getSourceFile returns undefined', () => {
+    it('every plugin analyses the project program, which stays in place', () => {
         let code = 'let x = 1;',
             file = parse(code),
-            project = makeProject(file);
+            project = makeProject(file),
+            seen: Program[] = [],
+            plugin1 = makePlugin((ctx) => {
+                seen.push(ctx.program);
 
-        vi.spyOn(languageService, 'stage').mockReturnValueOnce({
-            checker: {} as unknown as Checker,
-            program: { getSourceFile: () => undefined } as unknown as Program
-        });
-
-        let plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
-            plugin2 = makePlugin((ctx) => {
-                if (ctx.code.includes('const A = 1;')) {
-                    return { prepend: ['const B = 2;'] };
-                }
-
-                return {};
+                return { prepend: ['const A = 1;'] };
             }),
-            result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
-
-        expect(result.changed).toBe(true);
-        expect(result.code).toContain('const A = 1;');
-        expect(result.code).toContain('const B = 2;');
-    });
-
-    it('checks later plugins against a staged program, leaving the project program in place', () => {
-        let code = 'let x = 1;',
-            file = parse(code),
-            project = { ...makeProject(file), configPath: root + '/tsconfig.json' },
-            before = languageService.update(root + '/tsconfig.json', fileName, code).program,
-            seen: string[] = [],
-            plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
             plugin2 = makePlugin((ctx) => {
-                seen.push(ctx.program.getSourceFile(fileName)!.text);
+                seen.push(ctx.program);
+
                 return {};
             });
 
         coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
-        expect(seen).toEqual(['const A = 1;\nlet x = 1;']);
-        expect(languageService.open(root + '/tsconfig.json').project.program).toBe(before);
+        expect(seen).toEqual([project.program, project.program]);
+    });
+
+    describe('replacement composition', () => {
+        function nodes(file: SourceFile, predicate: (node: Node) => boolean): Node[] {
+            let found: Node[] = [];
+
+            file.forEachChild(function visit(n) {
+                if (predicate(n)) {
+                    found.push(n);
+                }
+
+                n.forEachChild(visit);
+            });
+
+            return found;
+        }
+
+        function wrapping(predicate: (node: Node) => boolean, wrap: (inner: string) => string): Plugin {
+            return makePlugin(ctx => ({
+                replacements: nodes(ctx.sourceFile, predicate).map(node => ({
+                    generate: (_sf: SourceFile, text: (node: Node) => string) => wrap(text(node)),
+                    node
+                }))
+            }));
+        }
+
+        it("nests one plugin's intents, the outer generating from the inner's output", () => {
+            let code = 'let v = f(g(1));',
+                file = parse(code),
+                result = coordinator.transform(
+                    [wrapping(isCallExpression, inner => `[${inner}]`)],
+                    code,
+                    file,
+                    makeProject(file),
+                    root,
+                    new Map()
+                );
+
+            expect(result.code).toBe('let v = [f([g(1)])];');
+        });
+
+        it('nests replacements across plugins both ways', () => {
+            let code = 'let v = f(a);',
+                file = parse(code),
+                outerFirst = wrapping(isCallExpression, inner => `outer(${inner})`),
+                innerSecond = wrapping(n => isIdentifier(n) && n.text === 'a', inner => `${inner}.value`),
+                result = coordinator.transform([outerFirst, innerSecond], code, file, makeProject(file), root, new Map());
+
+            expect(result.code).toBe('let v = outer(f(a.value));');
+
+            result = coordinator.transform([innerSecond, outerFirst], code, file, makeProject(file), root, new Map());
+
+            expect(result.code).toBe('let v = outer(f(a.value));');
+        });
+
+        it('treats a later plugin as the outer of two equal ranges', () => {
+            let code = 'let v = a;',
+                file = parse(code),
+                isA = (n: Node) => isIdentifier(n) && n.text === 'a',
+                result = coordinator.transform(
+                    [wrapping(isA, inner => `first(${inner})`), wrapping(isA, inner => `second(${inner})`)],
+                    code,
+                    file,
+                    makeProject(file),
+                    root,
+                    new Map()
+                );
+
+            expect(result.code).toBe('let v = second(first(a));');
+        });
+
+        it('applies the replacements inside any node text() is asked for', () => {
+            let code = 'let a = 1;\nlet b = x;',
+                file = parse(code),
+                [x] = nodes(file, n => isIdentifier(n) && n.text === 'x'),
+                [literal] = nodes(file, n => n.getText(file) === '1'),
+                source = file.statements[0],
+                copy = makePlugin(() => ({
+                    replacements: [
+                        { generate: () => 'one', node: literal },
+                        { generate: (_sf: SourceFile, text: (node: Node) => string) => JSON.stringify(text(source)), node: x }
+                    ]
+                })),
+                result = coordinator.transform([copy], code, file, makeProject(file), root, new Map());
+
+            expect(result.code).toBe('let a = one;\nlet b = "let a = one;";');
+        });
+
+        it('fails naming both plugins when two replacements overlap without nesting', () => {
+            let code = 'let value = 1;',
+                file = parse(code),
+                span = (start: number, end: number) => ({ end, getStart: () => start, parent: undefined }) as unknown as Node,
+                first: Plugin = { name: 'first-plugin', transform: () => ({ replacements: [{ generate: () => 'A', node: span(4, 9) }] }) },
+                second: Plugin = { transform: () => ({ replacements: [{ generate: () => 'B', node: span(6, 13) }] }) };
+
+            expect(() => coordinator.transform([first, second], code, file, makeProject(file), root, new Map()))
+                .toThrow(/first-plugin \(4-9\) and plugin #2 \(6-13\).*overlap/);
+        });
     });
 
     describe('import layout', () => {
