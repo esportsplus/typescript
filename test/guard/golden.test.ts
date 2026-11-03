@@ -147,13 +147,15 @@ describe('guard golden findings', () => {
                     return;
                 }
 
-                let expected = JSON.parse(fs.readFileSync(file, 'utf8')) as Recording;
+                // A checkout with autocrlf turns the recording's line endings into CRLF
+                let content = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'),
+                    expected = JSON.parse(content) as Recording;
 
                 if (expected.fingerprint !== recording.fingerprint) {
                     throw new Error(`golden: ${name} sources changed since recording; re-record against the baseline analyzer`);
                 }
 
-                expect(text).toBe(fs.readFileSync(file, 'utf8'));
+                expect(text).toBe(content);
             }
             finally {
                 opened.dispose();
