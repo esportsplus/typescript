@@ -1,0 +1,764 @@
+{
+    "findings": [
+        {
+            "channel": "exceptions",
+            "location": {
+                "column": 18,
+                "end": 9158,
+                "fileName": "src/lsp/server.ts",
+                "line": 261,
+                "pos": 9039
+            },
+            "message": "Call may throw Error (from createConnection) with no catch on the path to `startServer`",
+            "related": [
+                {
+                    "location": {
+                        "column": 9,
+                        "end": 7679,
+                        "fileName": "G:/typescript-guard/node_modules/.pnpm/vscode-languageserver@11.0.0/node_modules/vscode-languageserver/lib/node/main.js",
+                        "line": 214,
+                        "pos": 7602
+                    },
+                    "message": "throw new Error('Connection input stream is not set. ' + commandLineMessage);"
+                },
+                {
+                    "location": {
+                        "column": 9,
+                        "end": 7791,
+                        "fileName": "G:/typescript-guard/node_modules/.pnpm/vscode-languageserver@11.0.0/node_modules/vscode-languageserver/lib/node/main.js",
+                        "line": 217,
+                        "pos": 7713
+                    },
+                    "message": "throw new Error('Connection output stream is not set. ' + commandLineMessage);"
+                }
+            ]
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 3010,
+                            "fileName": "src/compiler/language-service.ts",
+                            "newText": "using",
+                            "pos": 3007
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 3310,
+                            "fileName": "src/compiler/language-service.ts",
+                            "newText": "    try {\n        if (!session.snapshot.isDisposed()) {\r\n            session.snapshot.dispose();\r\n        }\r\n    \r\n        session.api.clearSourceFileCache();\r\n        session.project = resolveProject(snapshot, configFileName);\r\n        session.snapshot = snapshot;\n    }\n    finally {\n        snapshot[Symbol.dispose]();\n    }",
+                            "pos": 3083
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 20,
+                "end": 3078,
+                "fileName": "src/compiler/language-service.ts",
+                "line": 115,
+                "pos": 3022
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 4850,
+                            "fileName": "src/compiler/language-service.ts",
+                            "newText": "using",
+                            "pos": 4847
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 5125,
+                            "fileName": "src/compiler/language-service.ts",
+                            "newText": "    try {\n        return { api, config, contents, count: 1, file, project, snapshot };\n    }\n    finally {\n        snapshot[Symbol.dispose]();\n    }",
+                            "pos": 5053
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 20,
+                "end": 4995,
+                "fileName": "src/compiler/language-service.ts",
+                "line": 185,
+                "pos": 4949
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 10434,
+                            "fileName": "src/compiler/language-service.ts",
+                            "newText": "using",
+                            "pos": 10431
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 10911,
+                            "fileName": "src/compiler/language-service.ts",
+                            "newText": "    try {\n        if (!entry.snapshot.isDisposed()) {\r\n            entry.snapshot.dispose();\r\n        }\r\n    \r\n        entry.api.clearSourceFileCache();\r\n        entry.contents.delete(previous);\r\n        entry.config = config;\r\n        entry.file = file;\r\n        entry.project = resolveProject(snapshot, config);\r\n        entry.snapshot = snapshot;\n    }\n    finally {\n        snapshot[Symbol.dispose]();\n    }",
+                            "pos": 10612
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 20,
+                "end": 10607,
+                "fileName": "src/compiler/language-service.ts",
+                "line": 347,
+                "pos": 10446
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "location": {
+                "column": 24,
+                "end": 6431,
+                "fileName": "src/guard/exceptions/derive.ts",
+                "line": 199,
+                "pos": 6379
+            },
+            "message": "`Disposable` resource becomes untrackable — it flows to an opaque sink and release cannot be verified",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "location": {
+                "column": 16,
+                "end": 1846,
+                "fileName": "src/guard/kernel/cache.ts",
+                "line": 62,
+                "pos": 1826
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 20466,
+                            "fileName": "src/cli/tsc.ts",
+                            "newText": "using",
+                            "pos": 20463
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 21574,
+                            "fileName": "src/cli/tsc.ts",
+                            "newText": "        try {\n            let read = (line: string): void => {\r\n                line = line.replace(CARRIAGE_RETURN_REGEX, '');\r\n    \r\n                if (line.startsWith(EMITTED_PREFIX)) {\r\n                    files.push(line.slice(EMITTED_PREFIX.length));\r\n                }\r\n                else {\r\n                    process.stdout.write(line + '\\n');\r\n                }\r\n            };\r\n    \r\n            child.stdout.setEncoding('utf8');\r\n            child.stdout.on('data', (chunk: string) => {\r\n                let lines = (rest + chunk).split('\\n');\r\n    \r\n                rest = lines.pop() ?? '';\r\n    \r\n                for (let i = 0, n = lines.length; i < n; i++) {\r\n                    read(lines[i]);\r\n                }\r\n            });\r\n            // `close`, not `exit`: the listing may still be buffered in the pipe when the process exits\r\n            child.on('close', (code) => {\r\n                if (rest) {\r\n                    read(rest);\r\n                }\r\n    \r\n                resolve({ code: code ?? 0, files });\r\n            });\n        }\n        finally {\n            child[Symbol.dispose]();\n        }",
+                            "pos": 20645
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 21,
+                "end": 20581,
+                "fileName": "src/cli/tsc.ts",
+                "line": 593,
+                "pos": 20475
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 39407,
+                            "fileName": "test/compiler/coordinator.test.ts",
+                            "newText": "using",
+                            "pos": 39404
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 40098,
+                            "fileName": "test/compiler/coordinator.test.ts",
+                            "newText": "            try {\n                expect(result.code).toBe(\"import { a } from 'x';\\nconst P = 1;\\n\\nlet v = A_LONGER_REPLACEMENT;\\nimport { b, c } from 'y';\\nb(v, a);\");\r\n                expect(reparse).not.toHaveBeenCalled();\n            }\n            finally {\n                reparse[Symbol.dispose]();\n            }",
+                            "pos": 39898
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 39587,
+                "fileName": "test/compiler/coordinator.test.ts",
+                "line": 999,
+                "pos": 39553
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 40211,
+                            "fileName": "test/compiler/coordinator.test.ts",
+                            "newText": "using",
+                            "pos": 40208
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 40714,
+                            "fileName": "test/compiler/coordinator.test.ts",
+                            "newText": "            try {\n                expect(result.code).toContain(\"import { b, c, z } from 'y';\");\r\n                expect(reparse).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                reparse[Symbol.dispose]();\n            }",
+                            "pos": 40585
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 40355,
+                "fileName": "test/compiler/coordinator.test.ts",
+                "line": 1013,
+                "pos": 40321
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 40843,
+                            "fileName": "test/compiler/coordinator.test.ts",
+                            "newText": "using",
+                            "pos": 40840
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 41320,
+                            "fileName": "test/compiler/coordinator.test.ts",
+                            "newText": "            try {\n                expect(result.code).toBe(\"import { b, c } from 'y';\\nNEW();\");\r\n                expect(reparse).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                reparse[Symbol.dispose]();\n            }",
+                            "pos": 41191
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 40983,
+                "fileName": "test/compiler/coordinator.test.ts",
+                "line": 1024,
+                "pos": 40949
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 3330,
+                            "fileName": "test/compiler/language-service.test.ts",
+                            "newText": "            try {\n                languageService.dispose(configPath);\r\n                expect(opened.snapshot.isDisposed()).toBe(true);\r\n                expect(languageService.open(canonicalConfig).project.program.getSourceFile(fileName)?.text)\r\n                    .toBe('export const value = 1;');\n            }\n            finally {\n                opened.close();\n            }",
+                            "pos": 3064
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 3059,
+                "fileName": "test/compiler/language-service.test.ts",
+                "line": 69,
+                "pos": 3022
+            },
+            "message": "`FileHandle` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 5680,
+                            "fileName": "test/compiler/plugins.test.ts",
+                            "newText": "using",
+                            "pos": 5677
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 5967,
+                            "fileName": "test/compiler/plugins.test.ts",
+                            "newText": "        try {\n            plugin.watchChange('src/app.ts');\r\n    \r\n            expect(onWatchChange).toHaveBeenCalled();\r\n            expect(languageService.invalidate).toHaveBeenCalledWith('', 'src/app.ts');\n        }\n        finally {\n            onWatchChange[Symbol.dispose]();\n        }",
+                            "pos": 5789
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 29,
+                "end": 5704,
+                "fileName": "test/compiler/plugins.test.ts",
+                "line": 153,
+                "pos": 5697
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6043,
+                            "fileName": "test/compiler/plugins.test.ts",
+                            "newText": "using",
+                            "pos": 6040
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 6249,
+                            "fileName": "test/compiler/plugins.test.ts",
+                            "newText": "        try {\n            plugin.watchChange('style.css');\r\n    \r\n            expect(onWatchChange).not.toHaveBeenCalled();\n        }\n        finally {\n            onWatchChange[Symbol.dispose]();\n        }",
+                            "pos": 6152
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 29,
+                "end": 6067,
+                "fileName": "test/compiler/plugins.test.ts",
+                "line": 163,
+                "pos": 6060
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 9477,
+                            "fileName": "test/compiler/plugins.test.ts",
+                            "newText": "using",
+                            "pos": 9474
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 10375,
+                            "fileName": "test/compiler/plugins.test.ts",
+                            "newText": "        try {\n            plugin.transform.handler('let x = 1;', 'src/app.ts');\r\n    \r\n            let result = plugin.handleHotUpdate({ file: 'src/state.ts', modules: [changed], server, timestamp: 1 } as never);\r\n    \r\n            expect(result).toEqual([changed, dependent]);\r\n            expect(invalidateModule).toHaveBeenCalledWith(dependent, expect.any(Set), 1, true);\r\n            expect(plugin.handleHotUpdate({ file: 'src/other.ts', modules: [], server, timestamp: 2 } as never)).toBeUndefined();\n        }\n        finally {\n            invalidateModule[Symbol.dispose]();\n        }",
+                            "pos": 9912
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 32,
+                "end": 9663,
+                "fileName": "test/compiler/plugins.test.ts",
+                "line": 238,
+                "pos": 9656
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 1327,
+                            "fileName": "test/guard/kernel/cache.test.ts",
+                            "newText": "using",
+                            "pos": 1324
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 1669,
+                            "fileName": "test/guard/kernel/cache.test.ts",
+                            "newText": "        try {\n            expect(cache.findings(config, files, run)).toEqual([FINDING]);\r\n            expect(cache.findings(config, files, run)).toEqual([FINDING]);\r\n            expect(run).toHaveBeenCalledTimes(1);\r\n            expect(fs.readdirSync(path.join(root, 'node_modules/.cache/@esportsplus/typescript/guard'))).toHaveLength(1);\n        }\n        finally {\n            run[Symbol.dispose]();\n        }",
+                            "pos": 1361
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 19,
+                "end": 1356,
+                "fileName": "test/guard/kernel/cache.test.ts",
+                "line": 39,
+                "pos": 1334
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 1782,
+                            "fileName": "test/guard/kernel/cache.test.ts",
+                            "newText": "using",
+                            "pos": 1779
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 2549,
+                            "fileName": "test/guard/kernel/cache.test.ts",
+                            "newText": "        try {\n            cache.findings(config, files, run);\r\n            fs.writeFileSync(path.join(root, 'src/a.ts'), 'export const a = 2;');\r\n            cache.findings(config, files, run);\r\n            fs.writeFileSync(path.join(root, 'src/b.ts'), '');\r\n            cache.findings(config, [...files, path.join(root, 'src/b.ts')], run);\r\n            cache.findings({ ...config, channels: { exceptions: { options: {}, severity: 'warn' } } }, [...files, path.join(root, 'src/b.ts')], run);\r\n            fs.writeFileSync(path.join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9');\r\n            cache.findings({ ...config, channels: { exceptions: { options: {}, severity: 'warn' } } }, [...files, path.join(root, 'src/b.ts')], run);\r\n    \r\n            expect(run).toHaveBeenCalledTimes(5);\n        }\n        finally {\n            run[Symbol.dispose]();\n        }",
+                            "pos": 1816
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 19,
+                "end": 1811,
+                "fileName": "test/guard/kernel/cache.test.ts",
+                "line": 48,
+                "pos": 1789
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 2621,
+                            "fileName": "test/guard/kernel/cache.test.ts",
+                            "newText": "using",
+                            "pos": 2618
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 2963,
+                            "fileName": "test/guard/kernel/cache.test.ts",
+                            "newText": "        try {\n            cache.findings(config, files, run);\r\n            cache.findings(other, files, run);\r\n            cache.findings(config, files, run);\r\n            cache.findings(other, files, run);\r\n    \r\n            expect(run).toHaveBeenCalledTimes(2);\n        }\n        finally {\n            run[Symbol.dispose]();\n        }",
+                            "pos": 2738
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 19,
+                "end": 2643,
+                "fileName": "test/guard/kernel/cache.test.ts",
+                "line": 63,
+                "pos": 2628
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 3049,
+                            "fileName": "test/guard/kernel/cache.test.ts",
+                            "newText": "using",
+                            "pos": 3046
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 3268,
+                            "fileName": "test/guard/kernel/cache.test.ts",
+                            "newText": "        try {\n            vi.stubEnv('ESPORTSPLUS_ANALYZE_CACHE', '0');\r\n            cache.findings(config, files, run);\r\n            cache.findings(config, files, run);\r\n    \r\n            expect(run).toHaveBeenCalledTimes(2);\n        }\n        finally {\n            run[Symbol.dispose]();\n        }",
+                            "pos": 3076
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 19,
+                "end": 3071,
+                "fileName": "test/guard/kernel/cache.test.ts",
+                "line": 75,
+                "pos": 3056
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "location": {
+                "column": 11,
+                "end": 15477,
+                "fileName": "src/cli/tsc.ts",
+                "line": 447,
+                "pos": 15456
+            },
+            "message": "unbounded fan-out: `Promise.all` over a dynamically-sized input — cap concurrency with a pool or bound the input",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 138,
+                            "fileName": "test/guard/async/fixtures/cancellation.ts",
+                            "newText": ", { signal }",
+                            "pos": 138
+                        }
+                    ],
+                    "title": "Forward the AbortSignal"
+                }
+            ],
+            "location": {
+                "column": 11,
+                "end": 139,
+                "fileName": "test/guard/async/fixtures/cancellation.ts",
+                "line": 5,
+                "pos": 128
+            },
+            "message": "`fetch()` is awaited without the AbortSignal this function holds — the work cannot be cancelled",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 510,
+                            "fileName": "test/guard/async/fixtures/cancellation.ts",
+                            "newText": ", { signal }",
+                            "pos": 510
+                        }
+                    ],
+                    "title": "Forward the AbortSignal"
+                }
+            ],
+            "location": {
+                "column": 11,
+                "end": 511,
+                "fileName": "test/guard/async/fixtures/cancellation.ts",
+                "line": 20,
+                "pos": 500
+            },
+            "message": "`fetch()` is awaited without the AbortSignal this function holds — the work cannot be cancelled",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "location": {
+                "column": 11,
+                "end": 914,
+                "fileName": "test/guard/async/fixtures/cancellation.ts",
+                "line": 35,
+                "pos": 903
+            },
+            "message": "`inner()` is awaited without the AbortSignal this function holds — the work cannot be cancelled",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 86,
+                            "fileName": "test/guard/async/fixtures/cross_b.ts",
+                            "newText": "void ",
+                            "pos": 86
+                        }
+                    ],
+                    "title": "Ignore the result with `void`"
+                }
+            ],
+            "location": {
+                "column": 5,
+                "end": 98,
+                "fileName": "test/guard/async/fixtures/cross_b.ts",
+                "line": 4,
+                "pos": 86
+            },
+            "message": "result of `remoteSync()` is neither awaited nor voided — rejections will be unhandled",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "location": {
+                "column": 11,
+                "end": 401,
+                "fileName": "test/guard/async/fixtures/fanout.ts",
+                "line": 16,
+                "pos": 363
+            },
+            "message": "unbounded fan-out: `Promise.all` over a dynamically-sized input — cap concurrency with a pool or bound the input",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "location": {
+                "column": 11,
+                "end": 526,
+                "fileName": "test/guard/async/fixtures/fanout.ts",
+                "line": 20,
+                "pos": 470
+            },
+            "message": "unbounded fan-out: `Promise.all` over a dynamically-sized input — cap concurrency with a pool or bound the input",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 153,
+                            "fileName": "test/guard/async/fixtures/ownership.ts",
+                            "newText": "void ",
+                            "pos": 153
+                        }
+                    ],
+                    "title": "Ignore the result with `void`"
+                }
+            ],
+            "location": {
+                "column": 5,
+                "end": 164,
+                "fileName": "test/guard/async/fixtures/ownership.ts",
+                "line": 8,
+                "pos": 153
+            },
+            "message": "result of `syncUsers()` is neither awaited nor voided — rejections will be unhandled",
+            "related": []
+        },
+        {
+            "channel": "async",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 620,
+                            "fileName": "test/guard/async/fixtures/ownership.ts",
+                            "newText": "void ",
+                            "pos": 620
+                        }
+                    ],
+                    "title": "Ignore the result with `void`"
+                }
+            ],
+            "location": {
+                "column": 5,
+                "end": 646,
+                "fileName": "test/guard/async/fixtures/ownership.ts",
+                "line": 32,
+                "pos": 620
+            },
+            "message": "result of `syncUsers()` is neither awaited nor voided — rejections will be unhandled",
+            "related": []
+        }
+    ],
+    "fingerprint": "5ac3fb77324a7906d1c0127097711b69b83b6d5759fe7aacdfa4a341bc63e854"
+}

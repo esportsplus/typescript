@@ -12,9 +12,12 @@ const BATCHED = new Set<PropertyKey>([
 
 // Pure queries: answers are fixed for the program snapshot a transform runs against
 const CACHED = new Set<PropertyKey>([
+    'getAliasedSymbol',
+    'getApparentType',
     'getBaseConstraintOfType',
     'getDeclaredTypeOfSymbol',
     'getNonNullableType',
+    'getPropertiesOfType',
     'getPropertyOfType',
     'getReturnTypeOfSignature',
     'getShorthandAssignmentValueSymbol',
@@ -28,12 +31,16 @@ const CACHED = new Set<PropertyKey>([
     'resolveName'
 ]);
 
-// Queries about a type, keyed by its id: within one program snapshot tsgo gives a type one id
-// however it was reached (a node, another query), so equal types share an entry
+// Queries about a type, symbol or signature, keyed by its id: within one program snapshot tsgo gives
+// each one id however it was reached (a node, another query), so equal objects share an entry
 const TYPED = new Set<PropertyKey>([
+    'getAliasedSymbol',
+    'getApparentType',
     'getBaseConstraintOfType',
     'getNonNullableType',
+    'getPropertiesOfType',
     'getPropertyOfType',
+    'getReturnTypeOfSignature',
     'getSignaturesOfType',
     'getTypeArguments',
     'isArrayType',
@@ -44,6 +51,9 @@ const TYPED = new Set<PropertyKey>([
 
 // The cached checker of each program, dropped with the program
 let programs = new WeakMap<Program, { checker: Checker; proxy: Checker }>();
+
+// Calls each cached checker passed on to the checker it wraps, i.e. the round-trips it made
+let requests = new WeakMap<Checker, { count: number }>();
 
 
 // A type argument's identity: its id rather than the object holding it
@@ -119,9 +129,10 @@ function memoize(query: Query, batched: boolean, typed: boolean): Query {
 }
 
 function proxy(checker: Checker): Checker {
-    let methods = new Map<PropertyKey, Query>();
+    let methods = new Map<PropertyKey, Query>(),
+        sent = { count: 0 };
 
-    return new Proxy(checker, {
+    let wrapper = new Proxy(checker, {
         get(target, key) {
             let value = Reflect.get(target, key);
 
@@ -132,7 +143,13 @@ function proxy(checker: Checker): Checker {
             let method = methods.get(key);
 
             if (!method) {
-                method = value.bind(target) as Query;
+                let bound = value.bind(target) as Query;
+
+                method = (...args) => {
+                    sent.count++;
+
+                    return bound(...args);
+                };
 
                 if (CACHED.has(key)) {
                     method = memoize(method, BATCHED.has(key), TYPED.has(key));
@@ -144,6 +161,10 @@ function proxy(checker: Checker): Checker {
             return method;
         }
     });
+
+    requests.set(wrapper, sent);
+
+    return wrapper;
 }
 
 
@@ -169,4 +190,10 @@ const cached = (checker: Checker, program?: Program): Checker => {
 };
 
 
-export default { cached };
+// Round-trips a cached checker has made so far; 0 for a checker `cached` did not create
+const sent = (checker: Checker): number => {
+    return requests.get(checker)?.count ?? 0;
+};
+
+
+export default { cached, sent };

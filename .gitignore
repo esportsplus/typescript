@@ -11,3 +11,4 @@ storage/.fixture-*
 tmpclaude*
 
 .claude/worktrees
+.tmp/

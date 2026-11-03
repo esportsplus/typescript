@@ -1,0 +1,2360 @@
+{
+    "findings": [
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 19631,
+                            "fileName": "test/attributes.test.ts",
+                            "newText": "            try {\n                observer.observe(element, { attributeFilter: ['class'], attributes: true });\r\n                write(a, 'x2');\r\n                write(b, 'y2');\r\n                write(a, 'x3');\r\n    \r\n                await Promise.resolve();\r\n                await new Promise((resolve) => setTimeout(resolve));\r\n    \r\n                expect([...element.classList].sort()).toEqual(['x3', 'y2']);\r\n                expect(writes).toBe(1);\r\n    \r\n                observer.disconnect();\n            }\n            finally {\n                observer.disconnect();\n            }",
+                            "pos": 19199
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 19194,
+                "fileName": "test/attributes.test.ts",
+                "line": 514,
+                "pos": 19100
+            },
+            "message": "`MutationObserver` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 33664,
+                            "fileName": "test/attributes.test.ts",
+                            "newText": "            try {\n                observer.observe(element, { attributeFilter: ['class'], attributes: true });\r\n                write(a, false);\r\n                write(b, false);\r\n    \r\n                await Promise.resolve();\r\n                await new Promise((resolve) => setTimeout(resolve));\r\n    \r\n                expect(element.className).toBe('z');\r\n                expect(writes).toBe(1);\r\n    \r\n                observer.disconnect();\n            }\n            finally {\n                observer.disconnect();\n            }",
+                            "pos": 33283
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 33278,
+                "fileName": "test/attributes.test.ts",
+                "line": 903,
+                "pos": 33184
+            },
+            "message": "`MutationObserver` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 36787,
+                            "fileName": "test/attributes.test.ts",
+                            "newText": "            try {\n                observer.observe(element, { attributeFilter: ['style'], attributes: true });\r\n                write(other, 1);\r\n    \r\n                await Promise.resolve();\r\n                await new Promise((resolve) => setTimeout(resolve));\r\n    \r\n                expect(element.style.color).toBe('red');\r\n                expect(writes).toBe(0);\r\n    \r\n                observer.disconnect();\n            }\n            finally {\n                observer.disconnect();\n            }",
+                            "pos": 36432
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 36427,
+                "fileName": "test/attributes.test.ts",
+                "line": 988,
+                "pos": 36333
+            },
+            "message": "`MutationObserver` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 12078,
+                            "fileName": "test/hmr.test.ts",
+                            "newText": "using",
+                            "pos": 12075
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 12277,
+                            "fileName": "test/hmr.test.ts",
+                            "newText": "            try {\n                update('release-remount', () => {\r\n                    factory('release-remount', 'default', () => spy);\r\n                });\r\n    \r\n                expect(spy).not.toHaveBeenCalled();\n            }\n            finally {\n                spy[Symbol.dispose]();\n            }",
+                            "pos": 12097
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 12092,
+                "fileName": "test/hmr.test.ts",
+                "line": 319,
+                "pos": 12085
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6167,
+                            "fileName": "test/render.test.ts",
+                            "newText": "using",
+                            "pos": 6164
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 6863,
+                            "fileName": "test/render.test.ts",
+                            "newText": "            try {\n                ondisconnect(container as unknown as Element, other);\r\n    \r\n                let dispose = render(container, { onclick: () => { clicks++; }, title: () => read(s) }, () => 'Content');\r\n    \r\n                container.click();\r\n    \r\n                expect(clicks).toBe(1);\r\n                expect(container.title).toBe('a');\r\n    \r\n                dispose();\r\n                container.click();\r\n                write(s, 'b');\r\n    \r\n                expect(clicks).toBe(1);\r\n                expect(container.title).toBe('a');\r\n                expect(other).not.toHaveBeenCalled();\r\n                expect((container as unknown as Element)[CLEANUP]).toHaveLength(1);\n            }\n            finally {\n                other[Symbol.dispose]();\n            }",
+                            "pos": 6251
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 25,
+                "end": 6212,
+                "fileName": "test/render.test.ts",
+                "line": 191,
+                "pos": 6205
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 7522,
+                            "fileName": "test/render.test.ts",
+                            "newText": "using",
+                            "pos": 7519
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 8477,
+                            "fileName": "test/render.test.ts",
+                            "newText": "            try {\n                expect(parentOf(slot!)).not.toBeNull();\r\n                expect((container.firstElementChild as unknown as Element)[CLEANUP]).toBeUndefined();\r\n    \r\n                stop();\r\n                write(s, 1);\r\n                flush();\r\n    \r\n                expect(released).toHaveBeenCalledTimes(1);\r\n                expect(runs).toBe(1);\r\n                expect(container.childNodes.length).toBe(0);\n            }\n            finally {\n                released[Symbol.dispose]();\n            }",
+                            "pos": 8105
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 7541,
+                "fileName": "test/render.test.ts",
+                "line": 234,
+                "pos": 7534
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 13950,
+                            "fileName": "test/compiler/ts-analyzer.test.ts",
+                            "newText": "using",
+                            "pos": 13947
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 14682,
+                            "fileName": "test/compiler/ts-analyzer.test.ts",
+                            "newText": "            try {\n                let result = analyze(expr, sitesOf(expr), throwingChecker);\n\n                expect(result).toBe(TYPES.Unknown);\n                expect(spy).toHaveBeenCalledOnce();\n                expect(spy.mock.calls[0][0]).toContain(PACKAGE_NAME);\n                expect(spy.mock.calls[0][0]).toContain('someVariable');\n                expect(spy.mock.calls[0][0]).toContain('checker exploded');\n\n                spy.mockRestore();\n            }\n            finally {\n                spy[Symbol.dispose]();\n            }",
+                            "pos": 14276
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 14068,
+                "fileName": "test/compiler/ts-analyzer.test.ts",
+                "line": 386,
+                "pos": 14014
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 5701,
+                            "fileName": "test/compiler/virtual.test.ts",
+                            "newText": "using",
+                            "pos": 5698
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7160,
+                            "fileName": "test/compiler/virtual.test.ts",
+                            "newText": "            try {\n                let source = [\n                        `import { html } from '@esportsplus/template';`,\n                        `export const value = 1;`,\n                        `declare let items: any, row: any;`,\n                        `let el = html.virtual(items, row);`\n                    ].join('\\n');\n\n                writeFileSync(file, source);\n                writeFileSync(root + '/tsconfig.json', JSON.stringify({\n                    compilerOptions: { module: 'esnext', moduleResolution: 'bundler', strict: true, target: 'esnext', types: [] },\n                    files: ['./virtual-only.ts']\n                }));\n\n                try {\n                    let instance = vite({ root });\n\n                    instance.configResolved({ command: 'serve', root, server: {} });\n                    instance.transform.handler(source, file);\n\n                    let result = instance.handleHotUpdate({\n                        file,\n                        modules: [{ isSelfAccepting: false }],\n                        read: () => readFileSync(file, 'utf8'),\n                        server: { ws: { send } }\n                    });\n\n                    expect(result).toEqual([]);\n                    expect(send).toHaveBeenCalledWith({ type: 'full-reload' });\n                }\n                finally {\n                    rmSync(root, { force: true, recursive: true });\n                }\n            }\n            finally {\n                send[Symbol.dispose]();\n            }",
+                            "pos": 5867
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 5864,
+                "fileName": "test/compiler/virtual.test.ts",
+                "line": 117,
+                "pos": 5857
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 8219,
+                            "fileName": "test/compiler/vite-hmr.test.ts",
+                            "newText": "using",
+                            "pos": 8216
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 9572,
+                            "fileName": "test/compiler/vite-hmr.test.ts",
+                            "newText": "            try {\n                let source = \"import { html } from '@esportsplus/template';\\nexport const value = 1;\\nlet el = html`<div>hi</div>`;\\n\";\r\n    \r\n                writeFileSync(file, source);\r\n                writeFileSync(fixture + '/tsconfig.json', JSON.stringify({\r\n                    compilerOptions: { module: 'esnext', moduleResolution: 'bundler', strict: true, target: 'esnext', types: [] },\r\n                    files: ['./hot.ts']\r\n                }));\r\n    \r\n                try {\r\n                    let instance = plugin(fixture, { command: 'serve', server: {} });\r\n    \r\n                    instance.transform.handler(source, file);\r\n    \r\n                    let result = instance.handleHotUpdate({\r\n                            file,\r\n                            modules: [{ isSelfAccepting: false }],\r\n                            read: () => readFileSync(file, 'utf8'),\r\n                            server: { ws: { send } }\r\n                        });\r\n    \r\n                    expect(result).toEqual([]);\r\n                    expect(send).toHaveBeenCalledTimes(1);\r\n                    expect(send).toHaveBeenCalledWith({ type: 'full-reload' });\r\n                }\r\n                finally {\r\n                    rmSync(fixture, { force: true, recursive: true });\r\n                }\n            }\n            finally {\n                send[Symbol.dispose]();\n            }",
+                            "pos": 8382
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 8377,
+                "fileName": "test/compiler/vite-hmr.test.ts",
+                "line": 174,
+                "pos": 8370
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 421,
+                            "fileName": "test/compiler/vite-removal.test.ts",
+                            "newText": "using",
+                            "pos": 418
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 763,
+                            "fileName": "test/compiler/vite-removal.test.ts",
+                            "newText": "    try {\n        instance.configResolved({ command, root, server: {} });\r\n    \r\n        let result = instance.transform.handler.call({ warn }, code, root + '/src/' + name);\r\n    \r\n        return { messages: warn.mock.calls.map(call => call[0] as string), result };\n    }\n    finally {\n        warn[Symbol.dispose]();\n    }",
+                            "pos": 528
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 16,
+                "end": 523,
+                "fileName": "test/compiler/vite-removal.test.ts",
+                "line": 16,
+                "pos": 516
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 3017,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 3014
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 3362,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                attach(mode, element, first);\n                trigger(mode, element);\n\n                attach(mode, element, next);\n                trigger(mode, element);\n\n                expect(first).toHaveBeenCalledTimes(1);\n                expect(next).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                first[Symbol.dispose]();\n            }",
+                            "pos": 3103
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 25,
+                "end": 3068,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 102,
+                "pos": 3061
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 3017,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 3014
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 3362,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                attach(mode, element, first);\n                trigger(mode, element);\n\n                attach(mode, element, next);\n                trigger(mode, element);\n\n                expect(first).toHaveBeenCalledTimes(1);\n                expect(next).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                next[Symbol.dispose]();\n            }",
+                            "pos": 3103
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 3100,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 103,
+                "pos": 3093
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 3478,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 3475
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 3875,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                delegate(a, 'click', first);\n                delegate(b, 'click', second);\n\n                release(a);\n                owners.shift();\n\n                a.click();\n                b.click();\n\n                expect(first).not.toHaveBeenCalled();\n                expect(second).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                first[Symbol.dispose]();\n            }",
+                            "pos": 3589
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 25,
+                "end": 3552,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 118,
+                "pos": 3545
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 3478,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 3475
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 3875,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                delegate(a, 'click', first);\n                delegate(b, 'click', second);\n\n                release(a);\n                owners.shift();\n\n                a.click();\n                b.click();\n\n                expect(first).not.toHaveBeenCalled();\n                expect(second).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                second[Symbol.dispose]();\n            }",
+                            "pos": 3589
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 3586,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 119,
+                "pos": 3579
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 5189,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 5186
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 6036,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                setProperties(element, properties);\n\n                expect(handler).not.toHaveBeenCalled();\n\n                document.body.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'k' }));\n                window.dispatchEvent(new Event('resize'));\n\n                expect(handler).toHaveBeenCalledTimes(2);\n                expect(element.hasAttribute('ondocumentkeydown')).toBe(false);\n                expect(element.hasAttribute('onwindowresize')).toBe(false);\n\n                release(element);\n                owners.shift();\n                document.dispatchEvent(new KeyboardEvent('keydown'));\n                window.dispatchEvent(new Event('resize'));\n\n                expect(handler).toHaveBeenCalledTimes(2);\n            }\n            finally {\n                handler[Symbol.dispose]();\n            }",
+                            "pos": 5343
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 5242,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 162,
+                "pos": 5235
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6153,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 6150
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7109,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                runtime(a, 'onWindowResize', first);\n                runtime(b, 'onwindowresize', second);\n\n                expect(resizes(add)).toBe(1);\n\n                window.dispatchEvent(new Event('resize'));\n\n                expect(first).toHaveBeenCalledTimes(1);\n                expect(second).toHaveBeenCalledTimes(1);\n\n                release(a);\n                owners.shift();\n\n                expect(resizes(detach)).toBe(0);\n\n                window.dispatchEvent(new Event('resize'));\n\n                expect(second).toHaveBeenCalledTimes(2);\n\n                release(b);\n                owners.shift();\n\n                expect(resizes(detach)).toBe(1);\n            }\n            finally {\n                add[Symbol.dispose]();\n            }",
+                            "pos": 6498
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 6254,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 187,
+                "pos": 6218
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6153,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 6150
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7109,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                runtime(a, 'onWindowResize', first);\n                runtime(b, 'onwindowresize', second);\n\n                expect(resizes(add)).toBe(1);\n\n                window.dispatchEvent(new Event('resize'));\n\n                expect(first).toHaveBeenCalledTimes(1);\n                expect(second).toHaveBeenCalledTimes(1);\n\n                release(a);\n                owners.shift();\n\n                expect(resizes(detach)).toBe(0);\n\n                window.dispatchEvent(new Event('resize'));\n\n                expect(second).toHaveBeenCalledTimes(2);\n\n                release(b);\n                owners.shift();\n\n                expect(resizes(detach)).toBe(1);\n            }\n            finally {\n                detach[Symbol.dispose]();\n            }",
+                            "pos": 6498
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 6320,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 188,
+                "pos": 6281
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6153,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 6150
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7109,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                runtime(a, 'onWindowResize', first);\n                runtime(b, 'onwindowresize', second);\n\n                expect(resizes(add)).toBe(1);\n\n                window.dispatchEvent(new Event('resize'));\n\n                expect(first).toHaveBeenCalledTimes(1);\n                expect(second).toHaveBeenCalledTimes(1);\n\n                release(a);\n                owners.shift();\n\n                expect(resizes(detach)).toBe(0);\n\n                window.dispatchEvent(new Event('resize'));\n\n                expect(second).toHaveBeenCalledTimes(2);\n\n                release(b);\n                owners.shift();\n\n                expect(resizes(detach)).toBe(1);\n            }\n            finally {\n                first[Symbol.dispose]();\n            }",
+                            "pos": 6498
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 25,
+                "end": 6353,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 189,
+                "pos": 6346
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6153,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 6150
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7109,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                runtime(a, 'onWindowResize', first);\n                runtime(b, 'onwindowresize', second);\n\n                expect(resizes(add)).toBe(1);\n\n                window.dispatchEvent(new Event('resize'));\n\n                expect(first).toHaveBeenCalledTimes(1);\n                expect(second).toHaveBeenCalledTimes(1);\n\n                release(a);\n                owners.shift();\n\n                expect(resizes(detach)).toBe(0);\n\n                window.dispatchEvent(new Event('resize'));\n\n                expect(second).toHaveBeenCalledTimes(2);\n\n                release(b);\n                owners.shift();\n\n                expect(resizes(detach)).toBe(1);\n            }\n            finally {\n                second[Symbol.dispose]();\n            }",
+                            "pos": 6498
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 6387,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 190,
+                "pos": 6380
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 8269,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "using",
+                            "pos": 8266
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 9082,
+                            "fileName": "test/event/hosts.test.ts",
+                            "newText": "            try {\n                window.addEventListener('error', report);\n\n                try {\n                    ondocument(a, 'keydown', () => { throw failure; });\n                    ondocument(b, 'keydown', second);\n\n                    document.dispatchEvent(new KeyboardEvent('keydown'));\n\n                    expect(second).toHaveBeenCalledTimes(1);\n                    expect(errors).toEqual([failure]);\n                }\n                finally {\n                    window.removeEventListener('error', report);\n                }\n            }\n            finally {\n                second[Symbol.dispose]();\n            }",
+                            "pos": 8601
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 8598,
+                "fileName": "test/event/hosts.test.ts",
+                "line": 255,
+                "pos": 8591
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6815,
+                            "fileName": "test/event/index.test.ts",
+                            "newText": "using",
+                            "pos": 6812
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7027,
+                            "fileName": "test/event/index.test.ts",
+                            "newText": "            try {\n                container.appendChild(element);\n                ondisconnect(element, callback);\n\n                expect(element[CLEANUP]).toBeInstanceOf(Array);\n            }\n            finally {\n                callback[Symbol.dispose]();\n            }",
+                            "pos": 6878
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 6875,
+                "fileName": "test/event/index.test.ts",
+                "line": 209,
+                "pos": 6868
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 5906,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 5903
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7603,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                expect(registered(add, 'shared')).toBe(4);\r\n                expect(add.mock.calls.filter(([name]) => name === 'shared').map(([, , options]) => options)).toEqual([\r\n                    { capture: false, passive: false },\r\n                    { capture: true, passive: false },\r\n                    { capture: false, passive: true },\r\n                    { capture: true, passive: true }\r\n                ]);\r\n    \r\n                disposers[0]();\r\n                disposers[1]();\r\n                disposers[2]();\r\n    \r\n                expect(registered(remove, 'shared')).toBe(0);\r\n    \r\n                disposers[3]();\r\n    \r\n                expect(registered(remove, 'shared')).toBe(1);\r\n    \r\n                disposers[4]();\r\n                disposers[5]();\r\n                disposers[6]();\r\n    \r\n                expect(registered(remove, 'shared')).toBe(4);\r\n    \r\n                track(on(document, 'shared', () => {}));\r\n    \r\n                expect(registered(add, 'shared')).toBe(5);\n            }\n            finally {\n                add[Symbol.dispose]();\n            }",
+                            "pos": 6703
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 5983,
+                "fileName": "test/event/on.test.ts",
+                "line": 174,
+                "pos": 5945
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 5906,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 5903
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7603,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                expect(registered(add, 'shared')).toBe(4);\r\n                expect(add.mock.calls.filter(([name]) => name === 'shared').map(([, , options]) => options)).toEqual([\r\n                    { capture: false, passive: false },\r\n                    { capture: true, passive: false },\r\n                    { capture: false, passive: true },\r\n                    { capture: true, passive: true }\r\n                ]);\r\n    \r\n                disposers[0]();\r\n                disposers[1]();\r\n                disposers[2]();\r\n    \r\n                expect(registered(remove, 'shared')).toBe(0);\r\n    \r\n                disposers[3]();\r\n    \r\n                expect(registered(remove, 'shared')).toBe(1);\r\n    \r\n                disposers[4]();\r\n                disposers[5]();\r\n                disposers[6]();\r\n    \r\n                expect(registered(remove, 'shared')).toBe(4);\r\n    \r\n                track(on(document, 'shared', () => {}));\r\n    \r\n                expect(registered(add, 'shared')).toBe(5);\n            }\n            finally {\n                remove[Symbol.dispose]();\n            }",
+                            "pos": 6703
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 6084,
+                "fileName": "test/event/on.test.ts",
+                "line": 176,
+                "pos": 6043
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 7675,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 7672
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 8210,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                track(on(a, 'focus', () => {}));\r\n                track(on(a, 'focus', () => {}));\r\n                track(on(b, 'focus', () => {}));\r\n                track(on(b, 'click', () => {}, { direct: true }));\r\n    \r\n                expect(registered(addA, 'focus')).toBe(1);\r\n                expect(registered(addB, 'focus')).toBe(1);\r\n                expect(registered(addB, 'click')).toBe(1);\n            }\n            finally {\n                addA[Symbol.dispose]();\n            }",
+                            "pos": 7840
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 7778,
+                "fileName": "test/event/on.test.ts",
+                "line": 220,
+                "pos": 7747
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 7675,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 7672
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 8210,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                track(on(a, 'focus', () => {}));\r\n                track(on(a, 'focus', () => {}));\r\n                track(on(b, 'focus', () => {}));\r\n                track(on(b, 'click', () => {}, { direct: true }));\r\n    \r\n                expect(registered(addA, 'focus')).toBe(1);\r\n                expect(registered(addB, 'focus')).toBe(1);\r\n                expect(registered(addB, 'click')).toBe(1);\n            }\n            finally {\n                addB[Symbol.dispose]();\n            }",
+                            "pos": 7840
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 7835,
+                "fileName": "test/event/on.test.ts",
+                "line": 221,
+                "pos": 7804
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 9070,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 9067
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 9839,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                window.addEventListener('error', report);\r\n    \r\n                try {\r\n                    track(on(node, 'click', () => { throw failure; }));\r\n                    track(on(node, 'click', second));\r\n                    node.click();\r\n    \r\n                    expect(second).toHaveBeenCalledTimes(1);\r\n                    expect(errors).toEqual([failure]);\r\n                }\r\n                finally {\r\n                    window.removeEventListener('error', report);\r\n                }\n            }\n            finally {\n                second[Symbol.dispose]();\n            }",
+                            "pos": 9387
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 9382,
+                "fileName": "test/event/on.test.ts",
+                "line": 261,
+                "pos": 9375
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 10755,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 10752
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 11095,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                track(on(node, 'capturetest', () => {}, { capture: true }));\r\n    \r\n                expect(registered(add, 'capturetest')).toBe(0);\r\n                expect(registered(own, 'capturetest')).toBe(1);\n            }\n            finally {\n                add[Symbol.dispose]();\n            }",
+                            "pos": 10899
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 10800,
+                "fileName": "test/event/on.test.ts",
+                "line": 298,
+                "pos": 10762
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 10755,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 10752
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 11095,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                track(on(node, 'capturetest', () => {}, { capture: true }));\r\n    \r\n                expect(registered(add, 'capturetest')).toBe(0);\r\n                expect(registered(own, 'capturetest')).toBe(1);\n            }\n            finally {\n                own[Symbol.dispose]();\n            }",
+                            "pos": 10899
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 10894,
+                "fileName": "test/event/on.test.ts",
+                "line": 300,
+                "pos": 10860
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 15623,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 15620
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 16108,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                node.dispatchEvent(new Event('aborted', { bubbles: true }));\r\n    \r\n                expect(listener).not.toHaveBeenCalled();\r\n                expect(registered(add, 'aborted')).toBe(0);\r\n                expect(dispose).toBeTypeOf('function');\r\n    \r\n                dispose();\n            }\n            finally {\n                add[Symbol.dispose]();\n            }",
+                            "pos": 15844
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 15668,
+                "fileName": "test/event/on.test.ts",
+                "line": 407,
+                "pos": 15630
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 15623,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 15620
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 16108,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                node.dispatchEvent(new Event('aborted', { bubbles: true }));\r\n    \r\n                expect(listener).not.toHaveBeenCalled();\r\n                expect(registered(add, 'aborted')).toBe(0);\r\n                expect(dispose).toBeTypeOf('function');\r\n    \r\n                dispose();\n            }\n            finally {\n                listener[Symbol.dispose]();\n            }",
+                            "pos": 15844
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 15705,
+                "fileName": "test/event/on.test.ts",
+                "line": 408,
+                "pos": 15698
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 16273,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 16270
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 17102,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                expect(registered(add, 'abort')).toBe(1);\r\n    \r\n                if (route === 'disposer') {\r\n                    disposer();\r\n                }\r\n                else {\r\n                    node.click();\r\n                }\r\n    \r\n                expect(registered(remove, 'abort')).toBe(1);\r\n                expect(remove.mock.calls[0][1]).toBe(add.mock.calls[0][1]);\n            }\n            finally {\n                add[Symbol.dispose]();\n            }",
+                            "pos": 16763
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 16380,
+                "fileName": "test/event/on.test.ts",
+                "line": 423,
+                "pos": 16333
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 16273,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "using",
+                            "pos": 16270
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 17102,
+                            "fileName": "test/event/on.test.ts",
+                            "newText": "            try {\n                expect(registered(add, 'abort')).toBe(1);\r\n    \r\n                if (route === 'disposer') {\r\n                    disposer();\r\n                }\r\n                else {\r\n                    node.click();\r\n                }\r\n    \r\n                expect(registered(remove, 'abort')).toBe(1);\r\n                expect(remove.mock.calls[0][1]).toBe(add.mock.calls[0][1]);\n            }\n            finally {\n                remove[Symbol.dispose]();\n            }",
+                            "pos": 16763
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 16501,
+                "fileName": "test/event/on.test.ts",
+                "line": 425,
+                "pos": 16451
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 4469,
+                            "fileName": "test/event/onconnect.test.ts",
+                            "newText": "using",
+                            "pos": 4466
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 5400,
+                            "fileName": "test/event/onconnect.test.ts",
+                            "newText": "            try {\n                container.appendChild(element as unknown as Node);\r\n                root((dispose) => {\r\n                    disposeOwner = dispose;\r\n                    onconnect(element, () => {\r\n                        read(s);\r\n                        onCleanup(released);\r\n                        effect(() => { runs++; read(s); });\r\n                    });\r\n                });\r\n                advanceFrame();\r\n    \r\n                expect(runs).toBe(1);\r\n    \r\n                write(s, 1);\r\n                flush();\r\n    \r\n                expect(runs).toBe(2);\r\n                expect(released).not.toHaveBeenCalled();\r\n    \r\n                disposeOwner();\r\n                write(s, 2);\r\n                flush();\r\n    \r\n                expect(runs).toBe(2);\r\n                expect(released).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                released[Symbol.dispose]();\n            }",
+                            "pos": 4674
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 4637,
+                "fileName": "test/event/onconnect.test.ts",
+                "line": 154,
+                "pos": 4630
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 4158,
+                            "fileName": "test/event/onfirstpaint.test.ts",
+                            "newText": "using",
+                            "pos": 4155
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 5117,
+                            "fileName": "test/event/onfirstpaint.test.ts",
+                            "newText": "            try {\n                container.appendChild(element as unknown as Node);\r\n                root((dispose) => {\r\n                    disposeOwner = dispose;\r\n                    onfirstpaint(element, () => {\r\n                        read(s);\r\n                        onCleanup(released);\r\n                        effect(() => { runs++; read(s); });\r\n                    });\r\n                });\r\n                advanceFrame();\r\n            advanceFrame();\r\n    \r\n                expect(runs).toBe(1);\r\n    \r\n                write(s, 1);\r\n                flush();\r\n    \r\n                expect(runs).toBe(2);\r\n                expect(released).not.toHaveBeenCalled();\r\n    \r\n                disposeOwner();\r\n                write(s, 2);\r\n                flush();\r\n    \r\n                expect(runs).toBe(2);\r\n                expect(released).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                released[Symbol.dispose]();\n            }",
+                            "pos": 4363
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 4326,
+                "fileName": "test/event/onfirstpaint.test.ts",
+                "line": 153,
+                "pos": 4319
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 1636,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 1633
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 2022,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                expect(element[CLEANUP]).toBeUndefined();\r\n                expect(cleanup).not.toHaveBeenCalled();\r\n    \r\n                group.release();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                cleanup[Symbol.dispose]();\n            }",
+                            "pos": 1827
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 1734,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 56,
+                "pos": 1727
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 2152,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 2149
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 2711,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                stop();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\r\n    \r\n                await tick();\r\n                container.appendChild(element as unknown as Node);\r\n                sweep();\r\n                element.remove();\r\n                sweep();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                cleanup[Symbol.dispose]();\n            }",
+                            "pos": 2410
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 2250,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 69,
+                "pos": 2243
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 2849,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 2846
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 3348,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                group.release();\r\n    \r\n                expect(cleanup).not.toHaveBeenCalled();\r\n                expect(element[CLEANUP]).toHaveLength(1);\r\n    \r\n                (element[CLEANUP] as VoidFunction[])[0]();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\n            }\n            finally {\n                cleanup[Symbol.dispose]();\n            }",
+                            "pos": 3095
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 2947,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 90,
+                "pos": 2940
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 5526,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 5523
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 6563,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                outer.appendChild(inner as unknown as Node);\r\n                inner.appendChild(anchor as unknown as Node);\r\n                container.appendChild(outer as unknown as Node);\r\n    \r\n                let group = owned(outer, outer, () => {\r\n                        ondisconnect(inner, cleanup);\r\n                        new EffectSlot(anchor, () => { runs++; return read(s); });\r\n                        effect(() => { read(s); });\r\n                    });\r\n    \r\n                let walker = vi.spyOn(document, 'createTreeWalker');\r\n    \r\n                release(group, null);\r\n                write(s, 1);\r\n                flush();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\r\n                expect(runs).toBe(1);\r\n                expect(walker).not.toHaveBeenCalled();\n            }\n            finally {\n                cleanup[Symbol.dispose]();\n            }",
+                            "pos": 5833
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 5769,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 159,
+                "pos": 5762
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6285,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 6282
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 6563,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                release(group, null);\r\n                write(s, 1);\r\n                flush();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\r\n                expect(runs).toBe(1);\r\n                expect(walker).not.toHaveBeenCalled();\n            }\n            finally {\n                walker[Symbol.dispose]();\n            }",
+                            "pos": 6338
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 6333,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 173,
+                "pos": 6295
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 7735,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 7732
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 8589,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                content.appendChild(inner as unknown as Node);\r\n                ondisconnect(inner, cleanup);\r\n                ondisconnect(stray, strayCleanup);\r\n    \r\n                let stop = root((dispose) => {\r\n                        adopt(content as unknown as Node);\r\n                        return dispose;\r\n                    });\r\n    \r\n                expect(inner[CLEANUP]).toBeUndefined();\r\n                expect(stray[CLEANUP]).toHaveLength(1);\r\n    \r\n                stop();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\r\n                expect(strayCleanup).not.toHaveBeenCalled();\n            }\n            finally {\n                cleanup[Symbol.dispose]();\n            }",
+                            "pos": 8034
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 7912,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 212,
+                "pos": 7905
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 7735,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 7732
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 8589,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                content.appendChild(inner as unknown as Node);\r\n                ondisconnect(inner, cleanup);\r\n                ondisconnect(stray, strayCleanup);\r\n    \r\n                let stop = root((dispose) => {\r\n                        adopt(content as unknown as Node);\r\n                        return dispose;\r\n                    });\r\n    \r\n                expect(inner[CLEANUP]).toBeUndefined();\r\n                expect(stray[CLEANUP]).toHaveLength(1);\r\n    \r\n                stop();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\r\n                expect(strayCleanup).not.toHaveBeenCalled();\n            }\n            finally {\n                strayCleanup[Symbol.dispose]();\n            }",
+                            "pos": 8034
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 32,
+                "end": 8029,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 214,
+                "pos": 8022
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 9371,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 9368
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 9876,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                ondisconnect(element, cleanup);\r\n                await tick();\r\n    \r\n                sweep();\r\n    \r\n                expect(cleanup).not.toHaveBeenCalled();\r\n    \r\n                container.appendChild(element as unknown as Node);\r\n                sweep();\r\n                element.remove();\r\n                sweep();\r\n    \r\n                expect(cleanup).toHaveBeenCalledTimes(1);\r\n                expect(element[CLEANUP]).toBeUndefined();\n            }\n            finally {\n                cleanup[Symbol.dispose]();\n            }",
+                            "pos": 9474
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 9469,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 251,
+                "pos": 9462
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 9975,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "using",
+                            "pos": 9972
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 10346,
+                            "fileName": "test/slot/cleanup.test.ts",
+                            "newText": "            try {\n                ondisconnect(element, cleanup);\r\n                await tick();\r\n    \r\n                for (let i = 0; i < 100; i++) {\r\n                    sweep();\r\n                }\r\n    \r\n                expect(cleanup).not.toHaveBeenCalled();\r\n                expect(element[CLEANUP]).toHaveLength(1);\n            }\n            finally {\n                cleanup[Symbol.dispose]();\n            }",
+                            "pos": 10078
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 10073,
+                "fileName": "test/slot/cleanup.test.ts",
+                "line": 271,
+                "pos": 10066
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 2575,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 2572
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 3177,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, { ondisconnect: released }, () => 'content');\r\n    \r\n            expect(vi.getTimerCount()).toBe(1);\r\n    \r\n            // The cadence timer, then the idle slice it requests\r\n            vi.runOnlyPendingTimers();\r\n            vi.runOnlyPendingTimers();\r\n            parent.remove();\r\n    \r\n            expect(released).not.toHaveBeenCalled();\r\n            expect(vi.getTimerCount()).toBe(1);\r\n    \r\n            vi.runOnlyPendingTimers();\r\n            vi.runOnlyPendingTimers();\r\n    \r\n            expect(released).toHaveBeenCalledTimes(1);\r\n            expect(vi.getTimerCount()).toBe(0);\n        }\n        finally {\n            released[Symbol.dispose]();\n        }",
+                            "pos": 2629
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 2624,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 83,
+                "pos": 2617
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "location": {
+                "column": 22,
+                "end": 5368,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 170,
+                "pos": 5361
+            },
+            "message": "`Disposable` resource becomes untrackable — it flows to an opaque sink and release cannot be verified",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 5778,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 5775
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 6209,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(element('div', parent) as unknown as HTMLElement, { ondisconnect: late }, () => 'x');\r\n    \r\n            for (let i = 0; i < 10; i++) {\r\n                sweep(deadline);\r\n            }\r\n    \r\n            parent.remove();\r\n            sweep();\r\n    \r\n            for (let i = 0, n = released.length; i < n; i++) {\r\n                expect(released[i]).toHaveBeenCalledTimes(1);\r\n            }\r\n    \r\n            expect(late).toHaveBeenCalledTimes(1);\n        }\n        finally {\n            late[Symbol.dispose]();\n        }",
+                            "pos": 5798
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 20,
+                "end": 5793,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 184,
+                "pos": 5786
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 6801,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 6798
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 7516,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                let node = element();\r\n    \r\n                hook(node, disconnected);\r\n                slot = new EffectSlot(anchor(node), () => { runs++; return read(s); });\r\n    \r\n                return node as unknown as Node;\r\n            });\r\n            flush();\r\n    \r\n            expect(parentOf(slot!)).not.toBeNull();\r\n    \r\n            sweep();\r\n            parent.remove();\r\n            sweep();\r\n    \r\n            expect(slot!.disposed).toBe(true);\r\n            expect(disconnected).toHaveBeenCalledTimes(1);\r\n    \r\n            write(s, 1);\r\n            flush();\r\n    \r\n            expect(runs).toBe(1);\n        }\n        finally {\n            disconnected[Symbol.dispose]();\n        }",
+                            "pos": 6955
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 6824,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 221,
+                "pos": 6817
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 8905,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 8902
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 9771,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                let node = target = element();\r\n    \r\n                delegate(node, 'click', () => { clicks++; });\r\n                direct(node, 'focus', () => { focuses++; });\r\n                onfirstpaint(node, painted);\r\n                hook(node, disconnected);\r\n    \r\n                return node as unknown as Node;\r\n            });\r\n    \r\n            sweep();\r\n            parent.remove();\r\n            sweep();\r\n    \r\n            expect(disconnected).toHaveBeenCalledWith(target);\r\n    \r\n            document.body.appendChild(parent);\r\n            target!.click();\r\n            target!.dispatchEvent(new Event('focus'));\r\n    \r\n            expect(clicks).toBe(0);\r\n            expect(focuses).toBe(0);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            disconnected[Symbol.dispose]();\n        }",
+                            "pos": 9090
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 8983,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 296,
+                "pos": 8976
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 8905,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 8902
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 9771,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                let node = target = element();\r\n    \r\n                delegate(node, 'click', () => { clicks++; });\r\n                direct(node, 'focus', () => { focuses++; });\r\n                onfirstpaint(node, painted);\r\n                hook(node, disconnected);\r\n    \r\n                return node as unknown as Node;\r\n            });\r\n    \r\n            sweep();\r\n            parent.remove();\r\n            sweep();\r\n    \r\n            expect(disconnected).toHaveBeenCalledWith(target);\r\n    \r\n            document.body.appendChild(parent);\r\n            target!.click();\r\n            target!.dispatchEvent(new Event('focus'));\r\n    \r\n            expect(clicks).toBe(0);\r\n            expect(focuses).toBe(0);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            painted[Symbol.dispose]();\n        }",
+                            "pos": 9090
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 9041,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 298,
+                "pos": 9034
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 9887,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 9884
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 11286,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            vi.stubGlobal('reportError', report);\r\n    \r\n            try {\r\n                render(parent, () => {\r\n                    let a = element(),\r\n                        b = element();\r\n    \r\n                    hook(a, () => { throw boom; });\r\n                    hook(b, fine);\r\n    \r\n                    return [a, b] as unknown as Node[];\r\n                });\r\n                sweep();\r\n                parent.remove();\r\n    \r\n                expect(() => sweep()).not.toThrow();\r\n                expect(fine).toHaveBeenCalledTimes(1);\r\n                expect(report).toHaveBeenCalledTimes(1);\r\n                expect(report.mock.calls[0][0].message).toMatch(/^@esportsplus\\/template: /);\r\n                expect(report.mock.calls[0][0].cause).toBe(boom);\r\n    \r\n                let other = host();\r\n    \r\n                render(other, () => {\r\n                    let node = element();\r\n    \r\n                    onwindow(node, 'failing', () => {});\r\n                    hook(node, () => { throw boom; });\r\n    \r\n                    return node as unknown as Node;\r\n                });\r\n                window.dispatchEvent(new Event('failing'));\r\n                other.remove();\r\n                window.dispatchEvent(new Event('failing'));\r\n                await tick();\r\n    \r\n                expect(report).toHaveBeenCalledTimes(2);\r\n            }\r\n            finally {\r\n                vi.unstubAllGlobals();\r\n            }\n        }\n        finally {\n            fine[Symbol.dispose]();\n        }",
+                            "pos": 10007
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 20,
+                "end": 9941,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 330,
+                "pos": 9934
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 9887,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 9884
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 11286,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            vi.stubGlobal('reportError', report);\r\n    \r\n            try {\r\n                render(parent, () => {\r\n                    let a = element(),\r\n                        b = element();\r\n    \r\n                    hook(a, () => { throw boom; });\r\n                    hook(b, fine);\r\n    \r\n                    return [a, b] as unknown as Node[];\r\n                });\r\n                sweep();\r\n                parent.remove();\r\n    \r\n                expect(() => sweep()).not.toThrow();\r\n                expect(fine).toHaveBeenCalledTimes(1);\r\n                expect(report).toHaveBeenCalledTimes(1);\r\n                expect(report.mock.calls[0][0].message).toMatch(/^@esportsplus\\/template: /);\r\n                expect(report.mock.calls[0][0].cause).toBe(boom);\r\n    \r\n                let other = host();\r\n    \r\n                render(other, () => {\r\n                    let node = element();\r\n    \r\n                    onwindow(node, 'failing', () => {});\r\n                    hook(node, () => { throw boom; });\r\n    \r\n                    return node as unknown as Node;\r\n                });\r\n                window.dispatchEvent(new Event('failing'));\r\n                other.remove();\r\n                window.dispatchEvent(new Event('failing'));\r\n                await tick();\r\n    \r\n                expect(report).toHaveBeenCalledTimes(2);\r\n            }\r\n            finally {\r\n                vi.unstubAllGlobals();\r\n            }\n        }\n        finally {\n            report[Symbol.dispose]();\n        }",
+                            "pos": 10007
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 22,
+                "end": 10002,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 332,
+                "pos": 9995
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 11525,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 11522
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 12697,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                let nodes: Element[] = [];\r\n    \r\n                ondisconnect(parent, () => { released++; });\r\n    \r\n                for (let i = 0; i < 10000; i++) {\r\n                    let node = element('span');\r\n    \r\n                    onwindow(node, 'storm', () => { calls++; });\r\n                    nodes.push(node);\r\n                }\r\n    \r\n                return nodes as unknown as Node[];\r\n            });\r\n    \r\n            window.dispatchEvent(new Event('storm'));\r\n    \r\n            expect(calls).toBe(10000);\r\n    \r\n            parent.remove();\r\n    \r\n            let walker = vi.spyOn(document, 'createTreeWalker');\r\n    \r\n            window.dispatchEvent(new Event('storm'));\r\n    \r\n            expect(calls).toBe(10000);\r\n    \r\n            await tick();\r\n    \r\n            expect(released).toBe(1);\r\n            expect(walker).not.toHaveBeenCalled();\r\n            expect(remove.mock.calls.filter(([name]) => name === 'storm')).toHaveLength(1);\r\n    \r\n            document.body.appendChild(parent);\r\n            window.dispatchEvent(new Event('storm'));\r\n    \r\n            expect(calls).toBe(10000);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            remove[Symbol.dispose]();\n        }",
+                            "pos": 11660
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 22,
+                "end": 11655,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 387,
+                "pos": 11616
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 12195,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 12192
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 12697,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            window.dispatchEvent(new Event('storm'));\r\n    \r\n            expect(calls).toBe(10000);\r\n    \r\n            await tick();\r\n    \r\n            expect(released).toBe(1);\r\n            expect(walker).not.toHaveBeenCalled();\r\n            expect(remove.mock.calls.filter(([name]) => name === 'storm')).toHaveLength(1);\r\n    \r\n            document.body.appendChild(parent);\r\n            window.dispatchEvent(new Event('storm'));\r\n    \r\n            expect(calls).toBe(10000);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            walker[Symbol.dispose]();\n        }",
+                            "pos": 12248
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 22,
+                "end": 12243,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 410,
+                "pos": 12205
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 13831,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 13828
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 14558,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(inner as unknown as HTMLElement, () => {\r\n                let node = element();\r\n    \r\n                hook(node, disconnected);\r\n                onwindow(node, 'shadow', () => { count++; });\r\n    \r\n                return node as unknown as Node;\r\n            });\r\n    \r\n            window.dispatchEvent(new Event('shadow'));\r\n            parent.remove();\r\n            window.dispatchEvent(new Event('shadow'));\r\n            await tick();\r\n    \r\n            expect(count).toBe(1);\r\n            expect(disconnected).toHaveBeenCalledTimes(1);\n        }\n        finally {\n            disconnected[Symbol.dispose]();\n        }",
+                            "pos": 14063
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 13878,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 474,
+                "pos": 13871
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 15209,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 15206
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 15934,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                let list = element('ul');\r\n    \r\n                hook(list, outer);\r\n                row = element('li', list);\r\n                new EffectSlot(anchor(row), () => {\r\n                    hook(row!, rowReleased);\r\n                    return read(s);\r\n                });\r\n    \r\n                return list as unknown as Node;\r\n            });\r\n    \r\n            row!.remove();\r\n            write(s, 'b');\r\n            flush();\r\n            await tick();\r\n    \r\n            expect(rowReleased).toHaveBeenCalledTimes(1);\r\n            expect(outer).not.toHaveBeenCalled();\r\n    \r\n            parent.remove();\n        }\n        finally {\n            outer[Symbol.dispose]();\n        }",
+                            "pos": 15367
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 21,
+                "end": 15225,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 515,
+                "pos": 15218
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 15209,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 15206
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 15934,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                let list = element('ul');\r\n    \r\n                hook(list, outer);\r\n                row = element('li', list);\r\n                new EffectSlot(anchor(row), () => {\r\n                    hook(row!, rowReleased);\r\n                    return read(s);\r\n                });\r\n    \r\n                return list as unknown as Node;\r\n            });\r\n    \r\n            row!.remove();\r\n            write(s, 'b');\r\n            flush();\r\n            await tick();\r\n    \r\n            expect(rowReleased).toHaveBeenCalledTimes(1);\r\n            expect(outer).not.toHaveBeenCalled();\r\n    \r\n            parent.remove();\n        }\n        finally {\n            rowReleased[Symbol.dispose]();\n        }",
+                            "pos": 15367
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 27,
+                "end": 15332,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 518,
+                "pos": 15325
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 16219,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 16216
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 17203,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                let node = element('button');\r\n    \r\n                hook(node, disconnected);\r\n                (mode === 'document' ? ondocument : onwindow)(node, 'foreign', () => { count++; });\r\n    \r\n                return node as unknown as Node;\r\n            });\r\n    \r\n            trigger();\r\n    \r\n            expect(count).toBe(1);\r\n    \r\n            parent.remove();\r\n            trigger();\r\n    \r\n            expect(count).toBe(1);\r\n    \r\n            await tick();\r\n    \r\n            expect(release).toHaveBeenCalledWith('foreign', expect.any(Function), false);\r\n            expect(disconnected).toHaveBeenCalledTimes(1);\r\n    \r\n            document.body.append(parent);\r\n            trigger();\r\n    \r\n            expect(count).toBe(1);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            disconnected[Symbol.dispose]();\n        }",
+                            "pos": 16501
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 16266,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 553,
+                "pos": 16259
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 16219,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 16216
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 17203,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                let node = element('button');\r\n    \r\n                hook(node, disconnected);\r\n                (mode === 'document' ? ondocument : onwindow)(node, 'foreign', () => { count++; });\r\n    \r\n                return node as unknown as Node;\r\n            });\r\n    \r\n            trigger();\r\n    \r\n            expect(count).toBe(1);\r\n    \r\n            parent.remove();\r\n            trigger();\r\n    \r\n            expect(count).toBe(1);\r\n    \r\n            await tick();\r\n    \r\n            expect(release).toHaveBeenCalledWith('foreign', expect.any(Function), false);\r\n            expect(disconnected).toHaveBeenCalledTimes(1);\r\n    \r\n            document.body.append(parent);\r\n            trigger();\r\n    \r\n            expect(count).toBe(1);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            release[Symbol.dispose]();\n        }",
+                            "pos": 16501
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 16423,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 556,
+                "pos": 16384
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 17974,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 17971
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 18689,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent as unknown as HTMLElement, () => {\r\n                let node = element('button');\r\n    \r\n                hook(node, disconnected);\r\n                onwindow(node, 'unmounted', () => { count++; });\r\n    \r\n                return node as unknown as Node;\r\n            });\r\n    \r\n            trigger();\r\n            await tick();\r\n            sweep();\r\n    \r\n            expect(count).toBe(0);\r\n            expect(disconnected).not.toHaveBeenCalled();\r\n    \r\n            document.body.append(parent as unknown as Node);\r\n            trigger();\r\n    \r\n            expect(count).toBe(1);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            disconnected[Symbol.dispose]();\n        }",
+                            "pos": 18134
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 18021,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 620,
+                "pos": 18014
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 18815,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 18812
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 19669,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            new EffectSlot(anchor(parent), () => {\r\n                runs++;\r\n    \r\n                let span = element('span');\r\n    \r\n                span.textContent = read(s);\r\n                hook(span, cleanup);\r\n    \r\n                return span as unknown as Node;\r\n            });\r\n    \r\n            write(s, 'b');\r\n            flush();\r\n    \r\n            expect(runs).toBe(2);\r\n            expect(cleanup).toHaveBeenCalledTimes(1);\r\n    \r\n            parent.remove();\r\n            write(s, 'c');\r\n            flush();\r\n    \r\n            expect(runs).toBe(2);\r\n            expect(parent.textContent).toBe('b');\r\n            expect(cleanup).toHaveBeenCalledTimes(2);\r\n    \r\n            await tick();\r\n            document.body.appendChild(parent);\r\n            write(s, 'd');\r\n            flush();\r\n    \r\n            expect(runs).toBe(2);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            cleanup[Symbol.dispose]();\n        }",
+                            "pos": 18921
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 18833,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 649,
+                "pos": 18826
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 24657,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 24654
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 24937,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            rows.shift();\r\n            flush();\r\n            write(s, 1);\r\n            flush();\r\n    \r\n            expect(nested).toEqual([10]);\r\n            expect(runs).toBe(6);\r\n            expect(walker).not.toHaveBeenCalled();\r\n    \r\n            parent.remove();\n        }\n        finally {\n            walker[Symbol.dispose]();\n        }",
+                            "pos": 24710
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 22,
+                "end": 24705,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 865,
+                "pos": 24667
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 28007,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 28004
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 28797,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            within(() => {\r\n                delegate(panel, 'click', () => { clicks++; });\r\n                hook(panel, released);\r\n                new EffectSlot(anchor(parent), () => {\r\n                    read(s);\r\n                    return panel as unknown as Node;\r\n                });\r\n            });\r\n    \r\n            write(s, 1);\r\n            flush();\r\n            write(s, 2);\r\n            flush();\r\n    \r\n            expect(parent.lastChild).toBe(panel);\r\n            expect(released).not.toHaveBeenCalled();\r\n    \r\n            panel.click();\r\n    \r\n            expect(clicks).toBe(1);\r\n    \r\n            parent.remove();\n        }\n        finally {\n            released[Symbol.dispose]();\n        }",
+                            "pos": 28251
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 28121,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 977,
+                "pos": 28114
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 28907,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "using",
+                            "pos": 28904
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 29585,
+                            "fileName": "test/slot/heal.test.ts",
+                            "newText": "        try {\n            render(parent, () => {\r\n                hook(parent, released);\r\n    \r\n                // oxlint-disable-next-line no-constant-binary-expression -- constructs the slot for its effect, then renders nothing\r\n                return new EffectSlot(anchor(element('p', parent)), () => read(s)) && '';\r\n            });\r\n    \r\n            let text = parent.querySelector('p')!.lastChild;\r\n    \r\n            write(s, 'b');\r\n            flush();\r\n    \r\n            expect(parent.querySelector('p')!.lastChild).toBe(text);\r\n            expect(text!.nodeValue).toBe('b');\r\n            expect(released).not.toHaveBeenCalled();\r\n    \r\n            parent.remove();\n        }\n        finally {\n            released[Symbol.dispose]();\n        }",
+                            "pos": 28991
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 24,
+                "end": 28956,
+                "fileName": "test/slot/heal.test.ts",
+                "line": 1007,
+                "pos": 28949
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 5679,
+                            "fileName": "test/slot/swap.test.ts",
+                            "newText": "using",
+                            "pos": 5676
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 6048,
+                            "fileName": "test/slot/swap.test.ts",
+                            "newText": "        try {\n            host = document.createElement('main');\r\n            document.body.appendChild(host);\r\n            host.appendChild(node as unknown as Node);\r\n            ondisconnect(node, cleanup);\r\n            node.remove();\r\n            sweep();\r\n    \r\n            expect(cleanup).toHaveBeenCalledTimes(1);\n        }\n        finally {\n            cleanup[Symbol.dispose]();\n        }",
+                            "pos": 5775
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 23,
+                "end": 5697,
+                "fileName": "test/slot/swap.test.ts",
+                "line": 184,
+                "pos": 5690
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 14014,
+                            "fileName": "test/virtual/slot.test.ts",
+                            "newText": "using",
+                            "pos": 14011
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 14242,
+                            "fileName": "test/virtual/slot.test.ts",
+                            "newText": "            try {\n                deliver([[scroller, 200], ...rows().map((row) => [row, 100] as [Element, number])]);\r\n    \r\n                expect(commit).toHaveBeenCalledTimes(1);\r\n    \r\n                commit.mockRestore();\n            }\n            finally {\n                commit[Symbol.dispose]();\n            }",
+                            "pos": 14053
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 14048,
+                "fileName": "test/virtual/slot.test.ts",
+                "line": 464,
+                "pos": 14024
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 20858,
+                            "fileName": "test/virtual/slot.test.ts",
+                            "newText": "using",
+                            "pos": 20855
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 21217,
+                            "fileName": "test/virtual/slot.test.ts",
+                            "newText": "            try {\n                slot.scrollTo(99, 'end');\r\n    \r\n                expect(scroller.scrollTop).toBe(500);\r\n                expect(slot.range[0]).toBe(5);\r\n    \r\n                commit.mockClear();\r\n    \r\n                scroller.dispatchEvent(new Event('scroll'));\r\n    \r\n                expect(commit).not.toHaveBeenCalled();\r\n    \r\n                commit.mockRestore();\n            }\n            finally {\n                commit[Symbol.dispose]();\n            }",
+                            "pos": 20897
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 26,
+                "end": 20892,
+                "fileName": "test/virtual/slot.test.ts",
+                "line": 677,
+                "pos": 20868
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        },
+        {
+            "channel": "resources",
+            "fixes": [
+                {
+                    "edits": [
+                        {
+                            "end": 22625,
+                            "fileName": "test/virtual/slot.test.ts",
+                            "newText": "using",
+                            "pos": 22622
+                        }
+                    ],
+                    "title": "Convert to `using`"
+                },
+                {
+                    "edits": [
+                        {
+                            "end": 23119,
+                            "fileName": "test/virtual/slot.test.ts",
+                            "newText": "            try {\n                slot.dispose();\r\n    \r\n                expect(observers.every((observer) => !observer.targets.has(scroller))).toBe(true);\r\n                expect(scroller.querySelectorAll('div[style]').length).toBe(0);\r\n    \r\n                scroll(500);\r\n    \r\n                expect(onScroll).not.toHaveBeenCalled();\r\n                expect(slot.range).toEqual(range);\r\n    \r\n                onScroll.mockRestore();\n            }\n            finally {\n                onScroll[Symbol.dispose]();\n            }",
+                            "pos": 22746
+                        }
+                    ],
+                    "title": "Wrap in try/finally"
+                }
+            ],
+            "location": {
+                "column": 28,
+                "end": 22704,
+                "fileName": "test/virtual/slot.test.ts",
+                "line": 733,
+                "pos": 22637
+            },
+            "message": "`Disposable` resource can leak — no release, transfer, or `using` on every path",
+            "related": []
+        }
+    ],
+    "fingerprint": "0411799f9c62995926226edb2238ad1dd27192786cce16b33e85ac8f145f238d"
+}

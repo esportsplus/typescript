@@ -61,6 +61,9 @@ type Env  = {
     readonly peerThrows: (fnId: string) => boolean;
     readonly logDegrade: (message: string) => void;
     readonly paramSymbols: Map<ts.Symbol, number> | undefined;
+    // `hasDispose` answers by type id, async members included and not; fixed for
+    // the program snapshot.
+    readonly disposable: readonly [Map<number, boolean>, Map<number, boolean>];
 };
 
 type Outcome = 'safe' | 'leak' | 'degrade';
@@ -102,6 +105,58 @@ function refsSym(env: Env, expr: ts.Expression, sym: ts.Symbol): boolean {
     }
 
     return env.checker.getSymbolAtLocation(e) === sym;
+}
+
+// The identifiers `refsSym` is asked about: call arguments and receivers, assigned,
+// initializer, returned and statement values. Resolving a file's set in one batch
+// saves a tsgo round-trip per identifier; the memoized checker answers the walks.
+function prefetchOperands(checker: ts.TypeChecker, sf: ts.SourceFile): void {
+    const out: ts.Node[] = [];
+    const add = (expr: ts.Expression | undefined): void => {
+        if (!expr) {
+            return;
+        }
+
+        const e = unwrap(expr, { assertions: true, awaits: true });
+
+        if (ts.isIdentifier(e)) {
+            out.push(e);
+        }
+    };
+    const visit = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
+            for (const arg of n.arguments ?? []) {
+                add(arg);
+            }
+
+            if (
+                ts.isPropertyAccessExpression(n.expression) ||
+                ts.isElementAccessExpression(n.expression)
+            ) {
+                add(n.expression.expression);
+            }
+        }
+        else if (
+            ts.isBinaryExpression(n) &&
+            n.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        ) {
+            add(n.right);
+        }
+        else if (ts.isVariableDeclaration(n)) {
+            add(n.initializer);
+        }
+        else if (ts.isReturnStatement(n) || ts.isExpressionStatement(n)) {
+            add(n.expression);
+        }
+
+        ts.forEachChild(n, visit);
+    };
+
+    ts.forEachChild(sf, visit);
+
+    if (out.length > 0) {
+        checker.getSymbolAtLocation(out);
+    }
 }
 
 // Whether `sym` is referenced anywhere in a subtree — the handle carried inside an
@@ -226,16 +281,28 @@ function hasDispose(
         return false;
     }
 
+    const cache = env.disposable[includeAsync ? 1 : 0];
+    const cached = cache.get(type.id);
+
+    if (cached !== undefined) {
+        return cached;
+    }
+
+    let result = false;
+
     for (const prop of env.checker.getPropertiesOfType(type)) {
         if (
             prop.name.startsWith('__@dispose') ||
             (includeAsync && prop.name.startsWith('__@asyncDispose'))
         ) {
-            return true;
+            result = true;
+            break;
         }
     }
 
-    return false;
+    cache.set(type.id, result);
+
+    return result;
 }
 
 function parsePairKey(raw: unknown): ReadonlyArray<number> | undefined {
@@ -1116,6 +1183,7 @@ function makeEnv(
     peerSummaryValue: (channel: string, fnId: string) => unknown,
     logDegrade: (message: string) => void,
     includeParamSymbols: boolean,
+    disposable: Env['disposable'],
 ): Env {
     const resolveExceptions = (
         call: ts.CallExpression | ts.NewExpression,
@@ -1128,6 +1196,7 @@ function makeEnv(
 
     return {
         checker,
+        disposable,
         fn,
         logDegrade,
         paramSymbols: includeParamSymbols ? paramSymbols(checker, fn.node) : undefined,
@@ -1343,6 +1412,15 @@ const createResourcesChannel = (
     // want to measure the v1 tracking noise floor inject a logger.
     onDegrade: (message: string) => void = () => {},
 ): Channel<ResourcesValue> => {
+    const prefetched = new Set<ts.SourceFile>();
+    const prefetch = (checker: ts.TypeChecker, fn: FunctionInfo): void => {
+        if (!prefetched.has(fn.sourceFile)) {
+            prefetched.add(fn.sourceFile);
+            prefetchOperands(checker, fn.sourceFile);
+        }
+    };
+    const disposable: Env['disposable'] = [new Map(), new Map()];
+
     return {
         bottom,
         dependsOn: ['exceptions'],
@@ -1358,6 +1436,7 @@ const createResourcesChannel = (
                 ctx.peerSummaryValue,
                 onDegrade,
                 false,
+                disposable,
             );
             const out: Diagnostic[] = [];
 
@@ -1392,6 +1471,8 @@ const createResourcesChannel = (
         transfer(
             ctx: TransferContext<ResourcesValue>,
         ): Summary<ResourcesValue> {
+            prefetch(ctx.checker, ctx.fn);
+
             const env = makeEnv(
                 ctx.checker,
                 ctx.fn,
@@ -1401,6 +1482,7 @@ const createResourcesChannel = (
                 ctx.peerSummaryValue,
                 onDegrade,
                 true,
+                disposable,
             );
 
             return {

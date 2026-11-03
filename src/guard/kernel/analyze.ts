@@ -6,6 +6,7 @@ import { buildProgram } from './program';
 import { createThrowIndex, disposeThrowIndex } from '../exceptions/derive';
 import { runChannel } from './fixpoint';
 import { loadOverlays } from '../overlay/load';
+import checkers from '../../compiler/checker';
 import timing from '../../timing';
 
 import type {
@@ -26,7 +27,9 @@ type AnalyzeResult  = {
 // reusing the editor's incrementally-updated program instead of building one.
 // `throwIndex` (the cross-module `.js` scan cache) is owned by a long-lived caller
 // (AnalyzeWorkspace in the LSP) so it survives across saves; when absent, a
-// short-lived one is created and disposed per call (the CLI path).
+// short-lived one is created and disposed per call (the CLI path). Every checker
+// query is an IPC round-trip to tsgo and the graph and channels re-ask the same
+// questions, so they share one memoized checker per program.
 function analyzeProgram(
     program: ts.Program,
     checker: ts.TypeChecker,
@@ -35,7 +38,7 @@ function analyzeProgram(
 ): AnalyzeResult {
     const index = throwIndex ?? createThrowIndex();
     try {
-        return runAnalysis(program, checker, config, index);
+        return runAnalysis(program, checkers.cached(checker, program), config, index);
     } finally {
         if (!throwIndex) {
             disposeThrowIndex(index);
@@ -49,11 +52,15 @@ function runAnalysis(
     config: AnalyzeConfig,
     throwIndex: ThrowIndex,
 ): AnalyzeResult {
+    // Round-trips to tsgo since `start`, the cost the timings make visible.
+    const roundTrips = (start: number): string =>
+        `(${checkers.sent(checker) - start} checker round-trips)`;
+    const started = checkers.sent(checker);
     const total = timing('analyze');
     const overlays = loadOverlays();
     const graphed = timing('analyze: call graph');
     const graph = buildCallGraph(program, checker, overlays);
-    graphed();
+    graphed(roundTrips(started));
     const analysis: Analysis = { checker, graph };
 
     const built = new Map<string, [ChannelConfig, Channel<unknown>]>();
@@ -109,13 +116,14 @@ function runAnalysis(
     for (const name of runnable) {
         const [channelConfig, channel] = instance(name)!;
         const ran = timing(`analyze: ${name}`);
+        const before = checkers.sent(checker);
         const result = runChannel(
             analysis,
             channel,
             channelConfig.options,
             peers,
         );
-        ran();
+        ran(roundTrips(before));
         peers.set(name, result.store);
         // Silent peer: pulled in only as a dependency of an enabled channel; keep
         // its summaries for that channel, discard its own diagnostics.
@@ -124,7 +132,7 @@ function runAnalysis(
         }
     }
 
-    total(`${ts.getSourceFiles(program).length} files`);
+    total(`${program.getSourceFileNames().length} files ${roundTrips(started)}`);
 
     return { diagnostics };
 }
