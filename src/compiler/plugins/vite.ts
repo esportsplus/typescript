@@ -1,4 +1,4 @@
-import type { Plugin, SharedContext } from '../types';
+import type { Plugin, SharedContext, Warning } from '../types';
 import type { ResolvedConfig } from 'vite';
 import type { SourceMapV3 } from '../sourcemap';
 import type { Store } from './cache';
@@ -18,6 +18,13 @@ type Cached = {
     hash: string;
     modules: [string, string][];
     output: Output | null;
+    warnings: Warning[];
+};
+
+// A compile's output (null: unchanged) and the warnings it reports
+type Compiled = {
+    output: Output | null;
+    warnings: Warning[];
 };
 
 // Hosts compiled as one: each file is compiled once, by `executor`, with the plugins of every member
@@ -75,6 +82,11 @@ type Registry = {
     plugins: readonly { name?: string; transform?: unknown }[];
 };
 
+// The part of Rollup's transform context used here; any other `this` (the hook called directly) reports nothing
+type Reporter = {
+    warn?(log: { id: string; loc?: { column: number; file: string; line: number }; message: string }): void;
+};
+
 type VitePlugin = {
     buildEnd: () => void;
     buildStart: () => void;
@@ -95,7 +107,7 @@ type VitePlugin = {
     };
     transform: {
         filter: { id: { exclude: RegExp[]; include: RegExp } };
-        handler: (code: string, id: string) => Output | null;
+        handler: (this: unknown, code: string, id: string) => Output | null;
     };
     watchChange: (id: string) => void;
 };
@@ -276,6 +288,41 @@ function release(): Promise<void> {
     return Promise.all(writes).then(() => undefined);
 }
 
+// Reports a compile's warnings, at their line and column in the code the host was given (columns
+// 1-based in the message, which is all Vite's build log prints, 0-based in `loc` as Rollup's are)
+function report(context: unknown, code: string, id: string, warnings: Warning[]): void {
+    let reporter = (context ?? {}) as Reporter;
+
+    if (warnings.length === 0 || typeof reporter.warn !== 'function') {
+        return;
+    }
+
+    let file = normalize(id);
+
+    for (let i = 0, n = warnings.length; i < n; i++) {
+        let { message, position } = warnings[i];
+
+        if (position === undefined) {
+            reporter.warn({ id: file, message });
+            continue;
+        }
+
+        let line = 1,
+            start = 0;
+
+        for (let at = code.indexOf('\n'); at !== -1 && at < position; at = code.indexOf('\n', at + 1)) {
+            line++;
+            start = at + 1;
+        }
+
+        reporter.warn({
+            id: file,
+            loc: { column: position - start, file, line },
+            message: `${file}:${line}:${position - start + 1} ${message}`
+        });
+    }
+}
+
 function retract(identity: string): void {
     let ids = state.emitters.get(identity);
 
@@ -390,7 +437,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
         };
 
         // Compiles `id` with the plugins of `included` (this host and those whose compile it runs)
-        let compile = (code: string, id: string, included: Host[], digest: string, members: Group): Output | null => {
+        let compile = (code: string, id: string, included: Host[], digest: string, members: Group): Compiled => {
             let applied: Plugin[] = [],
                 names: string[] = [];
 
@@ -400,7 +447,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             }
 
             if (!coordinator.accepts(applied, code)) {
-                return null;
+                return { output: null, warnings: [] };
             }
 
             // Hosts compiling alike share results, whichever factory created them
@@ -413,7 +460,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                     emit(identity, found.modules);
                     track(id, found.dependencies);
 
-                    return found.output && { ...found.output };
+                    return { output: found.output && { ...found.output }, warnings: found.warnings };
                 }
             }
 
@@ -429,15 +476,15 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
 
                 languageService.stage(configPath ?? '', normalizedId, code);
                 emit(identity, kept.modules);
-                state.results.set(identity, { dependencies, hash: digest, modules: kept.modules, output: kept.output });
+                state.results.set(identity, { dependencies, hash: digest, modules: kept.modules, output: kept.output, warnings: kept.warnings });
                 track(id, dependencies);
 
-                return kept.output && { ...kept.output };
+                return { output: kept.output && { ...kept.output }, warnings: kept.warnings };
             }
 
             // Dependencies linked from outside node_modules (link:, workspaces) are not project files
             if (!languageService.contains(configPath ?? '', normalizedId, code)) {
-                return null;
+                return { output: null, warnings: [] };
             }
 
             let { checker, program } = languageService.update(configPath ?? '', normalizedId, code),
@@ -471,21 +518,21 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             track(id, result.dependencies);
 
             if (building) {
-                state.results.set(identity, { dependencies: result.dependencies, hash: digest, modules, output });
+                state.results.set(identity, { dependencies: result.dependencies, hash: digest, modules, output, warnings: result.warnings });
             }
 
             if (store && isolated) {
-                cache.record(store, entry, digest, result.dependencies, output, result.modules);
+                cache.record(store, entry, digest, result.dependencies, output, result.modules, result.warnings);
             }
 
-            return output && { ...output };
+            return { output: output && { ...output }, warnings: result.warnings };
         };
 
         let transform: VitePlugin['transform'] = {
             // Rolldown applies this natively, so assets, styles, dependencies and virtual modules
             // never call into JavaScript
             filter: { id: { exclude: [NODE_MODULES_REGEX, VIRTUAL_REGEX], include: FILE_REGEX } },
-            handler(code: string, id: string) {
+            handler(this: unknown, code: string, id: string) {
                 // The filter again, for a host that does not apply it
                 if (!FILE_REGEX.test(id) || NODE_MODULES_REGEX.test(id) || VIRTUAL_REGEX.test(id)) {
                     return null;
@@ -522,13 +569,20 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                         return null;
                     }
 
-                    return compile(code, id, [self], digest, alone);
+                    let { output, warnings } = compile(code, id, [self], digest, alone);
+
+                    report(this, code, id, warnings);
+
+                    return output;
                 }
 
                 let at = members.members.indexOf(self),
                     before = take(members.deferred, file, digest),
                     included = members.members.filter((host, i) => i >= at || before?.hosts.has(host)),
-                    output = compile(code, id, included, digest, members);
+                    { output, warnings } = compile(code, id, included, digest, members);
+
+                // The executor reports for the group: the hosts before it returned nothing for this file
+                report(this, code, id, warnings);
 
                 if (at < members.members.length - 1) {
                     let queue = members.handled.get(file) ?? [];

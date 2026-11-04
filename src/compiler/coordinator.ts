@@ -4,7 +4,7 @@ import type { Node, SourceFile } from 'typescript/ast';
 import type { Checker, Program } from 'typescript/sync';
 import type { ImportInfo, ModifyOptions } from './imports';
 import type { OffsetAnchor, PositionMapping } from './sourcemap';
-import type { ImportIntent, Plugin, Prepend, Replacement, ReplacementIntent, SharedContext, Text } from './types';
+import type { ImportIntent, Plugin, Prepend, Replacement, ReplacementIntent, SharedContext, Text, Warning } from './types';
 
 import checker from './checker';
 import imports from './imports';
@@ -20,6 +20,8 @@ type CoordinatorResult = {
     map: PositionMapping;
     // Virtual modules the plugins emitted, by id
     modules: Map<string, string>;
+    // The plugins' warnings, in plugin order
+    warnings: Warning[];
 };
 
 type EditBatch = {
@@ -541,7 +543,7 @@ const transform = (
     shared: SharedContext
 ): CoordinatorResult => {
     if (plugins.length === 0) {
-        return { changed: false, code, dependencies: [], map: { generations: [] }, modules: new Map() };
+        return { changed: false, code, dependencies: [], map: { generations: [] }, modules: new Map(), warnings: [] };
     }
 
     uid.scope(root, file.fileName, code);
@@ -559,7 +561,8 @@ const transform = (
         modules = new Map<string, string>(),
         names: string[] = [],
         outlined = file,
-        steps: { imports: ImportIntent[]; prepend: Prepend[] }[] = [];
+        steps: { imports: ImportIntent[]; prepend: Prepend[] }[] = [],
+        warnings: Warning[] = [];
 
     let layout = (): Layout => {
         let result: Layout | null = outline(outlined);
@@ -586,7 +589,7 @@ const transform = (
             continue;
         }
 
-        let { dependencies: relied, imports, modules: emitted, prepend, replacements } = plugin.transform({
+        let { dependencies: relied, imports, modules: emitted, prepend, replacements, warnings: warned } = plugin.transform({
                 checker: memoized,
                 code,
                 program: project.program,
@@ -608,6 +611,10 @@ const transform = (
 
                 modules.set(id, module);
             }
+        }
+
+        if (warned) {
+            warnings.push(...warned);
         }
 
         if (replacements) {
@@ -666,7 +673,7 @@ const transform = (
         }
     }
 
-    return { changed, code: currentCode, dependencies: [...dependencies], map: { generations }, modules };
+    return { changed, code: currentCode, dependencies: [...dependencies], map: { generations }, modules, warnings };
 };
 
 

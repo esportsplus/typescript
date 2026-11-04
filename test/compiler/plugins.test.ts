@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Checker, Program } from 'typescript/sync';
-import type { Plugin } from '~/compiler/types';
+import type { Plugin, Warning } from '~/compiler/types';
 import type { SourceFile } from 'typescript/ast';
 
 import cache from '~/compiler/plugins/cache';
@@ -36,7 +36,8 @@ vi.mock('~/compiler/coordinator', () => ({
             code,
             dependencies: [] as string[],
             map: { generations: [] },
-            modules: new Map<string, string>()
+            modules: new Map<string, string>(),
+            warnings: []
         }))
     }
 }));
@@ -115,7 +116,8 @@ describe('plugin.vite', () => {
             code: 'TRANSFORMED',
             dependencies: [],
             map: { generations: [] },
-            modules: new Map<string, string>()
+            modules: new Map<string, string>(),
+            warnings: []
         });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })(),
@@ -236,7 +238,8 @@ describe('plugin.vite', () => {
             code: 'let x = 1;',
             dependencies: ['src/state.ts'],
             map: { generations: [] },
-            modules: new Map<string, string>()
+            modules: new Map<string, string>(),
+            warnings: []
         });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })(),
@@ -298,7 +301,8 @@ describe('plugin.vite', () => {
                 code: code + ' // compiled',
                 dependencies,
                 map: { generations: [] },
-                modules: new Map<string, string>()
+                modules: new Map<string, string>(),
+                warnings: []
             }));
         }
 
@@ -403,7 +407,9 @@ describe('plugin.vite', () => {
         let dependency: string,
             directory: string,
             module: string,
-            tsconfig: string;
+            tsconfig: string,
+            // What the builds reported through `this.warn`
+            warned: { id: string; loc?: { column: number; file: string; line: number }; message: string }[] = [];
 
         // One production build of `module`: compiled, inspected by `during`, then closed (which
         // writes the cache)
@@ -414,7 +420,7 @@ describe('plugin.vite', () => {
             plugin.configResolved({ command: 'build', root: directory });
             plugin.buildStart();
 
-            let result = plugin.transform.handler(code, module);
+            let result = plugin.transform.handler.call({ warn: (log: (typeof warned)[number]) => { warned.push(log); } }, code, module);
 
             during?.(plugin);
             await plugin.closeBundle();
@@ -422,7 +428,12 @@ describe('plugin.vite', () => {
             return result;
         }
 
-        function compiles(dependencies: string[] = [dependency], touch = false, emits: (code: string) => [string, string][] = () => []) {
+        function compiles(
+            dependencies: string[] = [dependency],
+            touch = false,
+            emits: (code: string) => [string, string][] = () => [],
+            warnings: Warning[] = []
+        ) {
             vi.mocked(coordinator.transform).mockImplementation((_plugins, code, _file, _project, _root, ctx) => {
                 if (touch) {
                     ctx.get('anything');
@@ -433,7 +444,8 @@ describe('plugin.vite', () => {
                     code: code + ' // compiled',
                     dependencies,
                     map: { generations: [[{ afterEnd: 10, afterStart: 10, beforeStart: 10, identity: false }]] },
-                    modules: new Map<string, string>(emits(code))
+                    modules: new Map<string, string>(emits(code)),
+                    warnings
                 };
             });
         }
@@ -459,6 +471,7 @@ describe('plugin.vite', () => {
             mkdirSync(directory + '/src');
             writeFileSync(dependency, 'export let state = 1;');
             writeFileSync(tsconfig, '{ "include": ["src"] }');
+            warned = [];
             compiles();
         });
 
@@ -580,6 +593,48 @@ describe('plugin.vite', () => {
             });
         });
 
+        it('reports a compile\'s warnings at their line and column in the module', async () => {
+            compiles([dependency], false, () => [], [{ message: 'by hand', position: 15 }, { message: 'anywhere' }]);
+            await build([], undefined, 'let x = 1;\nlet y = 2;');
+
+            expect(warned).toEqual([
+                { id: module, loc: { column: 4, file: module, line: 2 }, message: `${module}:2:5 by hand` },
+                { id: module, message: 'anywhere' }
+            ]);
+        });
+
+        it('reports the warnings again when a nested build reuses the result', async () => {
+            compiles([dependency], false, () => [], [{ message: 'by hand', position: 4 }]);
+
+            let factory = vite({ name: 'test-pkg', plugins: [] }),
+                outer = factory({ root: directory }),
+                inner = factory({ root: directory }),
+                context = { warn: (log: (typeof warned)[number]) => { warned.push(log); } };
+
+            vi.mocked(languageService.findConfig).mockReturnValue(tsconfig);
+            outer.configResolved({ command: 'build', root: directory });
+            inner.configResolved({ command: 'build', root: directory });
+            outer.buildStart();
+            outer.transform.handler.call(context, 'let x = 1;', module);
+            inner.buildStart();
+            inner.transform.handler.call(context, 'let x = 1;', module);
+            await inner.closeBundle();
+            await outer.closeBundle();
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(1);
+            expect(warned.map((log) => log.message)).toEqual([`${module}:1:5 by hand`, `${module}:1:5 by hand`]);
+        });
+
+        it('reports the warnings again when a later build reuses the result from disk', async () => {
+            compiles([dependency], false, () => [], [{ message: 'by hand', position: 4 }]);
+            await build();
+            vi.clearAllMocks();
+            await build();
+
+            expect(coordinator.transform).not.toHaveBeenCalled();
+            expect(warned.map((log) => log.message)).toEqual([`${module}:1:5 by hand`, `${module}:1:5 by hand`]);
+        });
+
         it('emits again once a tracked dependency changes', async () => {
             compiles([dependency], false, () => [['virtual:test/a', readFileSync(dependency, 'utf8')]]);
             await build();
@@ -647,7 +702,7 @@ describe('plugin.vite', () => {
             ctx.set('src/other.ts', 'other');
             ctx.set('global', 'kept');
 
-            return { changed: false, code, dependencies: ['src/state.ts'], map: { generations: [] },     modules: new Map<string, string>() };
+            return { changed: false, code, dependencies: ['src/state.ts'], map: { generations: [] },     modules: new Map<string, string>(), warnings: [] };
         });
 
         plugin.transform.handler('let x = 1;', 'src/app.ts');

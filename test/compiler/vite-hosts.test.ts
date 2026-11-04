@@ -12,13 +12,16 @@ import vite from '~/compiler/plugins/vite';
 
 type Host = ReturnType<ReturnType<typeof vite>>;
 
+type Log = { id: string; loc?: { column: number; file: string; line: number }; message: string };
+
 
 const CODE = 'export const x = 1 + 2;\n';
 
 
 let directory = fs.mkdtempSync(path.join(process.cwd(), 'test/.vite-hosts-')).replace(/\\/g, '/'),
     file = directory + '/src/app.ts',
-    seen: Program[] = [];
+    seen: Program[] = [],
+    warned: Log[] = [];
 
 
 function each(node: Node, visit: (node: Node) => void): void {
@@ -26,6 +29,28 @@ function each(node: Node, visit: (node: Node) => void): void {
     node.forEachChild((child) => {
         each(child, visit);
     });
+}
+
+// Warns about every `2`, and spreads every `1` over three lines so output lines no longer match the source's
+function flagging(): Plugin {
+    return {
+        name: 'flag',
+        transform({ sourceFile }) {
+            let replacements: NonNullable<ReturnType<Plugin['transform']>['replacements']> = [],
+                warnings: NonNullable<ReturnType<Plugin['transform']>['warnings']> = [];
+
+            each(sourceFile, (node) => {
+                if (isNumericLiteral(node) && node.text === '2') {
+                    warnings.push({ message: 'two', position: node.getStart(sourceFile) });
+                }
+                else if (isNumericLiteral(node) && node.text === '1') {
+                    replacements.push({ generate: () => '(\n1\n)', node });
+                }
+            });
+
+            return { replacements, warnings };
+        }
+    };
 }
 
 // Wraps every initializer, reading it through text() so what other plugins rewrote inside it stays
@@ -68,18 +93,19 @@ function numbering(): Plugin {
 }
 
 // One build of `file` through the listed plugins in order, each host given the previous output
-function build(listed: object[], hosts: Host[], command = 'build'): string {
+function build(listed: object[], hosts: Host[], command = 'build', source = CODE): string {
     let config = { command, plugins: listed, root: directory },
-        code = CODE;
+        code = source,
+        context = { warn: (log: Log) => { warned.push(log); } };
 
     for (let i = 0, n = hosts.length; i < n; i++) {
         hosts[i].configResolved(config);
     }
 
     for (let i = 0, n = listed.length; i < n; i++) {
-        let plugin = listed[i] as { transform?: { handler: (code: string, id: string) => { code: string } | null } };
+        let plugin = listed[i] as { transform?: { handler: (this: unknown, code: string, id: string) => { code: string } | null } };
 
-        code = plugin.transform?.handler(code, file)?.code ?? code;
+        code = plugin.transform?.handler.call(context, code, file)?.code ?? code;
     }
 
     return code;
@@ -98,7 +124,9 @@ function wrapped(host: Host, skip = false): object {
         ...host,
         transform: {
             filter: host.transform.filter,
-            handler: (code: string, id: string) => skip ? null : host.transform.handler(code, id)
+            handler(this: unknown, code: string, id: string) {
+                return skip ? null : host.transform.handler.call(this, code, id);
+            }
         }
     };
 }
@@ -119,6 +147,7 @@ afterAll(() => {
 
 afterEach(async () => {
     seen = [];
+    warned = [];
     vi.restoreAllMocks();
     await vite({ name: 'release', plugins: [] })().closeBundle();
 });
@@ -172,5 +201,35 @@ describe('plugin.vite host merging', () => {
         build([a, wrapped(b, true)], [a, b]);
 
         expect(() => b.buildEnd()).toThrow(/host-a .*never compiled/);
+    });
+
+    it('reports a merged compile\'s warnings once, through the executor, at their line in the original source', () => {
+        let source = 'export const x = 1;\nexport const y = 2;\n',
+            a = vite({ name: 'host-a', plugins: [flagging()] })({ root: directory }),
+            b = vite({ name: 'host-b', plugins: [wrapping()] })({ root: directory });
+
+        expect(build([a, wrapped(b)], [a, b], 'build', source)).toBe('export const x = wrap((\n1\n));\nexport const y = wrap(2);\n');
+        expect(warned).toEqual([{ id: file, loc: { column: 17, file, line: 2 }, message: `${file}:2:18 two` }]);
+    });
+
+    it('reports them again for a result reused within the build', () => {
+        let source = 'export const y = 2;\n',
+            a = vite({ name: 'host-a', plugins: [flagging()] })({ root: directory }),
+            update = vi.spyOn(languageService, 'update');
+
+        build([a], [a], 'build', source);
+        build([a], [a], 'build', source);
+
+        expect(update).toHaveBeenCalledTimes(1);
+        expect(warned.map((log) => log.message)).toEqual([`${file}:1:18 two`, `${file}:1:18 two`]);
+    });
+
+    it('reports them on every transform while serving', () => {
+        let a = vite({ name: 'host-a', plugins: [flagging()] })({ root: directory });
+
+        build([a], [a], 'serve', 'export const y = 2;\n');
+        build([a], [a], 'serve', 'export const y = 2;\n');
+
+        expect(warned).toHaveLength(2);
     });
 });

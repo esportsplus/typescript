@@ -101,6 +101,23 @@ type TransformResult = {
      * Replacement intents - node references with generator functions.
      */
     replacements?: ReplacementIntent[];
+
+    /**
+     * Warnings about the source, in order. The host reports them on every transform of the file,
+     * a result reused from its caches included, so a plugin must return them rather than report
+     * them itself.
+     */
+    warnings?: Warning[];
+};
+
+type Warning = {
+    message: string;
+
+    /**
+     * Offset into the original source the warning is about (e.g. `node.getStart(sourceFile)`);
+     * the host reports it as file:line:column.
+     */
+    position?: number;
 };
 
 
@@ -109,5 +126,6 @@ export type {
     Plugin, PluginFactory, Prepend,
     Range, Replacement, ReplacementIntent,
     SharedContext,
-    Text, TransformContext, TransformResult
+    Text, TransformContext, TransformResult,
+    Warning
 };

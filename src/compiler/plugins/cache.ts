@@ -1,4 +1,5 @@
 import type { SourceMapV3 } from '../sourcemap';
+import type { Warning } from '../types';
 import { configFiles } from '../../tsconfig';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -16,6 +17,7 @@ type Entry = {
     // Virtual modules the compile emitted, as [id, code]
     modules: [string, string][];
     output: Output | null;
+    warnings: Warning[];
 };
 
 type Output = {
@@ -70,7 +72,9 @@ function valid(entry: unknown): entry is Entry {
         value.dependencies.every((dependency) => Array.isArray(dependency) && typeof dependency[0] === 'string') &&
         Array.isArray(value.modules) &&
         value.modules.every((module) => Array.isArray(module) && typeof module[0] === 'string' && typeof module[1] === 'string') &&
-        (value.output === null || (typeof value.output === 'object' && typeof value.output.code === 'string' && typeof value.output.map === 'object'));
+        (value.output === null || (typeof value.output === 'object' && typeof value.output.code === 'string' && typeof value.output.map === 'object')) &&
+        Array.isArray(value.warnings) &&
+        value.warnings.every((warning) => typeof warning?.message === 'string' && (warning.position === undefined || typeof warning.position === 'number'));
 }
 
 
@@ -184,7 +188,15 @@ const open = (root: string, host: string, identity: string): Store | null => {
     return { changed: false, digests: new Map(), entries, file, identity, used: new Set() };
 };
 
-const record = (store: Store, id: string, input: string, dependencies: string[], output: Output | null, modules: Map<string, string>): void => {
+const record = (
+    store: Store,
+    id: string,
+    input: string,
+    dependencies: string[],
+    output: Output | null,
+    modules: Map<string, string>,
+    warnings: Warning[]
+): void => {
     let tracked: [string, string | null][] = [];
 
     for (let i = 0, n = dependencies.length; i < n; i++) {
@@ -192,7 +204,7 @@ const record = (store: Store, id: string, input: string, dependencies: string[],
     }
 
     store.changed = true;
-    store.entries.set(id, { dependencies: tracked, input, modules: [...modules], output });
+    store.entries.set(id, { dependencies: tracked, input, modules: [...modules], output, warnings });
     store.used.add(id);
 };
 
