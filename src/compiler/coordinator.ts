@@ -18,6 +18,8 @@ type CoordinatorResult = {
     code: string;
     dependencies: string[];
     map: PositionMapping;
+    // Virtual modules the plugins emitted, by id
+    modules: Map<string, string>;
 };
 
 type EditBatch = {
@@ -539,7 +541,7 @@ const transform = (
     shared: SharedContext
 ): CoordinatorResult => {
     if (plugins.length === 0) {
-        return { changed: false, code, dependencies: [], map: { generations: [] } };
+        return { changed: false, code, dependencies: [], map: { generations: [] }, modules: new Map() };
     }
 
     uid.scope(root, file.fileName, code);
@@ -554,6 +556,7 @@ const transform = (
         generations: OffsetAnchor[][] = [],
         intents: Intent[] = [],
         memoized = checker.cached(project.checker, project.program),
+        modules = new Map<string, string>(),
         names: string[] = [],
         outlined = file,
         steps: { imports: ImportIntent[]; prepend: Prepend[] }[] = [];
@@ -583,7 +586,7 @@ const transform = (
             continue;
         }
 
-        let { dependencies: relied, imports, prepend, replacements } = plugin.transform({
+        let { dependencies: relied, imports, modules: emitted, prepend, replacements } = plugin.transform({
                 checker: memoized,
                 code,
                 program: project.program,
@@ -594,6 +597,16 @@ const transform = (
         if (relied) {
             for (let j = 0, m = relied.length; j < m; j++) {
                 dependencies.add(relied[j]);
+            }
+        }
+
+        if (emitted) {
+            for (let [id, module] of emitted) {
+                if (modules.has(id)) {
+                    throw new Error(`${PACKAGE_NAME}: two plugins compiling ${fileName} emit the virtual module '${id}'`);
+                }
+
+                modules.set(id, module);
             }
         }
 
@@ -653,7 +666,7 @@ const transform = (
         }
     }
 
-    return { changed, code: currentCode, dependencies: [...dependencies], map: { generations } };
+    return { changed, code: currentCode, dependencies: [...dependencies], map: { generations }, modules };
 };
 
 

@@ -82,6 +82,14 @@ type TransformResult = {
     imports?: ImportIntent[];
 
     /**
+     * Virtual modules this file's compile emits: the id its output imports (`import('virtual:x')`)
+     * to the module's code. The host serves them (`resolveId`/`load`) while this file's result
+     * stands, keeps them with a reused result, and drops them when the file is compiled again or
+     * changes; use this instead of a registry of your own, which a reused result would leave empty.
+     */
+    modules?: Map<string, string>;
+
+    /**
      * Code to prepend after imports (e.g., generated classes, template factories). Applied after
      * every plugin's replacements are composed, in plugin order, then that plugin's imports; a
      * function entry is called then with `text()` (the same helper `generate` receives), so it can
