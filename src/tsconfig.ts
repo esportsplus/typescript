@@ -65,7 +65,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function walkExtends<T>(
     tsconfigPath: string,
-    fold: (config: Record<string, unknown>, inherited: T | undefined) => T | undefined,
+    fold: (config: Record<string, unknown>, inherited: T | undefined, file: string) => T | undefined,
 ): T | undefined {
     const seen = new Set<string>();
 
@@ -99,11 +99,15 @@ function walkExtends<T>(
             }
         }
 
-        return fold(config, inherited);
+        return fold(config, inherited, id);
     }
 
     return read(tsconfigPath, undefined);
 }
+
+// Every config the tsconfig's `extends` chain reads, bases first
+const configFiles = (tsconfigPath: string): string[] =>
+    walkExtends<string[]>(tsconfigPath, (_config, inherited, file) => [...(inherited ?? []), file]) ?? [];
 
 const readPlugins = (tsconfigPath: string): ReadonlyArray<unknown> | undefined =>
     walkExtends(tsconfigPath, (config, inherited) => {
@@ -130,4 +134,4 @@ const readGuardConfig = (tsconfigPath: string): Record<string, unknown> | undefi
             : deepMerge(inherited, own) as Record<string, unknown>;
     });
 
-export { readPlugins, readGuardConfig };
+export { configFiles, readGuardConfig, readPlugins };

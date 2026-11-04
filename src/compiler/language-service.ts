@@ -83,7 +83,9 @@ const CONFIG_REGEX = /\.json$/;
 
 let cache = new Map<string, Entry>(),
     parser: Parser | null = null,
-    scratchEntry: ScratchEntry | null = null;
+    scratchEntry: ScratchEntry | null = null,
+    // Per project: texts staged by stage(), applied by the next update
+    staged = new Map<string, Map<string, string>>();
 
 
 // The overlay's files indexed by directory as they are set and deleted: tsgo asks for a directory's
@@ -493,10 +495,13 @@ const dispose = (root?: string): void => {
             scratchEntry = null;
         }
 
+        staged.clear();
+
         return;
     }
 
     root = normalize(path.resolve(root));
+    staged.delete(root);
 
     let entry = cache.get(root);
 
@@ -529,13 +534,14 @@ const findConfig = (startDir: string): string | null => {
 const invalidate = (configFileName: string, fileName: string): void => {
     configFileName = normalize(path.resolve(configFileName));
 
-    let entry = cache.get(configFileName);
+    let entry = cache.get(configFileName),
+        id = normalize(fileName);
+
+    staged.get(configFileName)?.delete(id);
 
     if (!entry) {
         return;
     }
-
-    let id = normalize(fileName);
 
     entry.contents.delete(id);
     entry.disk.delete(id);
@@ -574,6 +580,22 @@ const scratch = (fileName: string, content: string): ScratchResult => {
     return { checker: entry.project.checker, program: entry.project.program, sourceFile: source };
 };
 
+// Records the text a host compiled a file from without a round-trip, for a host that reused the
+// file's compile: the project's next update applies it with its own changes, so every later
+// compile reads the program it would have read had the file been updated
+const stage = (configFileName: string, fileName: string, content: string): void => {
+    configFileName = normalize(path.resolve(configFileName));
+
+    let files = staged.get(configFileName);
+
+    if (!files) {
+        files = new Map();
+        staged.set(configFileName, files);
+    }
+
+    files.set(normalize(fileName), content);
+};
+
 const update = (configFileName: string, fileName: string, content: string): UpdateResult => {
     return updateMany(configFileName, new Map([[fileName, content]]));
 };
@@ -581,7 +603,13 @@ const update = (configFileName: string, fileName: string, content: string): Upda
 const updateMany = (configFileName: string, updates: Map<string, string>): UpdateResult => {
     let entry = getEntry(configFileName),
         ids: string[] = [],
-        routed = entry.virtual;
+        routed = entry.virtual,
+        waiting = staged.get(entry.configFileName);
+
+    if (waiting) {
+        staged.delete(entry.configFileName);
+        updates = new Map([...waiting, ...updates]);
+    }
 
     for (let [fileName, content] of updates) {
         let id = normalize(fileName);
@@ -640,6 +668,6 @@ const updateMany = (configFileName: string, updates: Map<string, string>): Updat
 };
 
 
-export default { contains, dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
-export { contains, dispose, findConfig, invalidate, open, parse, scratch, update, updateMany };
+export default { contains, dispose, findConfig, invalidate, open, parse, scratch, stage, update, updateMany };
+export { contains, dispose, findConfig, invalidate, open, parse, scratch, stage, update, updateMany };
 export type { ScratchResult, UpdateResult };

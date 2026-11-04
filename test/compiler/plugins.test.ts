@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { Checker, Program } from 'typescript/sync';
 import type { Plugin } from '~/compiler/types';
 import type { SourceFile } from 'typescript/ast';
 
+import cache from '~/compiler/plugins/cache';
 import coordinator from '~/compiler/coordinator';
 import languageService from '~/compiler/language-service';
 import tsc from '~/compiler/plugins/tsc';
@@ -17,6 +20,7 @@ vi.mock('~/compiler/language-service', () => ({
         findConfig: vi.fn(() => ''),
         invalidate: vi.fn(),
         parse: vi.fn((fileName: string, content: string) => ({ fileName, text: content }) as unknown as SourceFile),
+        stage: vi.fn(),
         update: vi.fn((_root: string, _fileName: string, _content: string) => ({
             checker: {} as unknown as Checker,
             program: { getSourceFile: () => undefined } as unknown as Program
@@ -57,8 +61,8 @@ describe('plugin.tsc', () => {
 
 describe('plugin.vite', () => {
     // Build state is process-wide; a closing outermost build releases it
-    afterEach(() => {
-        vite({ name: 'test-pkg', plugins: [] })().closeBundle();
+    afterEach(async () => {
+        await vite({ name: 'test-pkg', plugins: [] })().closeBundle();
     });
 
     beforeEach(() => {
@@ -178,7 +182,7 @@ describe('plugin.vite', () => {
         expect(languageService.update).toHaveBeenCalledWith('/my/root/tsconfig.json', expect.any(String), expect.any(String));
     });
 
-    it.each([false, true])('uses the selected tsconfig for transforms and cleanup (explicit root: %s)', (explicit) => {
+    it.each([false, true])('uses the selected tsconfig for transforms and cleanup (explicit root: %s)', async (explicit) => {
         let app = resolve('/project'),
             docs = resolve(app, 'docs'),
             selected = explicit ? app : docs,
@@ -189,7 +193,7 @@ describe('plugin.vite', () => {
         plugin.configResolved({ configFile: resolve(docs, 'custom.vite.config.ts'), root: app });
         plugin.transform.handler('let x = 1;', resolve(docs, 'src/app.ts'));
         plugin.watchChange(resolve(docs, 'src/app.ts'));
-        plugin.closeBundle();
+        await plugin.closeBundle();
 
         expect(languageService.findConfig).toHaveBeenCalledWith(selected);
         expect(languageService.update).toHaveBeenCalledWith(configPath, expect.any(String), 'let x = 1;');
@@ -266,12 +270,12 @@ describe('plugin.vite', () => {
         expect(coordinator.transform).toHaveBeenCalled();
     });
 
-    it('closeBundle disposes the language service for the root', () => {
+    it('closeBundle disposes the language service for the root', async () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
         vi.mocked(languageService.findConfig).mockReturnValueOnce('/my/root/tsconfig.json');
         plugin.configResolved({ root: '/my/root' });
-        plugin.closeBundle();
+        await plugin.closeBundle();
 
         expect(languageService.dispose).toHaveBeenCalledWith('/my/root/tsconfig.json');
     });
@@ -313,7 +317,7 @@ describe('plugin.vite', () => {
             expect(coordinator.transform).toHaveBeenCalledTimes(2);
         });
 
-        it('shares the cache with a nested build instance and releases only after the outer build', () => {
+        it('shares the cache with a nested build instance and releases only after the outer build', async () => {
             let factory = vite({ name: 'test-pkg', plugins: [] }),
                 outer = factory(),
                 inner = factory();
@@ -325,12 +329,12 @@ describe('plugin.vite', () => {
             outer.transform.handler('let x = 1;', 'src/app.ts');
             inner.buildStart();
             inner.transform.handler('let x = 1;', 'src/app.ts');
-            inner.closeBundle();
+            await inner.closeBundle();
 
             expect(coordinator.transform).toHaveBeenCalledTimes(1);
             expect(languageService.dispose).not.toHaveBeenCalled();
 
-            outer.closeBundle();
+            await outer.closeBundle();
 
             expect(languageService.dispose).toHaveBeenCalledWith('/project/tsconfig.json');
 
@@ -339,7 +343,7 @@ describe('plugin.vite', () => {
             expect(coordinator.transform).toHaveBeenCalledTimes(2);
         });
 
-        it('shares results between factories of one name, as a wrapper creating one per instance does', () => {
+        it('shares results between factories of one name, as a wrapper creating one per instance does', async () => {
             let outer = vite({ name: 'test-pkg', plugins: [] })({ root: '/project' }),
                 inner = vite({ name: 'test-pkg', plugins: [] })({ root: '/project' }),
                 other = vite({ name: 'other-pkg', plugins: [] })({ root: '/project' });
@@ -355,13 +359,13 @@ describe('plugin.vite', () => {
             outer.transform.handler('let x = 1;', 'src/app.ts');
             inner.buildStart();
             inner.transform.handler('let x = 1;', 'src/app.ts');
-            inner.closeBundle();
+            await inner.closeBundle();
             other.transform.handler('let x = 1;', 'src/app.ts');
 
             expect(coordinator.transform).toHaveBeenCalledTimes(2);
             expect(languageService.dispose).not.toHaveBeenCalled();
 
-            outer.closeBundle();
+            await outer.closeBundle();
 
             expect(languageService.dispose).toHaveBeenCalled();
         });
@@ -391,6 +395,163 @@ describe('plugin.vite', () => {
         });
     });
 
+    describe('persistent build cache', () => {
+        let dependency: string,
+            directory: string,
+            module: string,
+            tsconfig: string;
+
+        // One production build of `module`: compiled, then closed (which writes the cache)
+        async function build(plugins: Plugin[] = [], persist = true) {
+            let plugin = vite({ name: 'test-pkg', persist, plugins })({ root: directory });
+
+            vi.mocked(languageService.findConfig).mockReturnValue(tsconfig);
+            plugin.configResolved({ command: 'build', root: directory });
+            plugin.buildStart();
+
+            let result = plugin.transform.handler('let x = 1;', module);
+
+            await plugin.closeBundle();
+
+            return result;
+        }
+
+        function compiles(dependencies: string[] = [dependency], touch = false) {
+            vi.mocked(coordinator.transform).mockImplementation((_plugins, code, _file, _project, _root, ctx) => {
+                if (touch) {
+                    ctx.get('anything');
+                }
+
+                return {
+                    changed: true,
+                    code: code + ' // compiled',
+                    dependencies,
+                    map: { generations: [[{ afterEnd: 10, afterStart: 10, beforeStart: 10, identity: false }]] }
+                };
+            });
+        }
+
+        function packs(): string[] {
+            let at = join(directory, 'node_modules', '.cache', '@esportsplus', 'typescript', 'transform');
+
+            return existsSync(at) ? readdirSync(at).map((name) => join(at, name)) : [];
+        }
+
+        beforeEach(() => {
+            directory = mkdtempSync(join(tmpdir(), 'esportsplus-transform-cache-')).replace(/\\/g, '/');
+            dependency = directory + '/src/state.ts';
+            module = directory + '/src/app.ts';
+            tsconfig = directory + '/tsconfig.json';
+            mkdirSync(directory + '/node_modules', { recursive: true });
+            mkdirSync(directory + '/src');
+            writeFileSync(dependency, 'export let state = 1;');
+            writeFileSync(tsconfig, '{ "include": ["src"] }');
+            compiles();
+        });
+
+        afterEach(() => {
+            vi.mocked(coordinator.transform).mockReset();
+            vi.mocked(languageService.findConfig).mockReset().mockReturnValue('');
+            rmSync(directory, { force: true, recursive: true });
+        });
+
+        it('answers an unchanged module from an earlier build without the language service', async () => {
+            let first = await build();
+
+            vi.clearAllMocks();
+
+            let second = await build();
+
+            expect(packs()).toHaveLength(1);
+            expect(second).toEqual(first);
+            expect(second?.map.mappings).toBe(first?.map.mappings);
+            expect(coordinator.transform).not.toHaveBeenCalled();
+            expect(languageService.contains).not.toHaveBeenCalled();
+            expect(languageService.update).not.toHaveBeenCalled();
+            expect(languageService.stage).toHaveBeenCalledWith(tsconfig, module, 'let x = 1;');
+        });
+
+        it('compiles again once a tracked dependency changes', async () => {
+            await build();
+            writeFileSync(dependency, 'export let state = 2;');
+            vi.clearAllMocks();
+            await build();
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(1);
+        });
+
+        it('compiles again once the tsconfig changes', async () => {
+            await build();
+            writeFileSync(tsconfig, '{ "include": ["src"], "compilerOptions": { "strict": true } }');
+            vi.clearAllMocks();
+            await build();
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(1);
+        });
+
+        it('compiles again once the compiler identity changes', async () => {
+            await build([{ name: 'a', transform: () => ({}) }]);
+            vi.clearAllMocks();
+            await build([{ name: 'b', transform: () => ({}) }]);
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(1);
+            expect(cache.identity('test-pkg', [], directory, tsconfig, '0.40.0 7.1.0-beta'))
+                .not.toBe(cache.identity('test-pkg', [], directory, tsconfig, '0.41.0 7.1.0-beta'));
+            expect(cache.identity('test-pkg', [], directory, tsconfig, '0.40.0 7.1.0-beta'))
+                .not.toBe(cache.identity('test-pkg', [], directory, tsconfig, '0.40.0 7.1.0'));
+        });
+
+        it('keeps nothing of a compile that used the shared context', async () => {
+            compiles([dependency], true);
+            await build();
+            vi.clearAllMocks();
+            compiles();
+            await build();
+
+            expect(coordinator.transform).toHaveBeenCalledTimes(1);
+        });
+
+        it('compiles through a corrupt or foreign pack and replaces it', async () => {
+            await build();
+
+            let [pack] = packs(),
+                stored = JSON.parse(readFileSync(pack, 'utf8')) as { entries: Record<string, unknown> };
+
+            for (let corrupt of ['{ not json', JSON.stringify({ ...stored, entries: { [Object.keys(stored.entries)[0]]: { input: 1 } } })]) {
+                writeFileSync(pack, corrupt);
+                vi.clearAllMocks();
+
+                expect((await build())?.code).toBe('let x = 1; // compiled');
+                expect(coordinator.transform).toHaveBeenCalledTimes(1);
+            }
+
+            vi.clearAllMocks();
+            await build();
+
+            expect(coordinator.transform).not.toHaveBeenCalled();
+        });
+
+        it('keeps nothing for a host that does not opt in', async () => {
+            await build([], false);
+            vi.clearAllMocks();
+            await build([], false);
+
+            expect(packs()).toHaveLength(0);
+            expect(coordinator.transform).toHaveBeenCalledTimes(1);
+        });
+
+        it('writes nothing while serving', async () => {
+            let plugin = vite({ name: 'test-pkg', persist: true, plugins: [] })({ root: directory });
+
+            vi.mocked(languageService.findConfig).mockReturnValue(tsconfig);
+            plugin.configResolved({ command: 'serve', root: directory });
+            plugin.transform.handler('let x = 1;', module);
+            await plugin.closeWatcher();
+
+            expect(packs()).toHaveLength(0);
+        });
+    });
+
     it('watchChange drops only the shared entries of the changed module and its dependents', () => {
         let context: Map<string, unknown> | undefined,
             plugin = vite({ name: 'test-pkg', plugins: [] })({ root: '/shared-root' });
@@ -411,12 +572,12 @@ describe('plugin.vite', () => {
         expect([...context!.keys()]).toEqual(['src/other.ts', 'global']);
     });
 
-    it('closeWatcher disposes the language service for the root', () => {
+    it('closeWatcher disposes the language service for the root', async () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
         vi.mocked(languageService.findConfig).mockReturnValueOnce('/my/root/tsconfig.json');
         plugin.configResolved({ root: '/my/root' });
-        plugin.closeWatcher();
+        await plugin.closeWatcher();
 
         expect(languageService.dispose).toHaveBeenCalledWith('/my/root/tsconfig.json');
     });

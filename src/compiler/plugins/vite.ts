@@ -1,9 +1,10 @@
+import type { Output, Store } from './cache';
 import type { Plugin, SharedContext } from '../types';
-import type { SourceMapV3 } from '../sourcemap';
 import type { ResolvedConfig } from 'vite';
 import { hash } from 'node:crypto';
 import { dirname } from 'node:path';
 
+import cache from './cache';
 import coordinator from '../coordinator';
 import languageService from '../language-service';
 import sourcemap from '../sourcemap';
@@ -30,15 +31,10 @@ type HotUpdate<M> = {
     timestamp: number;
 };
 
-type Output = {
-    code: string;
-    map: SourceMapV3;
-};
-
 type VitePlugin = {
     buildStart: () => void;
-    closeBundle: () => void;
-    closeWatcher: () => void;
+    closeBundle: () => Promise<void> | undefined;
+    closeWatcher: () => Promise<void>;
     configResolved: (config: unknown) => void;
     enforce: 'pre';
     handleHotUpdate: <M>(ctx: HotUpdate<M>) => M[] | undefined;
@@ -54,6 +50,10 @@ type VitePlugin = {
 type VitePluginOptions = {
     name: string;
     onWatchChange?: () => void;
+    // Keep build results across builds (under node_modules/.cache), for a host whose transforms
+    // only return their result: a module reused from disk is not transformed, so state a transform
+    // records elsewhere (a registry another of the host's hooks serves) would be missing
+    persist?: boolean;
     plugins: Plugin[];
     // Text only a compile-only runtime stub contains (the tail of the error it throws). Compiled
     // output never calls the stub, so a bundle drops it; a chunk that still holds one means some
@@ -78,7 +78,9 @@ let active = 0,
     configs = new Set<string>(),
     contexts = new Map<string, SharedContext>(),
     results = new Map<string, Cached>(),
-    roots = new Set<string>();
+    roots = new Set<string>(),
+    // Build results kept on disk across builds, per host name and root (null: no cache directory)
+    stores = new Map<string, Store | null>();
 
 
 // Case-folded on Windows: program file names and Vite ids disagree on drive-letter casing
@@ -92,7 +94,22 @@ function normalize(fileName: string): string {
     return fileName.replace(DIRECTORY_SEPARATOR_REGEX, '/');
 }
 
-function release(): void {
+// The shared context as plugins see it, reporting any use: a compile that read or wrote it depends
+// on other modules' compiles, which no file hash captures, so its result is not kept across builds
+function observe(shared: SharedContext, used: () => void): SharedContext {
+    return new Proxy(shared, {
+        get(target, property) {
+            let value = Reflect.get(target, property, target);
+
+            used();
+
+            return typeof value === 'function' ? value.bind(target) : value;
+        }
+    });
+}
+
+// Writes are left to finish after the build's state is released
+function release(): Promise<void> {
     for (let config of configs) {
         languageService.dispose(config);
     }
@@ -101,13 +118,24 @@ function release(): void {
         contexts.delete(root);
     }
 
+    let writes: Promise<void>[] = [];
+
+    for (let store of stores.values()) {
+        if (store) {
+            writes.push(cache.flush(store));
+        }
+    }
+
     configs.clear();
     results.clear();
     roots.clear();
+    stores.clear();
+
+    return Promise.all(writes).then(() => undefined);
 }
 
 
-export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOptions) => {
+export default ({ name, onWatchChange, persist = false, plugins, uncompiled = [] }: VitePluginOptions) => {
     return ({ root }: { root?: string } = {}): VitePlugin => {
         // dependency file -> ids whose last compile relied on it, and the reverse
         let building = false,
@@ -142,6 +170,25 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             relied.set(id, keys);
         };
 
+        // The host's kept results, opened by its first compile of a build; null without a cache
+        let persisted = (configPath: string | null): Store | null => {
+            let address = `${name}\0${root || ''}`,
+                store = stores.get(address);
+
+            if (store === undefined) {
+                let directory = root || process.cwd();
+
+                store = cache.open(
+                    directory,
+                    name,
+                    cache.identity(name, plugins.map((plugin) => plugin.name ?? ''), directory, configPath, cache.version())
+                );
+                stores.set(address, store);
+            }
+
+            return store;
+        };
+
         return {
             buildStart() {
                 if (building) {
@@ -154,12 +201,10 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                     active--;
                 }
 
-                if (active === 0) {
-                    release();
-                }
+                return active === 0 ? release() : undefined;
             },
             closeWatcher() {
-                release();
+                return release();
             },
             configResolved(config: unknown) {
                 let resolved = config as ResolvedConfig;
@@ -245,7 +290,20 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                     }
 
                     let normalizedId = normalize(id),
-                        configPath = tsconfig ?? languageService.findConfig(root || '');
+                        configPath = tsconfig ?? languageService.findConfig(root || ''),
+                        store = building && persist ? persisted(configPath) : null,
+                        kept = store && cache.lookup(store, key(id), digest);
+
+                    // A compile kept from an earlier build whose text and dependencies are unchanged
+                    if (kept) {
+                        let dependencies = kept.dependencies.map(([file]) => file);
+
+                        languageService.stage(configPath ?? '', normalizedId, code);
+                        results.set(identity, { dependencies, hash: digest, output: kept.output });
+                        track(id, dependencies);
+
+                        return kept.output && { ...kept.output };
+                    }
 
                     // Dependencies linked from outside node_modules (link:, workspaces) are not project files
                     if (!languageService.contains(configPath ?? '', normalizedId, code)) {
@@ -263,6 +321,8 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                         contexts.set(shared, ctx);
                     }
 
+                    let isolated = true;
+
                     // Errors propagate: a file a plugin cannot compile must fail the build, never ship as-is
                     let result = coordinator.transform(
                             plugins,
@@ -270,9 +330,9 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                             sourceFile,
                             { checker, program },
                             shared,
-                            ctx
+                            store ? observe(ctx, () => { isolated = false; }) : ctx
                         ),
-                        output = result.changed
+                        output: Output | null = result.changed
                             ? { code: result.code, map: sourcemap.toSourceMapV3(result.map, result.code, code, normalizedId) }
                             : null;
 
@@ -280,6 +340,10 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
 
                     if (building) {
                         results.set(identity, { dependencies: result.dependencies, hash: digest, output });
+                    }
+
+                    if (store && isolated) {
+                        cache.record(store, key(id), digest, result.dependencies, output);
                     }
 
                     return output && { ...output };
@@ -301,6 +365,12 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                 for (let i = 0, n = stale.length; i < n; i++) {
                     ctx?.delete(normalize(stale[i]));
                     results.delete(`${name}\0${root || ''}\0${key(stale[i])}`);
+                }
+
+                let store = stores.get(`${name}\0${root || ''}`);
+
+                if (store) {
+                    cache.forget(store, stale.map(key));
                 }
 
                 for (let [identity, entry] of results) {
