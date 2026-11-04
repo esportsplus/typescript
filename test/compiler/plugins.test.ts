@@ -35,7 +35,8 @@ vi.mock('~/compiler/coordinator', () => ({
             changed: false,
             code,
             dependencies: [] as string[],
-            map: { generations: [] }
+            map: { generations: [] },
+            modules: new Map<string, string>()
         }))
     }
 }));
@@ -113,7 +114,8 @@ describe('plugin.vite', () => {
             changed: true,
             code: 'TRANSFORMED',
             dependencies: [],
-            map: { generations: [] }
+            map: { generations: [] },
+            modules: new Map<string, string>()
         });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })(),
@@ -233,7 +235,8 @@ describe('plugin.vite', () => {
             changed: false,
             code: 'let x = 1;',
             dependencies: ['src/state.ts'],
-            map: { generations: [] }
+            map: { generations: [] },
+            modules: new Map<string, string>()
         });
 
         let plugin = vite({ name: 'test-pkg', plugins: [] })(),
@@ -294,7 +297,8 @@ describe('plugin.vite', () => {
                 changed: true,
                 code: code + ' // compiled',
                 dependencies,
-                map: { generations: [] }
+                map: { generations: [] },
+                modules: new Map<string, string>()
             }));
         }
 
@@ -401,22 +405,24 @@ describe('plugin.vite', () => {
             module: string,
             tsconfig: string;
 
-        // One production build of `module`: compiled, then closed (which writes the cache)
-        async function build(plugins: Plugin[] = [], persist = true) {
-            let plugin = vite({ name: 'test-pkg', persist, plugins })({ root: directory });
+        // One production build of `module`: compiled, inspected by `during`, then closed (which
+        // writes the cache)
+        async function build(plugins: Plugin[] = [], during?: (plugin: ReturnType<ReturnType<typeof vite>>) => void, code = 'let x = 1;') {
+            let plugin = vite({ name: 'test-pkg', plugins })({ root: directory });
 
             vi.mocked(languageService.findConfig).mockReturnValue(tsconfig);
             plugin.configResolved({ command: 'build', root: directory });
             plugin.buildStart();
 
-            let result = plugin.transform.handler('let x = 1;', module);
+            let result = plugin.transform.handler(code, module);
 
+            during?.(plugin);
             await plugin.closeBundle();
 
             return result;
         }
 
-        function compiles(dependencies: string[] = [dependency], touch = false) {
+        function compiles(dependencies: string[] = [dependency], touch = false, emits: (code: string) => [string, string][] = () => []) {
             vi.mocked(coordinator.transform).mockImplementation((_plugins, code, _file, _project, _root, ctx) => {
                 if (touch) {
                     ctx.get('anything');
@@ -426,9 +432,16 @@ describe('plugin.vite', () => {
                     changed: true,
                     code: code + ' // compiled',
                     dependencies,
-                    map: { generations: [[{ afterEnd: 10, afterStart: 10, beforeStart: 10, identity: false }]] }
+                    map: { generations: [[{ afterEnd: 10, afterStart: 10, beforeStart: 10, identity: false }]] },
+                    modules: new Map<string, string>(emits(code))
                 };
             });
+        }
+
+        function loads(plugin: ReturnType<ReturnType<typeof vite>>, id: string): string | null {
+            let resolved = plugin.resolveId.handler(id);
+
+            return resolved === null ? null : plugin.load.handler(resolved);
         }
 
         function packs(): string[] {
@@ -450,6 +463,7 @@ describe('plugin.vite', () => {
         });
 
         afterEach(() => {
+            delete process.env.ESPORTSPLUS_TRANSFORM_CACHE;
             vi.mocked(coordinator.transform).mockReset();
             vi.mocked(languageService.findConfig).mockReset().mockReturnValue('');
             rmSync(directory, { force: true, recursive: true });
@@ -531,17 +545,18 @@ describe('plugin.vite', () => {
             expect(coordinator.transform).not.toHaveBeenCalled();
         });
 
-        it('keeps nothing for a host that does not opt in', async () => {
-            await build([], false);
+        it('keeps nothing with ESPORTSPLUS_TRANSFORM_CACHE=0', async () => {
+            process.env.ESPORTSPLUS_TRANSFORM_CACHE = '0';
+            await build();
             vi.clearAllMocks();
-            await build([], false);
+            await build();
 
             expect(packs()).toHaveLength(0);
             expect(coordinator.transform).toHaveBeenCalledTimes(1);
         });
 
         it('writes nothing while serving', async () => {
-            let plugin = vite({ name: 'test-pkg', persist: true, plugins: [] })({ root: directory });
+            let plugin = vite({ name: 'test-pkg', plugins: [] })({ root: directory });
 
             vi.mocked(languageService.findConfig).mockReturnValue(tsconfig);
             plugin.configResolved({ command: 'serve', root: directory });
@@ -549,6 +564,75 @@ describe('plugin.vite', () => {
             await plugin.closeWatcher();
 
             expect(packs()).toHaveLength(0);
+        });
+
+        it('serves the virtual modules a compile emitted, also when a later build reuses it', async () => {
+            compiles([dependency], false, () => [['virtual:test/a', 'export default 1;']]);
+
+            await build([], (plugin) => {
+                expect(loads(plugin, 'virtual:test/a')).toBe('export default 1;');
+                expect(loads(plugin, 'virtual:test/missing')).toBeNull();
+            });
+            vi.clearAllMocks();
+            await build([], (plugin) => {
+                expect(coordinator.transform).not.toHaveBeenCalled();
+                expect(loads(plugin, 'virtual:test/a')).toBe('export default 1;');
+            });
+        });
+
+        it('emits again once a tracked dependency changes', async () => {
+            compiles([dependency], false, () => [['virtual:test/a', readFileSync(dependency, 'utf8')]]);
+            await build();
+            writeFileSync(dependency, 'export let state = 2;');
+            vi.clearAllMocks();
+            await build([], (plugin) => {
+                expect(coordinator.transform).toHaveBeenCalledTimes(1);
+                expect(loads(plugin, 'virtual:test/a')).toBe('export let state = 2;');
+            });
+        });
+
+        it('drops the virtual modules a module no longer emits, or emitted before it changed', async () => {
+            compiles([dependency], false, (code) => code.includes('2') ? [['virtual:test/a', 'a']] : [['virtual:test/a', 'a'], ['virtual:test/b', 'b']]);
+
+            await build([], (plugin) => {
+                expect(loads(plugin, 'virtual:test/b')).toBe('b');
+
+                plugin.transform.handler('let x = 2;', module);
+
+                expect(loads(plugin, 'virtual:test/a')).toBe('a');
+                expect(loads(plugin, 'virtual:test/b')).toBeNull();
+
+                plugin.watchChange(module);
+
+                expect(loads(plugin, 'virtual:test/a')).toBeNull();
+            });
+        });
+
+        it('invalidates the virtual modules a changed file emitted', async () => {
+            compiles([], false, () => [['virtual:test/a', 'a']]);
+
+            await build([], (plugin) => {
+                let emittedModule = { id: '\0virtual:test/a' },
+                    invalidateModule = vi.fn(),
+                    server = {
+                        moduleGraph: {
+                            getModuleById: (id: string) => id === '\0virtual:test/a' ? emittedModule : undefined,
+                            getModulesByFile: () => undefined,
+                            invalidateModule
+                        }
+                    };
+
+                plugin.watchChange(module);
+
+                expect(plugin.handleHotUpdate({ file: module, modules: [], server, timestamp: 1 } as never)).toEqual([emittedModule]);
+                expect(invalidateModule).toHaveBeenCalledWith(emittedModule, expect.any(Set), 1, true);
+            });
+        });
+
+        it('rejects an emitted id outside the virtual: namespace', async () => {
+            compiles([dependency], false, () => [['test/a', 'a']]);
+
+            await expect(build()).rejects.toThrow(/must have an id starting with 'virtual:'/);
         });
     });
 
@@ -563,7 +647,7 @@ describe('plugin.vite', () => {
             ctx.set('src/other.ts', 'other');
             ctx.set('global', 'kept');
 
-            return { changed: false, code, dependencies: ['src/state.ts'], map: { generations: [] } };
+            return { changed: false, code, dependencies: ['src/state.ts'], map: { generations: [] },     modules: new Map<string, string>() };
         });
 
         plugin.transform.handler('let x = 1;', 'src/app.ts');

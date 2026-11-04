@@ -13,6 +13,8 @@ type Entry = {
     // Every dependency the compile tracked, with the hash of the content it read (null: absent)
     dependencies: [string, string | null][];
     input: string;
+    // Virtual modules the compile emitted, as [id, code]
+    modules: [string, string][];
     output: Output | null;
 };
 
@@ -66,6 +68,8 @@ function valid(entry: unknown): entry is Entry {
         typeof value.input === 'string' &&
         Array.isArray(value.dependencies) &&
         value.dependencies.every((dependency) => Array.isArray(dependency) && typeof dependency[0] === 'string') &&
+        Array.isArray(value.modules) &&
+        value.modules.every((module) => Array.isArray(module) && typeof module[0] === 'string' && typeof module[1] === 'string') &&
         (value.output === null || (typeof value.output === 'object' && typeof value.output.code === 'string' && typeof value.output.map === 'object'));
 }
 
@@ -136,13 +140,16 @@ const lookup = (store: Store, id: string, input: string): Entry | undefined => {
     return entry;
 };
 
-// Drops what a build knows of modules a watch rebuild recompiles and of the files they read
-const forget = (store: Store, ids: string[]): void => {
+// Drops what a build knows of the files it read and of modules a watch rebuild recompiles: every
+// entry whose id ends with one of `suffixes`
+const forget = (store: Store, suffixes: string[]): void => {
     store.digests.clear();
 
-    for (let i = 0, n = ids.length; i < n; i++) {
-        store.entries.delete(ids[i]);
-        store.used.delete(ids[i]);
+    for (let id of store.entries.keys()) {
+        if (suffixes.some((suffix) => id.endsWith(suffix))) {
+            store.entries.delete(id);
+            store.used.delete(id);
+        }
     }
 };
 
@@ -177,7 +184,7 @@ const open = (root: string, host: string, identity: string): Store | null => {
     return { changed: false, digests: new Map(), entries, file, identity, used: new Set() };
 };
 
-const record = (store: Store, id: string, input: string, dependencies: string[], output: Output | null): void => {
+const record = (store: Store, id: string, input: string, dependencies: string[], output: Output | null, modules: Map<string, string>): void => {
     let tracked: [string, string | null][] = [];
 
     for (let i = 0, n = dependencies.length; i < n; i++) {
@@ -185,7 +192,7 @@ const record = (store: Store, id: string, input: string, dependencies: string[],
     }
 
     store.changed = true;
-    store.entries.set(id, { dependencies: tracked, input, output });
+    store.entries.set(id, { dependencies: tracked, input, modules: [...modules], output });
     store.used.add(id);
 };
 
