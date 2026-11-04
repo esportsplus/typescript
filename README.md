@@ -104,6 +104,8 @@ Only channels you configure run; a channel is otherwise off. It rides the `tsc` 
 
 Add a top-level `tsc-guard` key to `tsconfig.json` (a sibling of `compilerOptions`). Analysis is always whole-project and covers every file the tsconfig includes (ignoring excludes). Its only root keys are the channel names — `exceptions`, `resources`, and `async` — with no `channels` wrapper. An absent channel is off; a present channel with no `severity` is `error`. Consequently, a bare `"tsc-guard": {}` analyzes nothing: the minimum useful config is the three-line per-channel shape below.
 
+The `.dev` presets deliberately analyze `test/**` and `bench/**` along with `src/**`: analyze is cheap enough that a leak or orphaned promise in a fixture is worth reporting, so tests are not excluded.
+
 Unlike `compilerOptions.plugins` — which `extends` **replaces** wholesale — `tsc-guard` is **deep-merged down the `extends` chain**: a shared base can carry the defaults and a package override a single channel key (e.g. `tsc-guard.exceptions.report`) without restating the rest. Set an inherited key to `null` to delete it.
 
 `enabled`, top-level `severity`/`failOnFindings`, `presets`, `overlays`, `sinks`, `handlerBoundaries`, `entryPoints`, and the `channels` wrapper are removed; leaving one in the config fails the build with a diagnostic naming its replacement. Platform effect models (Node/DOM globals, `node:fs`, and so on) are built in, so there is nothing to select. `dispatch` is recognised on every channel.
