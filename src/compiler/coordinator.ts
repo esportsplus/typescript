@@ -1,7 +1,7 @@
-import { isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/unstable/ast/is';
+import { isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/ast/is';
 import { PACKAGE_NAME } from '../constants';
-import type { Node, SourceFile } from 'typescript/unstable/ast';
-import type { Checker, Program } from 'typescript/unstable/sync';
+import type { Node, SourceFile } from 'typescript/ast';
+import type { Checker, Program } from 'typescript/sync';
 import type { ImportInfo, ModifyOptions } from './imports';
 import type { OffsetAnchor, PositionMapping } from './sourcemap';
 import type { ImportIntent, Plugin, Prepend, Replacement, ReplacementIntent, SharedContext, Text } from './types';

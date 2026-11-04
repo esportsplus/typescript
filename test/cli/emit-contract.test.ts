@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { API } from 'typescript/unstable/sync';
+import { API } from 'typescript/sync';
 import { build } from '~/cli/tsc';
 import { createFixture, createFixtureDir, MARKER_PLUGIN, snapshotTree } from './fixtures';
 import { pathToFileURL } from 'url';

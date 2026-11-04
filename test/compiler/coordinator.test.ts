@@ -1,8 +1,8 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
-import type { Checker, Program } from 'typescript/unstable/sync';
+import type { Checker, Program } from 'typescript/sync';
 import type { ImportIntent, Plugin, ReplacementIntent, SharedContext, TransformContext } from '~/compiler/types';
-import { isCallExpression, isIdentifier, isImportDeclaration, isNamedImports } from 'typescript/unstable/ast/is';
-import type { Node, SourceFile } from 'typescript/unstable/ast';
+import { isCallExpression, isIdentifier, isImportDeclaration, isNamedImports } from 'typescript/ast/is';
+import type { Node, SourceFile } from 'typescript/ast';
 
 import coordinator from '~/compiler/coordinator';
 import languageService from '~/compiler/language-service';

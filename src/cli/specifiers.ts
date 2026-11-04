@@ -1,6 +1,6 @@
 // Imports only Node builtins and the compiler API by package name: this repo's own build runs it
 // from the emitted tree before that tree's extensionless relative imports are fixed
-import { API } from 'typescript/unstable/sync';
+import { API } from 'typescript/sync';
 import { pathToFileURL } from 'url';
 
 import fs from 'fs';
@@ -352,8 +352,8 @@ if (process.argv[1] !== undefined && pathToFileURL(path.resolve(process.argv[1])
         tsconfig = path.resolve(process.argv[2] ?? 'tsconfig.json');
 
     try {
-        let { fileNames, options } = api.parseConfigFile(tsconfig),
-            config = configure(options, fileNames);
+        let parsed = api.parseConfigFile(tsconfig),
+            config = configure({ ...parsed.options }, [...parsed.fileNames]);
 
         await rewrite(tree(config), config);
     }

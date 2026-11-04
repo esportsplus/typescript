@@ -1,7 +1,7 @@
 import { afterAll, describe, test } from 'vitest';
-import type { Checker, Program } from 'typescript/unstable/sync';
-import { isBinaryExpression, isIdentifier } from 'typescript/unstable/ast/is';
-import type { Node, SourceFile } from 'typescript/unstable/ast';
+import type { Checker, Program } from 'typescript/sync';
+import { isBinaryExpression, isIdentifier } from 'typescript/ast/is';
+import type { Node, SourceFile } from 'typescript/ast';
 import type { Plugin, ReplacementIntent, TransformContext } from '~/compiler/types';
 
 import coordinator from '~/compiler/coordinator';

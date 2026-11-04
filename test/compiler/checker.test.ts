@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { isIdentifier } from 'typescript/unstable/ast/is';
-import type { Node } from 'typescript/unstable/ast';
-import type { Checker, Program, Type } from 'typescript/unstable/sync';
+import { isIdentifier } from 'typescript/ast/is';
+import type { Node } from 'typescript/ast';
+import type { Checker, Program, Type } from 'typescript/sync';
 
 import checker from '~/compiler/checker';
 import fs from 'fs';

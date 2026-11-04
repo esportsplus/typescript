@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import * as NodeFS from 'node:fs';
 
 import * as ts from '../adapter';
-import { API } from 'typescript/unstable/sync';
+import { API } from 'typescript/sync';
 
 import { bodyOf, hasModifier, isAwaited, unwrap } from '../kernel/ast';
 import { isFunctionLike } from '../kernel/ids';
@@ -11,7 +11,7 @@ import { resolveBackingJs } from './resolve-js';
 import { ORIGIN_CAP, originOf } from './value';
 
 import type { ExceptionOrigin } from './value';
-import type { FileSystem } from 'typescript/unstable/fs';
+import { type FileSystemCallbacks, serverFS } from 'typescript/fs';
 
 // Thrown constructors we map to a concrete error class. Anything else (a local
 // subclass, `throw err`, `throw obj`) becomes `Error` — never TOP, which would
@@ -75,7 +75,7 @@ type ThrowIndex = {
     nextProject: number;
     readonly parsed: Map<string, ParsedFile>;
     readonly resolved: Map<string, string | undefined>;
-    readonly snapshots: ReturnType<API['updateSnapshot']>[];
+    readonly snapshots: ReturnType<API['createSnapshot']>[];
     readonly summaries: Map<string, Cached>;
 };
 
@@ -150,9 +150,10 @@ function normalize(fileName: string): string {
     return fileName.replace(/\\/g, '/');
 }
 
-function overlayFileSystem(contents: Map<string, string>): FileSystem {
+function overlayFileSystem(contents: Map<string, string>): FileSystemCallbacks {
     return {
-        fileExists: (fileName) => contents.has(normalize(fileName)) || undefined,
+        directoryExists: serverFS.useOS,
+        fileExists: (fileName) => contents.has(normalize(fileName)) || serverFS.useOS,
         getAccessibleEntries: (directoryName) => {
             let directory = normalize(directoryName),
                 files: string[] = [];
@@ -165,9 +166,13 @@ function overlayFileSystem(contents: Map<string, string>): FileSystem {
                 }
             }
 
-            return files.length > 0 ? { directories: [], files } : undefined;
+            return files.length > 0 ? { directories: [], files, symlinks: undefined } : serverFS.useOS;
         },
-        readFile: (fileName) => contents.get(normalize(fileName)),
+        readFile: (fileName) => contents.get(normalize(fileName)) ?? serverFS.useOS,
+        realpath: serverFS.useOS,
+        removeFile: serverFS.useOS,
+        stat: serverFS.useOS,
+        writeFile: serverFS.useOS,
     };
 }
 
@@ -196,12 +201,12 @@ function parseText(index: ThrowIndex, text: string): ts.SourceFile | null {
             files: ['scan.js'],
         }));
 
-        let snapshot = index.api.updateSnapshot({ openProjects: [config] });
+        let snapshot = index.api.createSnapshot({ openProjects: [config] });
 
         index.snapshots.push(snapshot);
         return (
             snapshot
-                .getProject(config)
+                .getConfiguredProject(config)
                 ?.program.getSourceFile(file) ?? null
         );
     } catch {

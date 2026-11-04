@@ -1,17 +1,17 @@
 // Adapter that presents the native TypeScript 7 `unstable` modules under the
 // classic `ts.*` surface analyze was written against. analyze files import this
 // as a namespace (`import * as ts from '../adapter'`).
-export * from 'typescript/unstable/ast';
-export * from 'typescript/unstable/ast/is';
-export * from 'typescript/unstable/sync';
+export * from 'typescript/ast';
+export * from 'typescript/ast/is';
+export * from 'typescript/sync';
 // ModifierFlags is exported by both ast and sync; pick one to resolve the star.
-export { ModifierFlags } from 'typescript/unstable/sync';
+export { ModifierFlags } from 'typescript/sync';
 
 import {
     type Node,
     type SourceFile,
     SyntaxKind,
-} from 'typescript/unstable/ast';
+} from 'typescript/ast';
 import {
     type Checker,
     type Program,
@@ -19,7 +19,7 @@ import {
     type Type,
     TypeFlags,
     type UnionType,
-} from 'typescript/unstable/sync';
+} from 'typescript/sync';
 
 // Classic name for the checker.
 export type TypeChecker = Checker;

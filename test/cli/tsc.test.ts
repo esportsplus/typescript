@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { API, type Diagnostic, DiagnosticCategory } from 'typescript/unstable/sync';
+import { API, type Diagnostic, DiagnosticCategory } from 'typescript/sync';
 import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runAnalyze } from '~/cli/tsc';
 import { flatten, format } from '~/cli/diagnostics';
 import { createFixtureDir } from './fixtures';
@@ -691,7 +691,7 @@ describe('diagnostics', () => {
             category: DiagnosticCategory.Error,
             code: 2451,
             end: pos + 3,
-            fileName: sourcePath,
+            fileName: sourcePath as Diagnostic['fileName'],
             pos,
             text: 'Cannot redeclare block-scoped variable.'
         };
@@ -713,7 +713,7 @@ describe('diagnostics', () => {
                 category: DiagnosticCategory.Error,
                 code: 2322,
                 end: pos + 1,
-                fileName: sourcePath,
+                fileName: sourcePath as Diagnostic['fileName'],
                 pos,
                 text: 'Type number is not assignable to type string.'
             };

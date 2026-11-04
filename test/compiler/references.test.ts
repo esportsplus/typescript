@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Node } from 'typescript/unstable/ast';
-import { SyntaxKind } from 'typescript/unstable/ast';
-import { isBindingElement } from 'typescript/unstable/ast/is';
-import type { Checker, Program } from 'typescript/unstable/sync';
+import type { Node } from 'typescript/ast';
+import { SyntaxKind } from 'typescript/ast';
+import { isBindingElement } from 'typescript/ast/is';
+import type { Checker, Program } from 'typescript/sync';
 
 import fs from 'fs';
 import languageService from '~/compiler/language-service';

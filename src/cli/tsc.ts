@@ -2,7 +2,7 @@ import type { Plugin, SharedContext } from '../compiler/types';
 import type { PositionMapping } from '../compiler/sourcemap';
 import type { Diagnostic as AnalyzeDiagnostic } from '../guard/kernel/types';
 import type { Config } from './specifiers';
-import { API, type Checker, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/sync';
+import { API, type Checker, DiagnosticCategory, type Program, type Snapshot } from 'typescript/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
 import { PACKAGE_NAME } from '../constants';
@@ -41,7 +41,7 @@ type TransformedFile = {
     mapping: PositionMapping;
 };
 
-type ResolvedOptions = ReturnType<API['parseConfigFile']>['options'];
+type ResolvedOptions = Record<string, unknown>;
 
 type Spawned = {
     code: number;
@@ -80,8 +80,8 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         root = path.dirname(path.resolve(tsconfig)),
         owned = instance === undefined,
         api = opened?.api ?? instance!,
-        snapshot = opened?.snapshot ?? api.updateSnapshot({ openProjects: [tsconfig] }),
-        project = opened?.project ?? snapshot.getProject(tsconfig);
+        snapshot = opened?.snapshot ?? api.createSnapshot({ openProjects: [tsconfig] }),
+        project = opened?.project ?? snapshot.getConfiguredProject(tsconfig);
 
     if (!project) {
         teardown(snapshot, tsconfig, owned);
@@ -99,7 +99,9 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
 
     stop();
 
-    let { fileNames, options } = api.parseConfigFile(tsconfig),
+    let parsed = api.parseConfigFile(tsconfig),
+        fileNames = [...parsed.fileNames],
+        options: ResolvedOptions = { ...parsed.options },
         plugins: Plugin[],
         shared: SharedContext = new Map(),
         transformedFiles = new Map<string, TransformedFile>();
@@ -393,9 +395,9 @@ function layout(tsconfig: string, args: string[]): [ResolvedOptions, string[]] {
     let api = new API({ cwd: process.cwd() });
 
     try {
-        let { fileNames, options } = api.parseConfigFile(tsconfig);
-
-        options = { ...options };
+        let parsed = api.parseConfigFile(tsconfig),
+            fileNames = [...parsed.fileNames],
+            options: ResolvedOptions = { ...parsed.options };
 
         for (let i = 0, n = args.length - 1; i < n; i++) {
             let key = LAYOUT_FLAGS[args[i].toLowerCase()];

@@ -1,4 +1,4 @@
-import type { Checker, Program } from 'typescript/unstable/sync';
+import type { Checker, Program } from 'typescript/sync';
 
 
 type Query = (...args: unknown[]) => unknown;

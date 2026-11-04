@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import type { Expression, Node, SourceFile } from 'typescript/unstable/ast';
-import { isCallExpression, isClassDeclaration, isIdentifier, isObjectLiteralExpression, isPropertyAccessExpression, isVariableStatement } from 'typescript/unstable/ast/is';
+import type { Expression, Node, SourceFile } from 'typescript/ast';
+import { isCallExpression, isClassDeclaration, isIdentifier, isObjectLiteralExpression, isPropertyAccessExpression, isVariableStatement } from 'typescript/ast/is';
 
 import ast from '~/compiler/ast';
 import languageService from '~/compiler/language-service';

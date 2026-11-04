@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { type Checker, SymbolFlags } from 'typescript/unstable/sync';
-import type { Identifier, Node, SourceFile } from 'typescript/unstable/ast';
-import { SyntaxKind } from 'typescript/unstable/ast';
-import { isIdentifier, isImportClause, isImportSpecifier, isNamespaceImport } from 'typescript/unstable/ast/is';
+import { type Checker, SymbolFlags } from 'typescript/sync';
+import type { Identifier, Node, SourceFile } from 'typescript/ast';
+import { SyntaxKind } from 'typescript/ast';
+import { isIdentifier, isImportClause, isImportSpecifier, isNamespaceImport } from 'typescript/ast/is';
 
 import fs from 'fs';
 import imports from '~/compiler/imports';

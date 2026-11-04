@@ -1,8 +1,8 @@
-import type { ImportDeclaration, Node, SourceFile } from 'typescript/unstable/ast';
-import { SyntaxKind } from 'typescript/unstable/ast';
-import { isIdentifier, isImportDeclaration, isNamedImports, isNamespaceImport, isStringLiteral } from 'typescript/unstable/ast/is';
-import type { Checker } from 'typescript/unstable/sync';
-import { SymbolFlags } from 'typescript/unstable/sync';
+import type { ImportDeclaration, Node, SourceFile } from 'typescript/ast';
+import { SyntaxKind } from 'typescript/ast';
+import { isIdentifier, isImportDeclaration, isNamedImports, isNamespaceImport, isStringLiteral } from 'typescript/ast/is';
+import type { Checker } from 'typescript/sync';
+import { SymbolFlags } from 'typescript/sync';
 
 import manifest from './manifest';
 

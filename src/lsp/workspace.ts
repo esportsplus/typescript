@@ -11,7 +11,7 @@ import type { AnalyzeResult } from '../guard/kernel/analyze';
 import type { ThrowIndex } from '../guard/exceptions/derive';
 import type { AnalyzeConfig } from '../guard/kernel/types';
 
-type Snapshot = ReturnType<ts.API['updateSnapshot']>;
+type Snapshot = ReturnType<ts.API['createSnapshot']>;
 
 // Owns one long-lived native compiler session for a project and re-runs analyze's
 // whole-project analysis against its incrementally-updated program. The API/snapshot
@@ -64,13 +64,15 @@ class AnalyzeWorkspace {
     refresh(changed: ReadonlyArray<string>): void {
         let previous = this.snapshot;
 
-        this.snapshot = this.api.updateSnapshot(
-            changed.length === 0
-                ? { fileChanges: { invalidateAll: true } }
-                : { fileChanges: { changed: changed.map((fileName) => NodePath.resolve(fileName)) } },
-        );
+        let changes = changed.length === 0
+                ? { fileNotifications: { invalidateAll: true } }
+                : { fileNotifications: { changed: changed.map((fileName) => NodePath.resolve(fileName)) } };
 
-        if (previous && !previous.isDisposed()) {
+        this.snapshot = previous && !previous.isDisposed()
+            ? previous.update({ ...changes, openProjects: [this.configPath] })
+            : this.api.createSnapshot({ ...changes, openProjects: [this.configPath] });
+
+        if (previous && previous !== this.snapshot && !previous.isDisposed()) {
             previous.dispose();
         }
     }
@@ -80,7 +82,7 @@ class AnalyzeWorkspace {
             return undefined;
         }
 
-        let project = this.snapshot.getProject(this.configPath);
+        let project = this.snapshot.getConfiguredProject(this.configPath);
 
         if (!project) {
             return undefined;

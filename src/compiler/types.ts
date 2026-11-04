@@ -1,5 +1,5 @@
-import type { Node, SourceFile } from 'typescript/unstable/ast';
-import type { Checker, Program } from 'typescript/unstable/sync';
+import type { Node, SourceFile } from 'typescript/ast';
+import type { Checker, Program } from 'typescript/sync';
 
 
 type ImportIntent = {

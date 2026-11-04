@@ -1,5 +1,5 @@
-import type { Node, SourceFile } from 'typescript/unstable/ast';
-import { NodeFlags, SyntaxKind } from 'typescript/unstable/ast';
+import type { Node, SourceFile } from 'typescript/ast';
+import { NodeFlags, SyntaxKind } from 'typescript/ast';
 import {
     isArrayBindingPattern, isArrayLiteralExpression, isAsExpression, isAssignmentOperator, isAwaitExpression,
     isBinaryExpression, isBindingElement, isCallExpression, isElementAccessExpression, isForInStatement,
@@ -9,9 +9,9 @@ import {
     isPropertyAssignment, isQualifiedName, isSatisfiesExpression, isShorthandPropertyAssignment, isSpreadAssignment,
     isSpreadElement, isStringLiteral, isTypeAssertion, isTypeNode, isTypeQueryNode, isVariableDeclaration,
     isVariableDeclarationList
-} from 'typescript/unstable/ast/is';
-import type { Checker, NodeHandle, Program, Symbol } from 'typescript/unstable/sync';
-import { SymbolFlags } from 'typescript/unstable/sync';
+} from 'typescript/ast/is';
+import type { Checker, NodeHandle, Program, Symbol } from 'typescript/sync';
+import { SymbolFlags } from 'typescript/sync';
 
 import manifest from './manifest';
 

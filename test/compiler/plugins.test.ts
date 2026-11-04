@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolve } from 'node:path';
-import type { Checker, Program } from 'typescript/unstable/sync';
+import type { Checker, Program } from 'typescript/sync';
 import type { Plugin } from '~/compiler/types';
-import type { SourceFile } from 'typescript/unstable/ast';
+import type { SourceFile } from 'typescript/ast';
 
 import coordinator from '~/compiler/coordinator';
 import languageService from '~/compiler/language-service';

@@ -1,5 +1,5 @@
-import type { Node } from 'typescript/unstable/ast';
-import { isIdentifier } from 'typescript/unstable/ast/is';
+import type { Node } from 'typescript/ast';
+import { isIdentifier } from 'typescript/ast/is';
 import { afterAll, beforeAll, describe, test } from 'vitest';
 
 import fs from 'fs';

@@ -1,6 +1,6 @@
-import type { SourceFile } from 'typescript/unstable/ast';
-import type { FileSystem } from 'typescript/unstable/fs';
-import { API, type Checker, DiagnosticCategory, type Program, type Project, type Snapshot } from 'typescript/unstable/sync';
+import type { SourceFile } from 'typescript/ast';
+import { type FileSystemCallbacks, serverFS } from 'typescript/fs';
+import { API, type Checker, DiagnosticCategory, type Program, type Project, type Snapshot } from 'typescript/sync';
 import { PACKAGE_NAME } from '../constants';
 
 import fs from 'fs';
@@ -112,9 +112,9 @@ function absent(entry: Entry, id: string): boolean {
 }
 
 function advance(session: Session, configFileName: string, changed: string[]): void {
-    let snapshot = session.api.updateSnapshot({ fileChanges: { changed } });
+    let snapshot = session.snapshot.update({ fileNotifications: { changed }, openProjects: [configFileName] });
 
-    if (!session.snapshot.isDisposed()) {
+    if (snapshot !== session.snapshot && !session.snapshot.isDisposed()) {
         session.snapshot.dispose();
     }
 
@@ -182,7 +182,7 @@ function createScratch(file: string, content: string): ScratchEntry {
     contents.set(file, content);
 
     let api = new API({ cwd: process.cwd(), fs: overlayFileSystem(contents, true) }),
-        snapshot = api.updateSnapshot({ openProjects: [config] }),
+        snapshot = api.createSnapshot({ openProjects: [config] }),
         project = resolveProject(snapshot, config);
 
     return { api, config, contents, count: 1, file, project, snapshot };
@@ -250,11 +250,11 @@ function normalize(fileName: string): string {
     return fileName.replace(backslashes, '/');
 }
 
-function open(configPath: string, overlay?: FileSystem): OpenProject {
+function open(configPath: string, overlay?: FileSystemCallbacks): OpenProject {
     let configFileName = normalize(path.resolve(configPath)),
         entry = overlay === undefined ? getEntry(configFileName) : undefined,
         api = entry?.api ?? new API({ cwd: path.dirname(configFileName), fs: overlay }),
-        snapshot = entry?.snapshot ?? api.updateSnapshot({ openProjects: [configFileName] }),
+        snapshot = entry?.snapshot ?? api.createSnapshot({ openProjects: [configFileName] }),
         project = entry?.project ?? resolveProject(snapshot, configFileName);
 
     if (entry) {
@@ -277,14 +277,16 @@ function open(configPath: string, overlay?: FileSystem): OpenProject {
 // Every callback is a round-trip from tsgo, and a program whose imports change re-resolves every
 // module, asking whether each candidate path exists. While every overlay file is also on disk the
 // disk gives the same answers, so existence checks are only routed here once one is not.
-function overlayFileSystem(contents: Overlay, virtual: boolean): FileSystem {
-    let overlay: FileSystem = {
+function overlayFileSystem(contents: Overlay, virtual: boolean): FileSystemCallbacks {
+    let overlay: FileSystemCallbacks = {
+        directoryExists: serverFS.useOS,
+        fileExists: serverFS.useOS,
         getAccessibleEntries: (directoryName) => {
             let directory = normalize(directoryName),
                 extra = contents.directories.get(directory);
 
             if (!extra || extra.size === 0) {
-                return undefined;
+                return serverFS.useOS;
             }
 
             let directories: string[] = [],
@@ -299,7 +301,7 @@ function overlayFileSystem(contents: Overlay, virtual: boolean): FileSystem {
                 // directory is served entirely from the overlay when it is absent on disk
             }
 
-            return { directories, files: [...new Set([...files, ...extra])] };
+            return { directories, files: [...new Set([...files, ...extra])], symlinks: undefined };
         },
         readFile: (fileName) => {
             let content = contents.get(normalize(fileName));
@@ -308,8 +310,12 @@ function overlayFileSystem(contents: Overlay, virtual: boolean): FileSystem {
                 return content;
             }
 
-            return undefined;
-        }
+            return serverFS.useOS;
+        },
+        realpath: serverFS.useOS,
+        removeFile: serverFS.useOS,
+        stat: serverFS.useOS,
+        writeFile: serverFS.useOS
     };
 
     if (virtual) {
@@ -318,7 +324,7 @@ function overlayFileSystem(contents: Overlay, virtual: boolean): FileSystem {
                 return true;
             }
 
-            return undefined;
+            return serverFS.useOS;
         };
     }
 
@@ -328,7 +334,7 @@ function overlayFileSystem(contents: Overlay, virtual: boolean): FileSystem {
 function recreate(entry: Entry): void {
     disposeEntry(entry);
     entry.api = new API({ cwd: entry.root, fs: overlayFileSystem(entry.contents, entry.virtual) });
-    entry.snapshot = entry.api.updateSnapshot({ openProjects: [entry.configFileName] });
+    entry.snapshot = entry.api.createSnapshot({ openProjects: [entry.configFileName] });
     entry.project = resolveProject(entry.snapshot, entry.configFileName);
     entry.seen = seed(entry.project.program);
 }
@@ -344,13 +350,13 @@ function retargetScratch(entry: ScratchEntry, file: string): void {
     entry.contents.delete(entry.file);
     entry.contents.set(config, scratchConfig(file));
 
-    let snapshot = entry.api.updateSnapshot({
+    let snapshot = entry.snapshot.update({
             closeProjects: [previous],
-            fileChanges: { changed: [file] },
+            fileNotifications: { changed: [file] },
             openProjects: [config]
         });
 
-    if (!entry.snapshot.isDisposed()) {
+    if (snapshot !== entry.snapshot && !entry.snapshot.isDisposed()) {
         entry.snapshot.dispose();
     }
 
@@ -363,7 +369,7 @@ function retargetScratch(entry: ScratchEntry, file: string): void {
 }
 
 function resolveProject(snapshot: Snapshot, configFileName: string): Project {
-    let project = snapshot.getProject(configFileName);
+    let project = snapshot.getConfiguredProject(configFileName);
 
     if (!project) {
         throw new Error(`${PACKAGE_NAME}: project not found for ${configFileName}`);

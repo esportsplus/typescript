@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SyntaxKind } from 'typescript/unstable/ast';
-import { isImportDeclaration } from 'typescript/unstable/ast/is';
+import { SyntaxKind } from 'typescript/ast';
+import { isImportDeclaration } from 'typescript/ast/is';
 
 import fs from 'fs';
 import path from 'path';

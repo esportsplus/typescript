@@ -178,7 +178,7 @@ function render(v: ExceptionsValue): string {
 function originOf(
     node: ts.Node,
     sourceFile: ts.SourceFile,
-    fileName = sourceFile.fileName,
+    fileName: string = sourceFile.fileName,
 ): ExceptionOrigin {
     const location = locationOf(node, sourceFile);
     const text = node.getText(sourceFile).replace(/\s+/g, ' ').trim();

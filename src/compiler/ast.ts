@@ -1,6 +1,6 @@
 import type { Range } from './types';
-import type { Expression, Node } from 'typescript/unstable/ast';
-import { isIdentifier, isPropertyAccessExpression } from 'typescript/unstable/ast/is';
+import type { Expression, Node } from 'typescript/ast';
+import { isIdentifier, isPropertyAccessExpression } from 'typescript/ast/is';
 
 
 const expression = {

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Node, SourceFile } from 'typescript/unstable/ast';
+import type { Node, SourceFile } from 'typescript/ast';
 import {
     isArrowFunction, isCallExpression, isIdentifier, isPropertyAccessExpression, isTaggedTemplateExpression,
     isTemplateExpression, isVariableDeclaration
-} from 'typescript/unstable/ast/is';
+} from 'typescript/ast/is';
 import type { Plugin, ReplacementIntent } from '~/compiler/types';
 
 import coordinator from '~/compiler/coordinator';
