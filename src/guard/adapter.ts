@@ -21,6 +21,8 @@ import {
     type UnionType,
 } from 'typescript/sync';
 
+import checkers from '../compiler/checker';
+
 // Classic name for the checker.
 export type TypeChecker = Checker;
 
@@ -45,11 +47,12 @@ function isClassLike(node: Node): boolean {
 }
 
 // The program's in-project, non-declaration files (the native Program does not
-// expose the tsconfig root set). It exposes file names, not SourceFiles, and each
-// materialization is a round-trip, so names that cannot be an entry are dropped
-// first; `isDeclarationFile` still decides for the rest (`x.d.css.ts`).
+// expose the tsconfig root set). It exposes file names, not SourceFiles, and
+// materializing one costs its transfer, so names that cannot be an entry are
+// dropped first and the rest fetched together; `isDeclarationFile` still decides
+// for them (`x.d.css.ts`).
 function getEntrySourceFiles(program: Program): SourceFile[] {
-    const out: SourceFile[] = [];
+    const names: [string][] = [];
     for (const name of program.getSourceFileNames()) {
         if (
             /\.d\.[cm]?ts$/.test(name) ||
@@ -57,7 +60,10 @@ function getEntrySourceFiles(program: Program): SourceFile[] {
         ) {
             continue;
         }
-        const sf = program.getSourceFile(name);
+        names.push([name]);
+    }
+    const out: SourceFile[] = [];
+    for (const sf of checkers.batch(program, 'getSourceFile', names)) {
         if (sf && !sf.isDeclarationFile) {
             out.push(sf);
         }

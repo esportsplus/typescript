@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { isIdentifier } from 'typescript/ast/is';
 import type { Node } from 'typescript/ast';
-import type { Checker, Program, Type } from 'typescript/sync';
+import type { API, Checker, Program, Project, Type } from 'typescript/sync';
 
 import checker from '~/compiler/checker';
 import fs from 'fs';
@@ -18,7 +18,7 @@ type Fake = Record<string, (...args: unknown[]) => unknown>;
 function fake() {
     let batches: unknown[][] = [],
         calls: Record<string, number> = {},
-        method = (name: string) => (...args: unknown[]) => {
+        method = (name: string) => Object.assign((...args: unknown[]) => {
             calls[name] = (calls[name] ?? 0) + 1;
 
             if (Array.isArray(args[0])) {
@@ -28,7 +28,7 @@ function fake() {
             }
 
             return { args, name };
-        };
+        }, { gen: (...args: unknown[]) => ({ args, name }) });
 
     let double = {
             getAliasedSymbol: method('getAliasedSymbol'),
@@ -45,6 +45,7 @@ function fake() {
             getSymbolAtLocation: method('getSymbolAtLocation'),
             getTypeArguments: method('getTypeArguments'),
             getTypeAtLocation: method('getTypeAtLocation'),
+            getTypeOfSymbol: method('getTypeOfSymbol'),
             isArrayType: method('isArrayType'),
             isTupleType: method('isTupleType'),
             isTypeAssignableTo: method('isTypeAssignableTo'),
@@ -137,10 +138,10 @@ describe('compiler/checker', () => {
             memo = wrap(double),
             symbol = {};
 
-        memo.getImmediateAliasedSymbol(symbol);
-        memo.getImmediateAliasedSymbol(symbol);
+        memo.getTypeOfSymbol(symbol);
+        memo.getTypeOfSymbol(symbol);
 
-        expect(calls.getImmediateAliasedSymbol).toBe(2);
+        expect(calls.getTypeOfSymbol).toBe(2);
         expect((checker.cached({ label: 'fake' } as unknown as Checker) as unknown as { label: string }).label).toBe('fake');
     });
 
@@ -235,11 +236,95 @@ describe('compiler/checker', () => {
         memo.getSymbolAtLocation(node);
         memo.getSymbolAtLocation(node);
         memo.getSymbolAtLocation([node, {}, {}]);
-        memo.getImmediateAliasedSymbol(node);
-        memo.getImmediateAliasedSymbol(node);
+        memo.getTypeOfSymbol(node);
+        memo.getTypeOfSymbol(node);
 
         expect(checker.sent(memo as unknown as Checker)).toBe(4);
         expect(checker.sent(double as unknown as Checker)).toBe(0);
+    });
+});
+
+describe('compiler/checker batch', () => {
+    // A stand-in API: a batch answers each request generator as its single call would
+    function api() {
+        let sent: unknown[][] = [];
+
+        return {
+            api: {
+                batch: (...requests: { args: unknown[]; name: string }[]) => {
+                    sent.push(requests);
+
+                    return requests.map(({ args, name }) => ({ args, name }));
+                }
+            } as unknown as API,
+            sent
+        };
+    }
+
+    function attached(double: Fake, program = {} as Program) {
+        let { api: fakeApi, sent } = api();
+
+        checker.attach(fakeApi, { checker: double, program } as unknown as Project);
+
+        return { program, sent };
+    }
+
+    it('answers every call in one round-trip and keeps the answers for single calls', () => {
+        let { calls, checker: double } = fake(),
+            { sent } = attached(double),
+            memo = wrap(double),
+            answers = checker.batch(memo as unknown as Checker, 'getPropertyOfType', [
+                [{ id: 1 } as Type, 'then'],
+                [{ id: 2 } as Type, 'then'],
+                [{ id: 1 } as Type, 'length']
+            ]);
+
+        expect(sent).toHaveLength(1);
+        expect(answers).toHaveLength(3);
+        expect(memo.getPropertyOfType({ id: 1 }, 'then')).toBe(answers[0]);
+        expect(memo.getPropertyOfType({ id: 2 }, 'then')).toBe(answers[1]);
+        expect(memo.getPropertyOfType({ id: 1 }, 'length')).toBe(answers[2]);
+        expect(calls.getPropertyOfType).toBeUndefined();
+        expect(checker.sent(memo as unknown as Checker)).toBe(1);
+    });
+
+    it('sends only what the cache lacks', () => {
+        let { calls, checker: double } = fake(),
+            { sent } = attached(double),
+            memo = wrap(double),
+            known = memo.getApparentType({ id: 1 });
+
+        let answers = checker.batch(memo as unknown as Checker, 'getApparentType', [[{ id: 1 } as Type], [{ id: 2 } as Type]]);
+
+        expect(answers[0]).toBe(known);
+        expect(sent).toHaveLength(0);
+        expect(calls.getApparentType).toBe(2);
+
+        checker.batch(memo as unknown as Checker, 'getApparentType', [[{ id: 1 } as Type], [{ id: 2 } as Type], [{ id: 3 } as Type], [{ id: 4 } as Type]]);
+
+        expect(sent).toEqual([[{ args: [{ id: 3 }], name: 'getApparentType' }, { args: [{ id: 4 }], name: 'getApparentType' }]]);
+    });
+
+    it('sends each call alone for a checker of a project never attached', () => {
+        let { calls, checker: double } = fake(),
+            memo = wrap(double);
+
+        checker.batch(memo as unknown as Checker, 'getApparentType', [[{ id: 1 } as Type], [{ id: 2 } as Type]]);
+
+        expect(calls.getApparentType).toBe(2);
+        expect(checker.sent(memo as unknown as Checker)).toBe(2);
+    });
+
+    it('batches a program query without caching it', () => {
+        let { checker: double } = fake(),
+            source = fake().checker,
+            program = { getSourceFile: source.getTypeOfSymbol } as unknown as Program,
+            { sent } = attached(double, program);
+
+        checker.batch(program, 'getSourceFile', [['a.ts'], ['b.ts']]);
+        checker.batch(program, 'getSourceFile', [['a.ts'], ['b.ts']]);
+
+        expect(sent).toHaveLength(2);
     });
 });
 
@@ -248,6 +333,7 @@ describe('compiler/checker type-keyed queries', () => {
         'getAliasedSymbol',
         'getApparentType',
         'getBaseConstraintOfType',
+        'getImmediateAliasedSymbol',
         'getNonNullableType',
         'getPropertiesOfType',
         'getReturnTypeOfSignature',

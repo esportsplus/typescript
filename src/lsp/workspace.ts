@@ -2,6 +2,7 @@ import * as NodePath from 'node:path';
 
 import * as ts from '../guard/adapter';
 
+import checker from '../compiler/checker';
 import { analyzeProgram } from '../guard/kernel/analyze';
 import { createThrowIndex, disposeThrowIndex } from '../guard/exceptions/derive';
 import { loadConfigFromTsconfig } from '../guard/kernel/config';
@@ -87,6 +88,8 @@ class AnalyzeWorkspace {
         if (!project) {
             return undefined;
         }
+
+        checker.attach(this.api, project);
 
         return analyzeProgram(project.program, project.checker, this.config, this.throwIndex);
     }

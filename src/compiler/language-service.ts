@@ -3,6 +3,7 @@ import { type FileSystemCallbacks, serverFS } from 'typescript/fs';
 import { API, type Checker, DiagnosticCategory, type Program, type Project, type RetainedSourceFile, type Snapshot } from 'typescript/sync';
 import { PACKAGE_NAME } from '../constants';
 
+import checker from './checker';
 import fs from 'fs';
 import path from 'path';
 
@@ -127,7 +128,7 @@ function advance(session: Session, configFileName: string, changed: string[]): v
     }
 
     session.api.clearSourceFileCache();
-    session.project = resolveProject(snapshot, configFileName);
+    session.project = resolveProject(session.api, snapshot, configFileName);
     session.snapshot = snapshot;
 }
 
@@ -191,7 +192,7 @@ function createScratch(file: string, content: string): ScratchEntry {
 
     let api = new API({ cwd: process.cwd(), fs: overlayFileSystem(contents, true) }),
         snapshot = api.createSnapshot({ openProjects: [config] }),
-        project = resolveProject(snapshot, config);
+        project = resolveProject(api, snapshot, config);
 
     return { api, config, contents, count: 1, file, project, snapshot };
 }
@@ -263,7 +264,7 @@ function open(configPath: string, overlay?: FileSystemCallbacks): OpenProject {
         entry = overlay === undefined ? getEntry(configFileName) : undefined,
         api = entry?.api ?? new API({ cwd: path.dirname(configFileName), fs: overlay }),
         snapshot = entry?.snapshot ?? api.createSnapshot({ openProjects: [configFileName] }),
-        project = entry?.project ?? resolveProject(snapshot, configFileName);
+        project = entry?.project ?? resolveProject(api, snapshot, configFileName);
 
     if (entry) {
         return {
@@ -343,7 +344,7 @@ function recreate(entry: Entry): void {
     disposeEntry(entry);
     entry.api = new API({ cwd: entry.root, fs: overlayFileSystem(entry.contents, entry.virtual) });
     entry.snapshot = entry.api.createSnapshot({ openProjects: [entry.configFileName] });
-    entry.project = resolveProject(entry.snapshot, entry.configFileName);
+    entry.project = resolveProject(entry.api, entry.snapshot, entry.configFileName);
     entry.seen = seed(entry.project.program);
 }
 
@@ -372,18 +373,18 @@ function retargetScratch(entry: ScratchEntry, file: string): void {
     entry.contents.delete(previous);
     entry.config = config;
     entry.file = file;
-    entry.project = resolveProject(snapshot, config);
+    entry.project = resolveProject(entry.api, snapshot, config);
     entry.snapshot = snapshot;
 }
 
-function resolveProject(snapshot: Snapshot, configFileName: string): Project {
+function resolveProject(api: API, snapshot: Snapshot, configFileName: string): Project {
     let project = snapshot.getConfiguredProject(configFileName);
 
     if (!project) {
         throw new Error(`${PACKAGE_NAME}: project not found for ${configFileName}`);
     }
 
-    return project;
+    return checker.attach(api, project);
 }
 
 function scratchConfig(file: string): string {

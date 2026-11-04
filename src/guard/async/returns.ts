@@ -3,6 +3,7 @@ import { isFunctionLike } from '../kernel/ids';
 import type { FunctionLike } from '../kernel/types';
 
 import * as ts from '../adapter';
+import checkers from '../../compiler/checker';
 
 
 // Answers fixed for the program snapshot: per type id whether it is a promise, per file whether it
@@ -265,6 +266,78 @@ const inferredReturnsPromise = (checker: ts.TypeChecker, node: FunctionLike, cac
     return isPromiseType(checker, checker.getReturnTypeOfSignature(signature), caches.promiseTypes);
 };
 
+// Asks what `isPromiseType` will ask about each type, one step at a time for all of them: the
+// apparent type of each constituent up to the first named `Promise`, then its `then` member. The
+// memoized checker then answers every later single query.
+const prefetchPromiseTypes = (checker: ts.TypeChecker, types: ReadonlyArray<ts.Type | undefined>, cache: Map<number, boolean>): void => {
+    let parts: ts.Type[] = [],
+        seen = new Set<number>();
+
+    for (let i = 0, n = types.length; i < n; i++) {
+        let type = types[i];
+
+        if (!type || cache.has(type.id) || seen.has(type.id)) {
+            continue;
+        }
+
+        seen.add(type.id);
+
+        for (let part of constituents(type)) {
+            let symbol = part.getSymbol() ?? part.getAliasSymbol();
+
+            if (symbol && symbol.name === 'Promise') {
+                break;
+            }
+
+            parts.push(part);
+        }
+    }
+
+    if (parts.length === 0) {
+        return;
+    }
+
+    let apparent = checkers.batch(checker, 'getApparentType', parts.map((part) => [part] as [ts.Type]));
+
+    checkers.batch(checker, 'getPropertyOfType', parts.map((part, i) => [apparent[i] ?? part, 'then'] as [ts.Type, string]));
+};
+
+// Asks what `inferredReturnsPromise` will ask about each function whose syntax does not decide it,
+// one step at a time for all of them: types, call signatures, then return types, which it returns
+// for `prefetchPromiseTypes`.
+const prefetchReturnTypes = (checker: ts.TypeChecker, nodes: ReadonlyArray<FunctionLike>, caches: Caches): ts.Type[] => {
+    let pending: FunctionLike[] = [];
+
+    for (let i = 0, n = nodes.length; i < n; i++) {
+        if (declaredReturnsPromise(checker, nodes[i], caches) === undefined) {
+            pending.push(nodes[i]);
+        }
+    }
+
+    if (pending.length === 0) {
+        return [];
+    }
+
+    let types = checker.getTypeAtLocation(pending),
+        typed: [ts.Type, ts.SignatureKind][] = [];
+
+    for (let i = 0, n = types.length; i < n; i++) {
+        if (types[i]) {
+            typed.push([types[i], ts.SignatureKind.Call]);
+        }
+    }
+
+    let signatures: [ts.Signature][] = [];
+
+    for (let found of checkers.batch(checker, 'getSignaturesOfType', typed)) {
+        if (found[0]) {
+            signatures.push([found[0]]);
+        }
+    }
+
+    return checkers.batch(checker, 'getReturnTypeOfSignature', signatures);
+};
+
 // Whether invoking this function yields a promise the caller must own.
 const returnsPromise = (checker: ts.TypeChecker, node: FunctionLike, caches: Caches): boolean => {
     return declaredReturnsPromise(checker, node, caches) ?? inferredReturnsPromise(checker, node, caches);
@@ -272,4 +345,4 @@ const returnsPromise = (checker: ts.TypeChecker, node: FunctionLike, caches: Cac
 
 
 export type { Caches };
-export { declaredReturnsPromise, inferredReturnsPromise, isPromiseType, returnsPromise };
+export { declaredReturnsPromise, inferredReturnsPromise, isPromiseType, prefetchPromiseTypes, prefetchReturnTypes, returnsPromise };

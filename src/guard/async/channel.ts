@@ -8,12 +8,13 @@ import type {
     DiagnosticFix,
     FunctionInfo,
     FunctionLike,
+    PrepareContext,
     Summary,
     TransferContext,
 } from '../kernel/types';
 import { bodyOf, constituents, hasModifier, isAwaited, unwrap } from '../kernel/ast';
 import { isFunctionLike, locationOf } from '../kernel/ids';
-import { type Caches, isPromiseType, returnsPromise } from './returns';
+import { type Caches, isPromiseType, prefetchPromiseTypes, prefetchReturnTypes, returnsPromise } from './returns';
 import { type AsyncValue, bottom, equals, promise, widen } from './value';
 
 // The async aggregators whose input decides fan-out width, and whose result is a
@@ -530,6 +531,38 @@ function createAsyncChannel(): Channel<AsyncValue> {
         },
         equals,
         name: 'async',
+        // What transfer asks of each function (whether it returns a promise) and
+        // what diagnose asks of each call that resolves to no analyzed function
+        // (whether its type is a promise), asked together.
+        prepare(ctx: PrepareContext): void {
+            const leaves: (ts.CallExpression | ts.NewExpression)[] = [];
+            const visit = (n: ts.Node): void => {
+                if (isFunctionLike(n)) {
+                    return;
+                }
+                if (
+                    (ts.isCallExpression(n) || ts.isNewExpression(n)) &&
+                    !isChainContinuation(n) &&
+                    ctx.resolveCall(n).targets.length === 0
+                ) {
+                    leaves.push(n);
+                }
+                ts.forEachChild(n, visit);
+            };
+            for (const fn of ctx.fns) {
+                const body = bodyOf(fn.node);
+                if (body) {
+                    ts.forEachChild(body, visit);
+                }
+            }
+            const returned = prefetchReturnTypes(
+                ctx.checker,
+                ctx.fns.filter((fn) => !returnsByFunction.has(fn)).map((fn) => fn.node),
+                caches,
+            );
+            const called = leaves.length > 0 ? ctx.checker.getTypeAtLocation(leaves) : [];
+            prefetchPromiseTypes(ctx.checker, [...returned, ...called], caches.promiseTypes);
+        },
         transfer(ctx: TransferContext<AsyncValue>): Summary<AsyncValue> {
             const value = getReturnsPromise(ctx.checker, ctx.fn)
                 ? promise()

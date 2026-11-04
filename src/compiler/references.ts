@@ -13,6 +13,7 @@ import {
 import type { Checker, NodeHandle, Program, Symbol } from 'typescript/sync';
 import { SymbolFlags } from 'typescript/sync';
 
+import checkers from './checker';
 import manifest from './manifest';
 
 
@@ -29,6 +30,14 @@ type Origin = {
     // Declaration the value comes from once every import, re-export and namespace alias is followed
     declaration: NodeHandle;
     // Files declaring the aliases between the use and the declaration, nearest first
+    through: string[];
+};
+
+// An alias chain being followed: the symbol reached so far and the files declaring the aliases on
+// the way, keyed by the symbol it started from
+type Walk = {
+    current: Symbol;
+    key: string;
     through: string[];
 };
 
@@ -220,34 +229,75 @@ function collect(node: Node, found: Node[], kept: Set<string>): void {
     node.forEachChild(child => collect(child, found, kept));
 }
 
-// Follows an alias one hop at a time so every file along the chain is known
 function follow(checker: Checker, program: Program, symbol: Symbol): Origin | null {
-    return cached(program, `follow\0${symbol.id}`, () => {
-        let current = symbol,
-            through: string[] = [];
+    return followAll(checker, program, [symbol])[0];
+}
 
-        while ((current.flags & SymbolFlags.Alias) !== 0) {
-            let declarations = current.declarations ?? [];
+// Follows aliases one hop at a time so every file along each chain is known; every chain takes its
+// next hop in the same round-trip
+function followAll(checker: Checker, program: Program, symbols: Symbol[]): (Origin | null)[] {
+    let entries = cache.get(program),
+        walks: Walk[] = [],
+        started = new Set<string>();
 
-            for (let i = 0, n = declarations.length; i < n; i++) {
-                if (!through.includes(declarations[i].path)) {
-                    through.push(declarations[i].path);
+    if (!entries) {
+        entries = new Map();
+        cache.set(program, entries);
+    }
+
+    for (let i = 0, n = symbols.length; i < n; i++) {
+        let key = `follow\0${symbols[i].id}`;
+
+        if (!entries.has(key) && !started.has(key)) {
+            started.add(key);
+            walks.push({ current: symbols[i], key, through: [] });
+        }
+    }
+
+    while (walks.length > 0) {
+        let aliased: Walk[] = [];
+
+        for (let i = 0, n = walks.length; i < n; i++) {
+            let walk = walks[i];
+
+            if ((walk.current.flags & SymbolFlags.Alias) === 0) {
+                settle(entries, walk);
+                continue;
+            }
+
+            let declarations = walk.current.declarations ?? [];
+
+            for (let j = 0, m = declarations.length; j < m; j++) {
+                if (!walk.through.includes(declarations[j].path)) {
+                    walk.through.push(declarations[j].path);
                 }
             }
 
-            let next = checker.getImmediateAliasedSymbol(current);
-
-            if (!next || next === current) {
-                break;
-            }
-
-            current = next;
+            aliased.push(walk);
         }
 
-        let declaration = current.valueDeclaration ?? current.declarations?.[0];
+        if (aliased.length === 0) {
+            break;
+        }
 
-        return declaration ? { declaration, through } : null;
-    });
+        let next = checkers.batch(checker, 'getImmediateAliasedSymbol', aliased.map((walk) => [walk.current]));
+
+        walks = [];
+
+        for (let i = 0, n = aliased.length; i < n; i++) {
+            let walk = aliased[i];
+
+            if (!next[i] || next[i] === walk.current) {
+                settle(entries, walk);
+            }
+            else {
+                walk.current = next[i]!;
+                walks.push(walk);
+            }
+        }
+    }
+
+    return symbols.map((symbol) => entries.get(`follow\0${symbol.id}`) as Origin | null);
 }
 
 // A binding that can never be reassigned, so what it was initialized with is what every use sees
@@ -341,6 +391,13 @@ function rooted(expression: Node, kept: Set<string>): boolean {
     }
 
     return isIdentifier(expression) ? kept.has(expression.text) : isLoad(expression);
+}
+
+// A chain ends at the first symbol that is not an alias, or whose alias leads nowhere new
+function settle(entries: Map<string, unknown>, walk: Walk): void {
+    let declaration = walk.current.valueDeclaration ?? walk.current.declarations?.[0];
+
+    entries.set(walk.key, declaration ? { declaration, through: walk.through } : null);
 }
 
 function scan(node: Node, roots: Set<string>, bindings: Binding[]): void {
@@ -567,22 +624,42 @@ const origin = (checker: Checker, program: Program, node: Node): Origin | null =
 // declaration names are not reads.
 const origins = (checker: Checker, program: Program, file: SourceFile): Map<Node, Origin> => {
     return cached(program, `origins\0${file.fileName}`, () => {
-        let result = new Map<Node, Origin>();
-
-        let identifiers = candidates(file);
-
-        let symbols = checker.getSymbolAtLocation(identifiers);
+        let identifiers = candidates(file),
+            result = new Map<Node, Origin>(),
+            shorthands: number[] = [],
+            symbols = checker.getSymbolAtLocation(identifiers);
 
         for (let i = 0, n = identifiers.length; i < n; i++) {
-            let identifier = identifiers[i],
-                parent = identifier.parent!,
-                symbol = isShorthandPropertyAssignment(parent) && parent.name === identifier
-                    ? checker.getShorthandAssignmentValueSymbol(parent)
-                    : symbols[i],
-                found = symbol && follow(checker, program, symbol);
+            let parent = identifiers[i].parent!;
 
-            if (found) {
-                result.set(identifier, found);
+            if (isShorthandPropertyAssignment(parent) && parent.name === identifiers[i]) {
+                shorthands.push(i);
+            }
+        }
+
+        if (shorthands.length > 0) {
+            let values = checkers.batch(checker, 'getShorthandAssignmentValueSymbol', shorthands.map((i) => [identifiers[i].parent!]));
+
+            for (let i = 0, n = shorthands.length; i < n; i++) {
+                symbols[shorthands[i]] = values[i];
+            }
+        }
+
+        let found: Node[] = [],
+            resolved: Symbol[] = [];
+
+        for (let i = 0, n = identifiers.length; i < n; i++) {
+            if (symbols[i]) {
+                found.push(identifiers[i]);
+                resolved.push(symbols[i]!);
+            }
+        }
+
+        let followed = followAll(checker, program, resolved);
+
+        for (let i = 0, n = found.length; i < n; i++) {
+            if (followed[i]) {
+                result.set(found[i], followed[i]!);
             }
         }
 

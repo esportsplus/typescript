@@ -133,6 +133,12 @@ function runChannel<V>(
         summaryOf,
     });
 
+    channel.prepare?.({
+        checker: analysis.checker,
+        fns: reached,
+        resolveCall: (call) => graph.resolveCall(call, channel.name),
+    });
+
     // Reverse-topological order: callees before callers.
     const sccs = tarjanSccs(reached, calleesOf);
 

@@ -1,4 +1,5 @@
 import * as ts from '../adapter';
+import checkers from '../../compiler/checker';
 
 import type {
     CalleeResolution,
@@ -7,6 +8,7 @@ import type {
     Diagnostic,
     DiagnosticFix,
     FunctionInfo,
+    PrepareContext,
     Summary,
     TransferContext,
 } from '../kernel/types';
@@ -350,19 +352,7 @@ function acquireAt(
         }
     }
 
-    const parent = bindingParentOf(call);
-
-    const target = parent.parent;
-    const isInitializer =
-        bindingDeclOf(call) !== undefined ||
-        (ts.isPropertyDeclaration(target) && target.initializer === parent) ||
-        (ts.isBinaryExpression(target) &&
-            target.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-            target.right === parent &&
-            ts.isPropertyAccessExpression(target.left) &&
-            target.left.expression.kind === ts.SyntaxKind.ThisKeyword);
-
-    if (!isInitializer) {
+    if (!isInitializer(call)) {
         return undefined;
     }
 
@@ -433,6 +423,23 @@ function handleBinding(
     const sym = env.checker.getSymbolAtLocation(decl.name);
 
     return sym ? { sym, using: false } : undefined;
+}
+
+// A call whose value is bound: a variable, a property initializer, or a
+// `this.x = …` assignment — where a Disposable-typed value becomes a resource.
+function isInitializer(call: ts.CallExpression | ts.NewExpression): boolean {
+    const parent = bindingParentOf(call);
+    const target = parent.parent;
+
+    return (
+        bindingDeclOf(call) !== undefined ||
+        (ts.isPropertyDeclaration(target) && target.initializer === parent) ||
+        (ts.isBinaryExpression(target) &&
+            target.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+            target.right === parent &&
+            ts.isPropertyAccessExpression(target.left) &&
+            target.left.expression.kind === ts.SyntaxKind.ThisKeyword)
+    );
 }
 
 function isDischargeCall(
@@ -1468,6 +1475,49 @@ const createResourcesChannel = (
         },
         equals,
         name: 'resources',
+        // The members of every bound call's type, which acquireAt reads to tell a
+        // Disposable, asked together.
+        prepare(ctx: PrepareContext): void {
+            const calls: (ts.CallExpression | ts.NewExpression)[] = [];
+
+            for (const fn of ctx.fns) {
+                const body = bodyOf(fn.node);
+
+                if (!body) {
+                    continue;
+                }
+
+                const visit = (n: ts.Node): void => {
+                    if (n !== body && isFunctionLike(n)) {
+                        return;
+                    }
+
+                    if ((ts.isCallExpression(n) || ts.isNewExpression(n)) && isInitializer(n)) {
+                        calls.push(n);
+                    }
+
+                    ts.forEachChild(n, visit);
+                };
+
+                visit(body);
+            }
+
+            if (calls.length === 0) {
+                return;
+            }
+
+            const seen = new Set<number>();
+            const types: [ts.Type][] = [];
+
+            for (const type of ctx.checker.getTypeAtLocation(calls)) {
+                if (type && !seen.has(type.id) && !disposable[1].has(type.id)) {
+                    seen.add(type.id);
+                    types.push([type]);
+                }
+            }
+
+            checkers.batch(ctx.checker, 'getPropertiesOfType', types);
+        },
         transfer(
             ctx: TransferContext<ResourcesValue>,
         ): Summary<ResourcesValue> {

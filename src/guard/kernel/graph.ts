@@ -1,4 +1,5 @@
 import * as ts from '../adapter';
+import checkers from '../../compiler/checker';
 
 import { hasModifier, unwrap } from './ast';
 import { isFunctionLike, makeFunctionInfo } from './ids';
@@ -324,7 +325,17 @@ function buildCallGraph(
             }
         }
         if (callees.length + symbols.length > 0) {
-            checker.getSymbolAtLocation([...callees, ...symbols]);
+            const resolved = checker.getSymbolAtLocation([...callees, ...symbols]);
+            const aliases: [ts.Symbol][] = [];
+            for (let i = 0; i < callees.length; i++) {
+                const sym = resolved[i];
+                if (sym && sym.flags & ts.SymbolFlags.Alias) {
+                    aliases.push([sym]);
+                }
+            }
+            if (aliases.length > 0) {
+                checkers.batch(checker, 'getAliasedSymbol', aliases);
+            }
         }
         if (types.length > 0) {
             checker.getTypeAtLocation(types);

@@ -84,6 +84,13 @@ type TransferContext<V>  = {
     readonly peerSummaryValue: (channel: string, fnId: string) => unknown;
 };
 
+// Context handed to `prepare` before the fixpoint runs: every reached function.
+type PrepareContext  = {
+    readonly checker: ts.TypeChecker;
+    readonly fns: ReadonlyArray<FunctionInfo>;
+    readonly resolveCall: (call: ts.CallExpression | ts.NewExpression) => CalleeResolution;
+};
+
 // Context handed to `diagnose` after the fixpoint has converged.
 type DiagnoseContext<V>  = {
     readonly checker: ts.TypeChecker;
@@ -114,6 +121,11 @@ type Channel<V>  = {
     // Termination guard: fold `next` toward top after repeated growth. `round` is
     // the current SCC iteration count.
     widen(prev: V, next: V, round: number): V;
+    // Optional: ask, for every reached function at once, the checker questions
+    // `transfer` and `diagnose` will ask one function at a time, so the memoized
+    // checker answers them from a few batched round-trips. Answers must not
+    // depend on it.
+    prepare?(ctx: PrepareContext): void;
     // Analyze one function body against current callee summaries.
     transfer(ctx: TransferContext<V>): Summary<V>;
     // Emit diagnostics for one function once summaries are final.
@@ -208,4 +220,4 @@ type Analysis  = {
 };
 
 
-export { type Analysis, type AnalyzeConfig, type CallGraph, type CalleeResolution, type Channel, type ChannelConfig, type DiagnoseContext, type Diagnostic, type DiagnosticEdit, type DiagnosticFix, type DiagnosticRelated, type FunctionInfo, type OverlayLookup, type OverlaySet, type SourceLocation, type Summary, type SummaryStore, type TransferContext };
+export { type Analysis, type AnalyzeConfig, type CallGraph, type CalleeResolution, type Channel, type ChannelConfig, type DiagnoseContext, type Diagnostic, type DiagnosticEdit, type DiagnosticFix, type DiagnosticRelated, type FunctionInfo, type OverlayLookup, type OverlaySet, type PrepareContext, type SourceLocation, type Summary, type SummaryStore, type TransferContext };

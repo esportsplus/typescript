@@ -9,6 +9,7 @@ import { PACKAGE_NAME } from '../constants';
 import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
 
+import checker from '../compiler/checker';
 import coordinator from '../compiler/coordinator';
 import fs from 'fs';
 import languageService from '../compiler/language-service';
@@ -88,6 +89,8 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
 
         throw new Error(`${PACKAGE_NAME}: project not found for ${tsconfig}`);
     }
+
+    checker.attach(api, project);
 
     let configDiagnostics = project.program.getConfigFileParsingDiagnostics();
 
