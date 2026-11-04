@@ -1,6 +1,6 @@
 import type { SourceFile } from 'typescript/ast';
 import { type FileSystemCallbacks, serverFS } from 'typescript/fs';
-import { API, type Checker, DiagnosticCategory, type Program, type Project, type Snapshot } from 'typescript/sync';
+import { API, type Checker, DiagnosticCategory, type Program, type Project, type RetainedSourceFile, type Snapshot } from 'typescript/sync';
 import { PACKAGE_NAME } from '../constants';
 
 import fs from 'fs';
@@ -31,6 +31,13 @@ type Entry = {
     snapshot: Snapshot;
     // Whether the overlay has held a file absent from disk, so existence checks must consult it
     virtual: boolean;
+};
+
+// Parses without a project: tsgo returns the tree whole and it is decoded client-side, so the lease
+// that keeps it alive in tsgo is released with the next parse, in the same round-trip
+type Parser = {
+    api: API;
+    lease: RetainedSourceFile | null;
 };
 
 type ScratchEntry = {
@@ -74,6 +81,7 @@ const CONFIG_REGEX = /\.json$/;
 
 
 let cache = new Map<string, Entry>(),
+    parser: Parser | null = null,
     scratchEntry: ScratchEntry | null = null;
 
 
@@ -474,6 +482,11 @@ const dispose = (root?: string): void => {
 
         cache.clear();
 
+        if (parser) {
+            parser.api.close();
+            parser = null;
+        }
+
         if (scratchEntry) {
             disposeEntry(scratchEntry);
             scratchEntry = null;
@@ -536,7 +549,16 @@ const invalidate = (configFileName: string, fileName: string): void => {
 };
 
 const parse = (fileName: string, content: string): SourceFile => {
-    return scratch(fileName, content).sourceFile;
+    parser ??= { api: new API({ cwd: process.cwd() }), lease: null };
+
+    let { api, lease } = parser,
+        id = normalize(fileName);
+
+    parser.lease = lease
+        ? api.batch(lease.dispose.gen(), api.createSourceFile.gen(id, content))[1]
+        : api.createSourceFile(id, content);
+
+    return parser.lease.sourceFile;
 };
 
 const scratch = (fileName: string, content: string): ScratchResult => {

@@ -347,6 +347,24 @@ describe('language-service', () => {
                 expect(languageService.parse(b, `const b = ${i};`).text).toBe(`const b = ${i};`);
             }
         });
+
+        it('keeps an earlier tree walkable once later parses release it', () => {
+            let fileName = root + '/src/test-virtual-parse-released.ts',
+                earlier = languageService.parse(fileName, 'export const a = 1;\nexport function f() {}');
+
+            languageService.parse(fileName, 'export const b = 2;');
+            languageService.parse(root + '/src/test-virtual-parse-released-other.ts', 'export {};');
+
+            expect(earlier.statements.length).toBe(2);
+            expect(earlier.statements[1].getText(earlier)).toBe('export function f() {}');
+        });
+
+        it('parses JSX by the file extension', () => {
+            let sourceFile = languageService.parse(root + '/src/test-virtual-parse-jsx.tsx', 'export const v = <div class="x">{1}</div>;');
+
+            expect(sourceFile.fileName).toBe(root + '/src/test-virtual-parse-jsx.tsx');
+            expect(sourceFile.statements.length).toBe(1);
+        });
     });
 
     describe('scratch', () => {
