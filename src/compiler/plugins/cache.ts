@@ -202,4 +202,4 @@ const version = (): string => {
 
 
 export default { flush, forget, identity, lookup, open, record, version };
-export type { Output, Store };
+export type { Store };

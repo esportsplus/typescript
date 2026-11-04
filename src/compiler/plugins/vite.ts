@@ -1,6 +1,7 @@
-import type { Output, Store } from './cache';
 import type { Plugin, SharedContext } from '../types';
 import type { ResolvedConfig } from 'vite';
+import type { SourceMapV3 } from '../sourcemap';
+import type { Store } from './cache';
 import { hash } from 'node:crypto';
 import { dirname } from 'node:path';
 
@@ -29,6 +30,13 @@ type HotUpdate<M> = {
         };
     };
     timestamp: number;
+};
+
+// Declared here, not imported: hosts' emitted declarations inline it rather than name a module
+// outside the package's exports
+type Output = {
+    code: string;
+    map: SourceMapV3;
 };
 
 type VitePlugin = {
