@@ -15,7 +15,7 @@
                     "location": {
                         "column": 9,
                         "end": 7679,
-                        "fileName": "G:/typescript-guard/node_modules/.pnpm/vscode-languageserver@11.0.0/node_modules/vscode-languageserver/lib/node/main.js",
+                        "fileName": "<repo>/node_modules/.pnpm/vscode-languageserver@11.0.0/node_modules/vscode-languageserver/lib/node/main.js",
                         "line": 214,
                         "pos": 7602
                     },
@@ -25,7 +25,7 @@
                     "location": {
                         "column": 9,
                         "end": 7791,
-                        "fileName": "G:/typescript-guard/node_modules/.pnpm/vscode-languageserver@11.0.0/node_modules/vscode-languageserver/lib/node/main.js",
+                        "fileName": "<repo>/node_modules/.pnpm/vscode-languageserver@11.0.0/node_modules/vscode-languageserver/lib/node/main.js",
                         "line": 217,
                         "pos": 7713
                     },

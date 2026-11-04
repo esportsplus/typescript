@@ -82,9 +82,19 @@ function fingerprint(names: readonly string[]): string {
 
 function frozen(): string | undefined {
     let dir = path.join(os.tmpdir(), `esportsplus-typescript-golden-${BASE}`),
+        modules = path.join(ROOT, 'node_modules'),
         tsconfig = path.join(dir, 'tsconfig.json');
 
+    // Every checkout (worktrees included) shares the extracted archive; its dependencies must be this
+    // checkout's, and a junction left by a removed checkout dangles
     if (fs.existsSync(tsconfig)) {
+        let link = path.join(dir, 'node_modules');
+
+        if (path.resolve(fs.readlinkSync(link)) !== path.resolve(modules)) {
+            fs.unlinkSync(link);
+            fs.symlinkSync(modules, link, 'junction');
+        }
+
         return tsconfig;
     }
 
@@ -101,7 +111,7 @@ function frozen(): string | undefined {
 
     fs.mkdirSync(staging, { recursive: true });
     cp.execFileSync('tar', ['-x', '-C', staging], { input: archive });
-    fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(staging, 'node_modules'), 'junction');
+    fs.symlinkSync(modules, path.join(staging, 'node_modules'), 'junction');
     fs.renameSync(staging, dir);
 
     return tsconfig;
@@ -111,8 +121,16 @@ function location(value: SourceLocation, root: string): SourceLocation {
     return { ...value, fileName: relative(value.fileName, root) };
 }
 
+// The frozen archive sits in the temp directory, which can be on another drive than this checkout's
+// dependencies; a path that cannot be made relative is pinned relative to the checkout instead
 function relative(fileName: string, root: string): string {
-    return path.relative(root, fileName).replace(/\\/g, '/');
+    let result = path.relative(root, fileName);
+
+    if (path.isAbsolute(result)) {
+        result = `<repo>/${path.relative(ROOT, fileName)}`;
+    }
+
+    return result.replace(/\\/g, '/');
 }
 
 function serialize(diagnostics: readonly Diagnostic[], root: string): unknown[] {
