@@ -6,7 +6,7 @@ import checker from '../compiler/checker';
 import { analyzeProgram } from '../guard/kernel/analyze';
 import { createThrowIndex, disposeThrowIndex } from '../guard/exceptions/derive';
 import { loadConfigFromTsconfig } from '../guard/kernel/config';
-import { open } from '../compiler/language-service';
+import languageService from '../compiler/language-service';
 
 import type { AnalyzeResult } from '../guard/kernel/analyze';
 import type { ThrowIndex } from '../guard/exceptions/derive';
@@ -38,7 +38,7 @@ class AnalyzeWorkspace {
         this.loadConfig();
         // Open the project once — opens are ref-counted and persist across snapshots,
         // so later refreshes only report the files that changed.
-        let opened = open(this.configPath);
+        let opened = languageService.open(this.configPath);
 
         this.api = opened.api;
         this.snapshot = opened.snapshot;

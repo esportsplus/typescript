@@ -1,5 +1,7 @@
 import type { AnyAPIRequestGenerator, API, Checker, Program, Project } from 'typescript/sync';
 
+import shared from '../shared';
+
 
 type Call<O, K extends keyof O> = O[K] extends (...args: infer A) => unknown ? A : never;
 
@@ -69,8 +71,9 @@ const TYPED = new Set<PropertyKey>([
 ]);
 
 
-// The API each attached project's checker and program answer through
-let apis = new WeakMap<object, API>();
+// The API each attached project's checker and program answer through; shared with every copy of
+// this package, whose language service may be the one that attached them
+let apis = shared('checker-apis', () => new WeakMap<object, API>());
 
 // The cached checker of each program, dropped with the program
 let programs = new WeakMap<Program, { checker: Checker; proxy: Checker }>();

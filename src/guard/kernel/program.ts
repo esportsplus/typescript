@@ -1,5 +1,5 @@
 import * as ts from '../adapter';
-import { open } from '../../compiler/language-service';
+import languageService from '../../compiler/language-service';
 
 export type BuiltProgram = {
     program: ts.Program;
@@ -12,7 +12,7 @@ export type BuiltProgram = {
 // returned `dispose` must be called after all analysis is finished (the
 // program/checker are live handles into a server).
 function buildProgram(tsconfigPath: string): BuiltProgram {
-    const opened = open(tsconfigPath);
+    const opened = languageService.open(tsconfigPath);
     const { program, checker } = opened.project;
 
     return {

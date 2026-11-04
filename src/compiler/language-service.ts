@@ -4,6 +4,7 @@ import { API, type Checker, DiagnosticCategory, type Program, type Project, type
 import { PACKAGE_NAME } from '../constants';
 
 import checker from './checker';
+import shared from '../shared';
 import fs from 'fs';
 import path from 'path';
 
@@ -668,6 +669,10 @@ const updateMany = (configFileName: string, updates: Map<string, string>): Updat
 };
 
 
-export default { contains, dispose, findConfig, invalidate, open, parse, scratch, stage, update, updateMany };
-export { contains, dispose, findConfig, invalidate, open, parse, scratch, stage, update, updateMany };
+// Every copy of this package in the process uses the first one's service, so its tsgo processes
+// and programs are opened once
+let service = shared('language-service', () => ({ contains, dispose, findConfig, invalidate, open, parse, scratch, stage, update, updateMany }));
+
+
+export default service;
 export type { ScratchResult, UpdateResult };

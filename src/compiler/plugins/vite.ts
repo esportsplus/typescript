@@ -8,6 +8,7 @@ import { dirname } from 'node:path';
 import cache from './cache';
 import coordinator from '../coordinator';
 import languageService from '../language-service';
+import shared from '../../shared';
 import sourcemap from '../sourcemap';
 
 
@@ -126,17 +127,20 @@ const VIRTUAL_REGEX = /^\0/;
 // Process-wide, like the language service whose entries it releases: a nested build (a worker
 // bundle) runs fresh host instances, often from a fresh factory, that transform most of the outer
 // build's modules again and must not dispose what the outer build is still using
-let active = 0,
-    builds = new WeakMap<object, Registry>(),
-    configs = new Set<string>(),
-    contexts = new Map<string, SharedContext>(),
-    // Virtual modules plugins emitted, by id, and the ids each compiled module (by identity) emitted
-    emitted = new Map<string, string>(),
-    emitters = new Map<string, string[]>(),
-    results = new Map<string, Cached>(),
-    roots = new Set<string>(),
-    // Build results kept on disk across builds, per group name and root (null: no cache directory)
-    stores = new Map<string, Store | null>();
+// Shared with every copy of this package in the process, whose hosts can be in one build
+let state = shared('vite', () => ({
+        active: 0,
+        builds: new WeakMap<object, Registry>(),
+        configs: new Set<string>(),
+        contexts: new Map<string, SharedContext>(),
+        // Virtual modules plugins emitted, by id, and the ids each compiled module (by identity) emitted
+        emitted: new Map<string, string>(),
+        emitters: new Map<string, string[]>(),
+        results: new Map<string, Cached>(),
+        roots: new Set<string>(),
+        // Build results kept on disk across builds, per group name and root (null: no cache directory)
+        stores: new Map<string, Store | null>()
+    }));
 
 
 // Records a compiled module's virtual modules, replacing the ones its previous compile emitted
@@ -150,11 +154,11 @@ function emit(identity: string, modules: Iterable<[string, string]>): void {
             throw new Error(`${identity.split('\0')[0]}: emitted virtual module '${id}' must have an id starting with 'virtual:'`);
         }
 
-        emitted.set(id, code);
+        state.emitted.set(id, code);
         ids.push(id);
     }
 
-    emitters.set(identity, ids);
+    state.emitters.set(identity, ids);
 }
 
 // Whether a foreign plugin transforms modules between two hosts, so the second is given code the
@@ -184,8 +188,8 @@ function normalize(fileName: string): string {
 
 // The shared context as plugins see it, reporting any use: a compile that read or wrote it depends
 // on other modules' compiles, which no file hash captures, so its result is not kept across builds
-function observe(shared: SharedContext, used: () => void): SharedContext {
-    return new Proxy(shared, {
+function observe(context: SharedContext, used: () => void): SharedContext {
+    return new Proxy(context, {
         get(target, property) {
             let value = Reflect.get(target, property, target);
 
@@ -246,44 +250,44 @@ function partition(registry: Registry): Map<Host, Group> {
 
 // Writes are left to finish after the build's state is released
 function release(): Promise<void> {
-    for (let config of configs) {
+    for (let config of state.configs) {
         languageService.dispose(config);
     }
 
-    for (let root of roots) {
-        contexts.delete(root);
+    for (let root of state.roots) {
+        state.contexts.delete(root);
     }
 
     let writes: Promise<void>[] = [];
 
-    for (let store of stores.values()) {
+    for (let store of state.stores.values()) {
         if (store) {
             writes.push(cache.flush(store));
         }
     }
 
-    configs.clear();
-    emitted.clear();
-    emitters.clear();
-    results.clear();
-    roots.clear();
-    stores.clear();
+    state.configs.clear();
+    state.emitted.clear();
+    state.emitters.clear();
+    state.results.clear();
+    state.roots.clear();
+    state.stores.clear();
 
     return Promise.all(writes).then(() => undefined);
 }
 
 function retract(identity: string): void {
-    let ids = emitters.get(identity);
+    let ids = state.emitters.get(identity);
 
     if (!ids) {
         return;
     }
 
     for (let i = 0, n = ids.length; i < n; i++) {
-        emitted.delete(ids[i]);
+        state.emitted.delete(ids[i]);
     }
 
-    emitters.delete(identity);
+    state.emitters.delete(identity);
 }
 
 // Removes and returns the first queued entry matching `hash`
@@ -337,7 +341,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
         // The group's kept results, opened by its first compile of a build; null without a cache
         let persisted = (members: Group, configPath: string | null): Store | null => {
             let address = `${members.name}\0${root || ''}`,
-                store = stores.get(address);
+                store = state.stores.get(address);
 
             if (store === undefined) {
                 let directory = root || process.cwd(),
@@ -352,7 +356,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                 }
 
                 store = cache.open(directory, members.name, cache.identity(members.name, names, directory, configPath, cache.version()));
-                stores.set(address, store);
+                state.stores.set(address, store);
             }
 
             return store;
@@ -403,7 +407,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             let identity = `${names.join('+')}\0${root || ''}\0${key(id)}`;
 
             if (building) {
-                let found = results.get(identity);
+                let found = state.results.get(identity);
 
                 if (found && found.hash === digest) {
                     emit(identity, found.modules);
@@ -425,7 +429,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
 
                 languageService.stage(configPath ?? '', normalizedId, code);
                 emit(identity, kept.modules);
-                results.set(identity, { dependencies, hash: digest, modules: kept.modules, output: kept.output });
+                state.results.set(identity, { dependencies, hash: digest, modules: kept.modules, output: kept.output });
                 track(id, dependencies);
 
                 return kept.output && { ...kept.output };
@@ -439,12 +443,12 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             let { checker, program } = languageService.update(configPath ?? '', normalizedId, code),
                 sourceFile = program.getSourceFile(normalizedId) ?? languageService.parse(normalizedId, code);
 
-            let shared = root || '',
-                ctx = contexts.get(shared);
+            let scope = root || '',
+                ctx = state.contexts.get(scope);
 
             if (!ctx) {
                 ctx = new Map();
-                contexts.set(shared, ctx);
+                state.contexts.set(scope, ctx);
             }
 
             let isolated = true;
@@ -455,7 +459,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                     code,
                     sourceFile,
                     { checker, program },
-                    shared,
+                    scope,
                     store ? observe(ctx, () => { isolated = false; }) : ctx
                 ),
                 modules = [...result.modules],
@@ -467,7 +471,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             track(id, result.dependencies);
 
             if (building) {
-                results.set(identity, { dependencies: result.dependencies, hash: digest, modules, output });
+                state.results.set(identity, { dependencies: result.dependencies, hash: digest, modules, output });
             }
 
             if (store && isolated) {
@@ -558,16 +562,16 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             },
             buildStart() {
                 if (building) {
-                    active++;
+                    state.active++;
                 }
             },
             // Rolldown closes a nested build before the outer one, so only the last to close releases
             closeBundle() {
-                if (active > 0) {
-                    active--;
+                if (state.active > 0) {
+                    state.active--;
                 }
 
-                return active === 0 ? release() : undefined;
+                return state.active === 0 ? release() : undefined;
             },
             closeWatcher() {
                 return release();
@@ -578,10 +582,10 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                 building = resolved.command === 'build';
                 root ??= resolved.configFile ? dirname(resolved.configFile) : resolved.root;
                 tsconfig = languageService.findConfig(root);
-                roots.add(root || '');
+                state.roots.add(root || '');
 
                 if (tsconfig) {
-                    configs.add(tsconfig);
+                    state.configs.add(tsconfig);
                 }
 
                 let listed = (resolved.plugins ?? []) as Registry['plugins'];
@@ -590,11 +594,11 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                     return;
                 }
 
-                registry = builds.get(resolved) ?? null;
+                registry = state.builds.get(resolved) ?? null;
 
                 if (!registry) {
                     registry = { groups: null, hosts: [], plugins: listed };
-                    builds.set(resolved, registry);
+                    state.builds.set(resolved, registry);
                 }
 
                 let claimed = new Set(registry.hosts.map((host) => host.entry)),
@@ -624,7 +628,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                     seen = new Set(modules),
                     suffix = `\0${root || ''}\0${key(file)}`;
 
-                for (let [identity, emittedIds] of emitters) {
+                for (let [identity, emittedIds] of state.emitters) {
                     if (!identity.endsWith(suffix)) {
                         continue;
                     }
@@ -663,7 +667,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             load: {
                 filter: { id: LOADED_REGEX },
                 handler(id: string) {
-                    return emitted.get(id.slice(1)) ?? null;
+                    return state.emitted.get(id.slice(1)) ?? null;
                 }
             },
             name: `${name}/compiler/vite`,
@@ -682,7 +686,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             resolveId: {
                 filter: { id: EMITTED_REGEX },
                 handler(id: string) {
-                    return emitted.has(id) ? `\0${id}` : null;
+                    return state.emitted.has(id) ? `\0${id}` : null;
                 }
             },
             transform,
@@ -696,7 +700,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                 onWatchChange?.();
 
                 let changed = key(id),
-                    ctx = contexts.get(root || ''),
+                    ctx = state.contexts.get(root || ''),
                     stale = [id, ...(dependents.get(changed) ?? [])],
                     suffixes: string[] = [];
 
@@ -707,21 +711,21 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
 
                 let drop = (identity: string): boolean => suffixes.some((suffix) => identity.endsWith(`\0${root || ''}${suffix}`));
 
-                for (let [identity, entry] of results) {
+                for (let [identity, entry] of state.results) {
                     if (drop(identity) || entry.dependencies.some((dependency) => key(dependency) === changed)) {
-                        results.delete(identity);
+                        state.results.delete(identity);
                     }
                 }
 
-                for (let identity of emitters.keys()) {
+                for (let identity of state.emitters.keys()) {
                     if (drop(identity)) {
-                        for (let emittedId of emitters.get(identity)!) {
-                            emitted.delete(emittedId);
+                        for (let emittedId of state.emitters.get(identity)!) {
+                            state.emitted.delete(emittedId);
                         }
                     }
                 }
 
-                for (let store of stores.values()) {
+                for (let store of state.stores.values()) {
                     if (store) {
                         cache.forget(store, suffixes);
                     }
