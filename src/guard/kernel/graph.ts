@@ -303,6 +303,15 @@ function buildCallGraph(
             if (!hasModifier(fn.node, ts.SyntaxKind.AsyncKeyword)) {
                 types.push(fn.node);
             }
+            // The async channel counts a declaration's symbol declarations to
+            // rule out overloads before reading its return type off syntax.
+            if (
+                (ts.isFunctionDeclaration(fn.node) || ts.isMethodDeclaration(fn.node)) &&
+                fn.node.name &&
+                !ts.isComputedPropertyName(fn.node.name)
+            ) {
+                symbols.push(fn.node.name);
+            }
             for (const param of fn.node.parameters) {
                 if (ts.isIdentifier(param.name)) {
                     symbols.push(param.name);

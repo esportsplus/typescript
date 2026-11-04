@@ -13,6 +13,7 @@ import type {
 } from '../kernel/types';
 import { bodyOf, constituents, hasModifier, isAwaited, unwrap } from '../kernel/ast';
 import { isFunctionLike, locationOf } from '../kernel/ids';
+import { type Caches, isPromiseType, returnsPromise } from './returns';
 import { type AsyncValue, bottom, equals, promise, widen } from './value';
 
 // The async aggregators whose input decides fan-out width, and whose result is a
@@ -37,36 +38,6 @@ type Env  = {
 };
 // Promise typing
 
-// `cache` holds the answer per type id, fixed for the program snapshot.
-function isPromiseType(
-    checker: ts.TypeChecker,
-    type: ts.Type | undefined,
-    cache: Map<number, boolean>,
-): boolean {
-    if (!type) {
-        return false;
-    }
-    const cached = cache.get(type.id);
-    if (cached !== undefined) {
-        return cached;
-    }
-    let result = false;
-    for (const c of constituents(type)) {
-        const sym = c.getSymbol() ?? c.getAliasSymbol();
-        if (sym && sym.name === 'Promise') {
-            result = true;
-            break;
-        }
-        const apparent = checker.getApparentType(c) ?? c;
-        if (checker.getPropertyOfType(apparent, 'then')) {
-            result = true;
-            break;
-        }
-    }
-    cache.set(type.id, result);
-    return result;
-}
-
 // Whether the nearest enclosing function is async — `await` is only a valid fix
 // inside one.
 function enclosingAsync(node: ts.Node): boolean {
@@ -78,31 +49,6 @@ function enclosingAsync(node: ts.Node): boolean {
         p = p.parent;
     }
     return false;
-}
-
-// Whether invoking this function yields a promise the caller must own. An async
-// function always does; otherwise its inferred signature return type decides.
-function returnsPromise(
-    checker: ts.TypeChecker,
-    node: FunctionLike,
-    promiseTypes: Map<number, boolean>,
-): boolean {
-    if (hasModifier(node, ts.SyntaxKind.AsyncKeyword)) {
-        return true;
-    }
-    const fnType = checker.getTypeAtLocation(node);
-    if (!fnType) {
-        return false;
-    }
-    const sig = checker.getSignaturesOfType(fnType, ts.SignatureKind.Call)[0];
-    if (!sig) {
-        return false;
-    }
-    return isPromiseType(
-        checker,
-        checker.getReturnTypeOfSignature(sig),
-        promiseTypes,
-    );
 }
 
 // A call produces an owned-relevant promise. App targets answer from their
@@ -548,7 +494,7 @@ function createAsyncChannel(): Channel<AsyncValue> {
         }
         return held;
     };
-    const promiseTypes = new Map<number, boolean>();
+    let caches: Caches = { promiseTypes: new Map(), shadows: new Map() };
     // A function's answer is fixed for the snapshot; transfer asks it every
     // fixpoint round.
     const returnsByFunction = new Map<FunctionInfo, boolean>();
@@ -558,7 +504,7 @@ function createAsyncChannel(): Channel<AsyncValue> {
     ): boolean => {
         let returns = returnsByFunction.get(fn);
         if (returns === undefined) {
-            returns = returnsPromise(checker, fn.node, promiseTypes);
+            returns = returnsPromise(checker, fn.node, caches);
             returnsByFunction.set(fn, returns);
         }
         return returns;
@@ -574,7 +520,7 @@ function createAsyncChannel(): Channel<AsyncValue> {
                 checker: ctx.checker,
                 held: getHeldSignalNames(ctx.checker, ctx.fn),
                 heldSignalNames: (fn) => getHeldSignalNames(ctx.checker, fn),
-                promiseTypes,
+                promiseTypes: caches.promiseTypes,
                 resolveCall: ctx.resolveCall,
                 summaryOf: ctx.summaryOf,
             };
