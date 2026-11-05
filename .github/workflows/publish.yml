@@ -56,7 +56,8 @@ jobs:
             throw new Error('packageManager must declare an exact pnpm version');
           }
           if (/[\r\n]/.test(node)) throw new Error('Invalid Node requirement');
-          appendFileSync(process.env.GITHUB_OUTPUT, 'node=' + node + '\nlegacy-pnpm=' + (manager ? '' : '11.10.0') + '\n');
+          if (typeof pkg.version !== 'string' || /[\r\n]/.test(pkg.version)) throw new Error('Invalid package version');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'node=' + node + '\nlegacy-pnpm=' + (manager ? '' : '11.10.0') + '\nversion=' + pkg.version + '\n');
           if (!pkg.engines?.node && !process.env.NODE_OVERRIDE) console.log('::warning::No engines.node; using migration fallback 26.8.1');
           if (!manager) console.log('::warning::No packageManager; using migration fallback pnpm 11.10.0');
           NODE
@@ -73,6 +74,16 @@ jobs:
         run: pnpm install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # The analyzer's findings from earlier runs; their entries are keyed by the analyzer's content,
+      # so they are reused across fresh installs of the same build
+      - name: Restore analyze cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: node_modules/.cache/@esportsplus/typescript/guard
+          key: analyze-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.toolchain.outputs.version }}
+          restore-keys: |
+            analyze-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            analyze-${{ runner.os }}-
       - name: Lint package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
