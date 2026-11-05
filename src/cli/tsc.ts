@@ -95,7 +95,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         project = snapshot.getConfiguredProject(tsconfig);
 
     if (!project) {
-        await teardown(api, snapshot, tsconfig, owned);
+        await teardown(api, snapshot, owned);
 
         throw new Error(`${PACKAGE_NAME}: project not found for ${tsconfig}`);
     }
@@ -104,7 +104,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
 
     if (configDiagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
         console.error(format(configDiagnostics, root));
-        await teardown(api, snapshot, tsconfig, owned);
+        await teardown(api, snapshot, owned);
         process.exit(1);
     }
 
@@ -123,7 +123,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     }
     catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
-        await teardown(api, snapshot, tsconfig, owned);
+        await teardown(api, snapshot, owned);
         process.exit(1);
     }
 
@@ -186,12 +186,12 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     }
 
     if (diagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
-        await teardown(api, snapshot, tsconfig, owned);
+        await teardown(api, snapshot, owned);
         process.exit(1);
     }
 
     if (noEmit || options.noEmit === true) {
-        await teardown(api, snapshot, tsconfig, owned);
+        await teardown(api, snapshot, owned);
         process.exit(0);
     }
 
@@ -201,7 +201,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
 
     stop();
 
-    await teardown(api, snapshot, tsconfig, owned);
+    await teardown(api, snapshot, owned);
     process.exit(code);
 }
 
@@ -704,8 +704,8 @@ function spawnTsc(tscJs: string, args: string[]): Promise<Spawned> {
     });
 }
 
-async function teardown(api: API, snapshot: Snapshot, configPath: string, owned: boolean): Promise<void> {
-    await languageService.dispose(configPath);
+async function teardown(api: API, snapshot: Snapshot, owned: boolean): Promise<void> {
+    await languageService.dispose();
 
     if (!snapshot.isDisposed()) {
         snapshot.dispose();

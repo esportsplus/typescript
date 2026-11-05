@@ -4,6 +4,7 @@ import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, proje
 import { flatten, format } from '~/cli/diagnostics';
 import { createFixtureDir } from './fixtures';
 import checkers from '~/guard/checker';
+import languageService from '~/compiler/language-service';
 import sourcemap from '~/compiler/sourcemap';
 
 import fs from 'fs';
@@ -15,6 +16,23 @@ import path from 'path';
 const ANSI_REGEX = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g');
 
 const BACKSLASH_REGEX = /\\/g;
+
+
+// Live async tsgo API clients this process spawned: the language service's, not the sync `api`
+function asyncClients(): number {
+    let count = 0,
+        handles = (process as unknown as { _getActiveHandles(): unknown[] })._getActiveHandles();
+
+    for (let i = 0, n = handles.length; i < n; i++) {
+        let handle = handles[i] as { constructor: { name: string }; spawnargs?: string[] };
+
+        if (handle.constructor.name === 'ChildProcess' && handle.spawnargs?.includes('--async')) {
+            count++;
+        }
+    }
+
+    return count;
+}
 
 
 describe('isPlugin', () => {
@@ -357,6 +375,30 @@ describe('build', () => {
 
         expect(attach).toHaveBeenCalledWith(api, expect.objectContaining({ configFileName: expect.stringContaining('tsconfig.json') }));
         attach.mockRestore();
+    });
+
+    // The edit reaches the first statement, so the transform re-parses through the parse client
+    it('closes every async tsgo client its transform started, the parse client included', async () => {
+        let tsconfigPath = path.join(tmpDir, 'tsconfig.json'),
+            parse = vi.spyOn(languageService, 'parse');
+
+        fs.writeFileSync(path.join(tmpDir, 'index.ts'), 'export const value = 1;\n');
+        fs.writeFileSync(path.join(tmpDir, 'plugin.mjs'),
+            'export default { transform: ({ sourceFile }) => ({ prepend: ["const P = 1;"], replacements: [{ generate: () => "export const value = 2;", node: sourceFile.statements[0] }] }) };'
+        );
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        await expect(build(tsconfigPath, [{ transform: './plugin.mjs' }], api)).rejects.toThrow(/process\.exit/);
+        await new Promise((resolve) => {
+            setTimeout(resolve, 50);
+        });
+
+        expect(exits).toEqual([0]);
+        expect(parse).toHaveBeenCalled();
+        expect(asyncClients()).toBe(0);
     });
 
     it('--noEmit runs the transform + typecheck gate but writes no artifacts', async () => {

@@ -84,7 +84,7 @@ const CONFIG_REGEX = /\.json$/;
 
 let entries = new Map<string, Entry>(),
     opening = new Map<string, Promise<Entry>>(),
-    parser: API | null = null,
+    parser: Server | null = null,
     scratchEntry: ScratchEntry | null = null,
     scratchLock: Promise<void> = Promise.resolve(),
     // Per project: texts staged by stage(), applied by the next update
@@ -551,8 +551,8 @@ const contains = async (configFileName: string, fileName: string, content?: stri
     });
 };
 
-// Closes a project's tsgo process (every project's, and the parsers', without `root`) once no
-// transform reads its snapshots
+// Closes a project's tsgo process (without `root`: every process the service started, the parse
+// and scratch clients included) once no transform reads its snapshots and no parse is in flight
 const dispose = async (root?: string): Promise<void> => {
     let configs: string[];
 
@@ -560,10 +560,14 @@ const dispose = async (root?: string): Promise<void> => {
         configs = [...new Set([...entries.keys(), ...opening.keys()])];
 
         if (parser) {
-            let api = parser;
+            let server = parser;
 
             parser = null;
-            await close({ api, live: 0, retired: true });
+            server.retired = true;
+
+            if (server.live === 0) {
+                await close(server);
+            }
         }
 
         if (scratchEntry) {
@@ -649,13 +653,24 @@ const invalidate = (configFileName: string, fileName: string): void => {
 // Parses without a project: tsgo returns the tree whole and it is decoded client-side, so the lease
 // keeping it alive in tsgo is released at once, sent with the next request
 const parse = async (fileName: string, content: string): Promise<SourceFile> => {
-    parser ??= new API({ cwd: process.cwd() });
+    let server = parser ??= { api: new API({ cwd: process.cwd() }), live: 0, retired: false };
 
-    let lease = await parser.createSourceFile(normalize(fileName), content);
+    server.live++;
 
-    void lease.dispose().catch(() => undefined);
+    try {
+        let lease = await server.api.createSourceFile(normalize(fileName), content);
 
-    return lease.sourceFile;
+        void lease.dispose().catch(() => undefined);
+
+        return lease.sourceFile;
+    }
+    finally {
+        server.live--;
+
+        if (server.retired && server.live === 0) {
+            void close(server);
+        }
+    }
 };
 
 const scratch = (fileName: string, content: string): Promise<ScratchResult> => {

@@ -144,7 +144,6 @@ const VIRTUAL_REGEX = /^\0/;
 let state = shared('vite', () => ({
         active: 0,
         builds: new WeakMap<object, Registry>(),
-        configs: new Set<string>(),
         contexts: new Map<string, SharedContext>(),
         // Virtual modules plugins emitted, by id, and the ids each compiled module (by identity) emitted
         emitted: new Map<string, string>(),
@@ -263,13 +262,10 @@ function partition(registry: Registry): Map<Host, Group> {
     return groups;
 }
 
-// Writes and tsgo shutdowns are left to finish after the build's state is released
+// Writes and tsgo shutdowns are left to finish after the build's state is released. Every tsgo
+// client closes, the parse client too: one left open keeps the process from exiting
 function release(): Promise<void> {
-    let writes: Promise<void>[] = [];
-
-    for (let config of state.configs) {
-        writes.push(languageService.dispose(config));
-    }
+    let writes: Promise<void>[] = [languageService.dispose()];
 
     for (let root of state.roots) {
         state.contexts.delete(root);
@@ -281,7 +277,6 @@ function release(): Promise<void> {
         }
     }
 
-    state.configs.clear();
     state.emitted.clear();
     state.emitters.clear();
     state.pending.clear();
@@ -675,10 +670,6 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                 root ??= resolved.configFile ? dirname(resolved.configFile) : resolved.root;
                 tsconfig = languageService.findConfig(root);
                 state.roots.add(root || '');
-
-                if (tsconfig) {
-                    state.configs.add(tsconfig);
-                }
 
                 let listed = (resolved.plugins ?? []) as Registry['plugins'];
 

@@ -203,7 +203,7 @@ describe('plugin.vite', () => {
         expect(languageService.findConfig).toHaveBeenCalledWith(selected);
         expect(languageService.update).toHaveBeenCalledWith(configPath, expect.any(String), 'let x = 1;');
         expect(languageService.invalidate).toHaveBeenCalledWith(configPath, expect.any(String));
-        expect(languageService.dispose).toHaveBeenCalledWith(configPath);
+        expect(languageService.dispose).toHaveBeenCalledWith();
     });
 
     it('uses the app root when config loading is disabled', async () => {
@@ -278,14 +278,14 @@ describe('plugin.vite', () => {
         expect(coordinator.transform).toHaveBeenCalled();
     });
 
-    it('closeBundle disposes the language service for the root', async () => {
+    it('closeBundle disposes every tsgo client of the language service', async () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
         vi.mocked(languageService.findConfig).mockReturnValueOnce('/my/root/tsconfig.json');
         plugin.configResolved({ root: '/my/root' });
         await plugin.closeBundle();
 
-        expect(languageService.dispose).toHaveBeenCalledWith('/my/root/tsconfig.json');
+        expect(languageService.dispose).toHaveBeenCalledWith();
     });
 
     it('filters natively to project scripts', async () => {
@@ -346,7 +346,7 @@ describe('plugin.vite', () => {
 
             await outer.closeBundle();
 
-            expect(languageService.dispose).toHaveBeenCalledWith('/project/tsconfig.json');
+            expect(languageService.dispose).toHaveBeenCalledWith();
 
             await outer.transform.handler('let x = 1;', 'src/app.ts');
 
@@ -713,13 +713,13 @@ describe('plugin.vite', () => {
         expect([...context!.keys()]).toEqual(['src/other.ts', 'global']);
     });
 
-    it('closeWatcher disposes the language service for the root', async () => {
+    it('closeWatcher disposes every tsgo client of the language service', async () => {
         let plugin = vite({ name: 'test-pkg', plugins: [] })();
 
         vi.mocked(languageService.findConfig).mockReturnValueOnce('/my/root/tsconfig.json');
         plugin.configResolved({ root: '/my/root' });
         await plugin.closeWatcher();
 
-        expect(languageService.dispose).toHaveBeenCalledWith('/my/root/tsconfig.json');
+        expect(languageService.dispose).toHaveBeenCalledWith();
     });
 });

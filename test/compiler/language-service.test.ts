@@ -1,4 +1,5 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { API } from 'typescript/async';
 import { SyntaxKind } from 'typescript/ast';
 import { isImportDeclaration } from 'typescript/ast/is';
 
@@ -338,6 +339,23 @@ describe('language-service', () => {
     });
 
     describe('parse', () => {
+        it('finishes a parse in flight when dispose() closes its client, then closes it', async () => {
+            let close = vi.spyOn(API.prototype, 'close'),
+                content = 'export const late = 1;',
+                create = vi.spyOn(API.prototype, 'createSourceFile'),
+                parsing = languageService.parse(root + '/src/test-virtual-parse-dispose.ts', content),
+                disposing = languageService.dispose();
+
+            expect((await parsing).text).toBe(content);
+
+            await disposing;
+
+            expect(create.mock.contexts).toHaveLength(1);
+            expect(close.mock.contexts).toContain(create.mock.contexts[0]);
+            create.mockRestore();
+            close.mockRestore();
+        });
+
         it('returns a SourceFile whose text round-trips', async () => {
             let fileName = root + '/src/test-virtual-parse.ts',
                 content = 'let x: number = 42;\nfunction foo() { return 1; }',
