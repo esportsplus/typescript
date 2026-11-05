@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { isIdentifier } from 'typescript/ast/is';
 import type { Node } from 'typescript/ast';
-import type { API, Checker, Program, Project, Type } from 'typescript/sync';
+import type { API, Checker, Program, Project, Type } from 'typescript/async';
 
 import checker from '~/compiler/checker';
 import fs from 'fs';
@@ -10,15 +10,15 @@ import path from 'path';
 
 
 // Test doubles stand in for a checker, so the wrapper is seen through their own loose type
-type Fake = Record<string, (...args: unknown[]) => unknown>;
+type Fake = Record<string, (...args: unknown[]) => Promise<unknown>>;
 
 
-// A stand-in checker: every method returns a fresh object and counts its calls; the batch forms
+// A stand-in checker: every method answers a fresh object and counts its calls; the batch forms
 // record what each call was sent
 function fake() {
     let batches: unknown[][] = [],
         calls: Record<string, number> = {},
-        method = (name: string) => Object.assign((...args: unknown[]) => {
+        method = (name: string) => async (...args: unknown[]) => {
             calls[name] = (calls[name] ?? 0) + 1;
 
             if (Array.isArray(args[0])) {
@@ -28,7 +28,7 @@ function fake() {
             }
 
             return { args, name };
-        }, { gen: (...args: unknown[]) => ({ args, name }) });
+        };
 
     let double = {
             getAliasedSymbol: method('getAliasedSymbol'),
@@ -73,116 +73,147 @@ describe('compiler/checker', () => {
         'getTypeArguments',
         'getTypeAtLocation',
         'resolveName'
-    ])('answers a repeated %s from its cache', (name) => {
+    ])('answers a repeated %s from its cache', async (name) => {
         let { calls, checker: double } = fake(),
             memo = wrap(double),
             node = {};
 
-        let first = memo[name](node);
+        let first = await memo[name](node);
 
-        expect(memo[name](node)).toBe(first);
+        expect(await memo[name](node)).toBe(first);
         expect(calls[name]).toBe(1);
-        expect(memo[name]({})).not.toBe(first);
+        expect(await memo[name]({})).not.toBe(first);
         expect(calls[name]).toBe(2);
     });
 
-    it('keys on both arguments', () => {
+    it('sends a question asked again while in flight once', async () => {
+        let { calls, checker: double } = fake(),
+            memo = wrap(double),
+            node = {};
+
+        let [a, b] = await Promise.all([memo.getTypeAtLocation(node), memo.getTypeAtLocation(node)]);
+
+        expect(a).toBe(b);
+        expect(calls.getTypeAtLocation).toBe(1);
+    });
+
+    it('keys on both arguments', async () => {
         let { calls, checker: double } = fake(),
             memo = wrap(double),
             a = {},
             b = {},
             c = {};
 
-        let ab = memo.isTypeAssignableTo(a, b);
+        let ab = await memo.isTypeAssignableTo(a, b);
 
-        expect(memo.isTypeAssignableTo(a, b)).toBe(ab);
-        expect(memo.isTypeAssignableTo(a, c)).not.toBe(ab);
-        expect(memo.isTypeAssignableTo(b, a)).not.toBe(ab);
+        expect(await memo.isTypeAssignableTo(a, b)).toBe(ab);
+        expect(await memo.isTypeAssignableTo(a, c)).not.toBe(ab);
+        expect(await memo.isTypeAssignableTo(b, a)).not.toBe(ab);
         expect(calls.isTypeAssignableTo).toBe(3);
     });
 
-    it('caches a call with one argument apart from the same first argument with a second', () => {
+    it('caches a call with one argument apart from the same first argument with a second', async () => {
         let { calls, checker: double } = fake(),
             memo = wrap(double),
             node = {},
             kind = 1;
 
-        let one = memo.getSignaturesOfType(node),
-            two = memo.getSignaturesOfType(node, kind);
+        let one = await memo.getSignaturesOfType(node),
+            two = await memo.getSignaturesOfType(node, kind);
 
         expect(two).not.toBe(one);
-        expect(memo.getSignaturesOfType(node, kind)).toBe(two);
-        expect(memo.getSignaturesOfType(node)).toBe(one);
+        expect(await memo.getSignaturesOfType(node, kind)).toBe(two);
+        expect(await memo.getSignaturesOfType(node)).toBe(one);
         expect(calls.getSignaturesOfType).toBe(2);
     });
 
-    it('answers a call with more than two arguments from the checker every time', () => {
+    it('answers a call with more than two arguments from the checker every time', async () => {
         let { calls, checker: double } = fake(),
             memo = wrap(double),
             location = {};
 
-        let first = memo.resolveName('Node', 1, location),
-            second = memo.resolveName('Node', 1, location);
+        let first = await memo.resolveName('Node', 1, location),
+            second = await memo.resolveName('Node', 1, location);
 
         expect(second).not.toBe(first);
         expect(calls.resolveName).toBe(2);
 
-        let cachedCall = memo.resolveName('Node', 1);
+        let cachedCall = await memo.resolveName('Node', 1);
 
-        expect(memo.resolveName('Node', 1)).toBe(cachedCall);
+        expect(await memo.resolveName('Node', 1)).toBe(cachedCall);
         expect(calls.resolveName).toBe(3);
     });
 
-    it('passes other methods and properties through uncached', () => {
+    it('passes other methods and properties through uncached', async () => {
         let { calls, checker: double } = fake(),
             memo = wrap(double),
             symbol = {};
 
-        memo.getTypeOfSymbol(symbol);
-        memo.getTypeOfSymbol(symbol);
+        await memo.getTypeOfSymbol(symbol);
+        await memo.getTypeOfSymbol(symbol);
 
         expect(calls.getTypeOfSymbol).toBe(2);
         expect((checker.cached({ label: 'fake' } as unknown as Checker) as unknown as { label: string }).label).toBe('fake');
     });
 
-    it('caches undefined answers', () => {
+    it('caches undefined answers', async () => {
         let count = 0,
-            memo = wrap({ getTypeAtLocation: () => { count++; return undefined; } }),
+            memo = wrap({ getTypeAtLocation: async () => { count++; return undefined; } }),
             node = {};
 
-        expect(memo.getTypeAtLocation(node)).toBeUndefined();
-        expect(memo.getTypeAtLocation(node)).toBeUndefined();
+        expect(await memo.getTypeAtLocation(node)).toBeUndefined();
+        expect(await memo.getTypeAtLocation(node)).toBeUndefined();
         expect(count).toBe(1);
     });
 
-    it('scopes each cache to its own wrapper without a program', () => {
+    it('asks a failed question again', async () => {
+        let count = 0,
+            memo = wrap({
+                getTypeAtLocation: async () => {
+                    if (++count === 1) {
+                        throw new Error('snapshot disposed');
+                    }
+
+                    return 'type';
+                }
+            }),
+            node = {};
+
+        await expect(memo.getTypeAtLocation(node)).rejects.toThrow('snapshot disposed');
+        expect(await memo.getTypeAtLocation(node)).toBe('type');
+        expect(count).toBe(2);
+    });
+
+    it('scopes each cache to its own wrapper without a program', async () => {
         let { calls, checker: double } = fake(),
             node = {};
 
-        wrap(double).getTypeAtLocation(node);
-        wrap(double).getTypeAtLocation(node);
+        await wrap(double).getTypeAtLocation(node);
+        await wrap(double).getTypeAtLocation(node);
 
         expect(calls.getTypeAtLocation).toBe(2);
     });
 
-    it('shares one cache per program, and wrapping that cache returns it', () => {
+    it('shares one cache between the views of a program, and wrapping a view returns it', async () => {
         let { calls, checker: double } = fake(),
             program = {} as Program,
             memo = wrap(double, program),
             node = {};
 
-        memo.getTypeAtLocation(node);
-        wrap(double, program).getTypeAtLocation(node);
+        await memo.getTypeAtLocation(node);
+        await wrap(double, program).getTypeAtLocation(node);
 
-        expect(wrap(double, program)).toBe(memo);
         expect(wrap(memo, program)).toBe(memo);
         expect(calls.getTypeAtLocation).toBe(1);
-        expect(wrap(fake().checker, program)).not.toBe(memo);
+
+        await wrap(fake().checker, program).getTypeAtLocation(node);
+
+        expect(calls.getTypeAtLocation).toBe(1);
     });
 
-    it('binds methods to the underlying checker', () => {
+    it('binds methods to the underlying checker', async () => {
         let double = {
-                getTypeAtLocation(this: { self: unknown }) {
+                async getTypeAtLocation(this: { self: unknown }) {
                     this.self = this;
 
                     return 1;
@@ -191,140 +222,113 @@ describe('compiler/checker', () => {
             },
             memo = wrap(double as unknown as Fake);
 
-        memo.getTypeAtLocation({});
+        await memo.getTypeAtLocation({});
 
         expect(double.self).toBe(double);
     });
 
     describe.each(['getSymbolAtLocation', 'getTypeAtLocation'])('%s batch form', (name) => {
-        it('sends only the misses and answers in order', () => {
+        it('sends only the misses and answers in order', async () => {
             let { batches, calls, checker: double } = fake(),
                 memo = wrap(double),
                 a = {},
                 b = {},
                 c = {};
 
-            let single = memo[name](b),
-                batch = memo[name]([a, b, c]) as unknown[];
+            let single = await memo[name](b),
+                batch = await memo[name]([a, b, c, a]) as unknown[];
 
             expect(batches).toEqual([[a, c]]);
-            expect(batch).toHaveLength(3);
+            expect(batch).toHaveLength(4);
             expect(batch[1]).toBe(single);
-            expect(memo[name](a)).toBe(batch[0]);
-            expect(memo[name](c)).toBe(batch[2]);
+            expect(batch[3]).toBe(batch[0]);
+            expect(await memo[name](a)).toBe(batch[0]);
+            expect(await memo[name](c)).toBe(batch[2]);
             expect(calls[name]).toBe(2);
         });
 
-        it('sends nothing when every node is cached', () => {
+        it('sends nothing when every node is cached', async () => {
             let { batches, checker: double } = fake(),
                 memo = wrap(double),
                 a = {},
                 b = {};
 
-            let first = memo[name]([a, b]) as unknown[];
+            let first = await memo[name]([a, b]) as unknown[];
 
-            expect(memo[name]([b, a])).toEqual([first[1], first[0]]);
+            expect(await memo[name]([b, a])).toEqual([first[1], first[0]]);
             expect(batches).toHaveLength(1);
         });
     });
 
-    it('counts the calls it passes on to the checker', () => {
+    it('counts the requests it sends: what one view misses in one turn is one request', async () => {
         let { checker: double } = fake(),
             memo = wrap(double),
             node = {};
 
-        memo.getSymbolAtLocation(node);
-        memo.getSymbolAtLocation(node);
-        memo.getSymbolAtLocation([node, {}, {}]);
-        memo.getTypeOfSymbol(node);
-        memo.getTypeOfSymbol(node);
+        await Promise.all([memo.getSymbolAtLocation(node), memo.getTypeOfSymbol(node), memo.getTypeOfSymbol(node)]);
+        await memo.getSymbolAtLocation(node);
+        await memo.getSymbolAtLocation([node, {}, {}]);
 
-        expect(checker.sent(memo as unknown as Checker)).toBe(4);
+        expect(checker.sent(memo as unknown as Checker)).toBe(2);
         expect(checker.sent(double as unknown as Checker)).toBe(0);
     });
 });
 
-describe('compiler/checker batch', () => {
-    // A stand-in API: a batch answers each request generator as its single call would
-    function api() {
-        let sent: unknown[][] = [];
+describe('compiler/checker lanes', () => {
+    // A stand-in API recording the batch contexts the views open and the calls made in each
+    function attached(double: Fake) {
+        let contexts: string[][] = [],
+            open: string[] | null = null,
+            program = {} as Program,
+            api = {
+                batchContext: () => {
+                    open = [];
+                    contexts.push(open);
 
-        return {
-            api: {
-                batch: (...requests: { args: unknown[]; name: string }[]) => {
-                    sent.push(requests);
-
-                    return requests.map(({ args, name }) => ({ args, name }));
+                    return { [Symbol.dispose]: () => { open = null; } };
                 }
-            } as unknown as API,
-            sent
-        };
+            } as unknown as API;
+
+        for (let name of Object.keys(double)) {
+            let method = double[name];
+
+            double[name] = (...args) => {
+                open?.push(name);
+
+                return method(...args);
+            };
+        }
+
+        checker.attach(api, { checker: double, program } as unknown as Project);
+
+        return { contexts, program };
     }
 
-    function attached(double: Fake, program = {} as Program) {
-        let { api: fakeApi, sent } = api();
-
-        checker.attach(fakeApi, { checker: double, program } as unknown as Project);
-
-        return { program, sent };
-    }
-
-    it('answers every call in one round-trip and keeps the answers for single calls', () => {
-        let { calls, checker: double } = fake(),
-            { sent } = attached(double),
-            memo = wrap(double),
-            answers = checker.batch(memo as unknown as Checker, 'getPropertyOfType', [
-                [{ id: 1 } as Type, 'then'],
-                [{ id: 2 } as Type, 'then'],
-                [{ id: 1 } as Type, 'length']
-            ]);
-
-        expect(sent).toHaveLength(1);
-        expect(answers).toHaveLength(3);
-        expect(memo.getPropertyOfType({ id: 1 }, 'then')).toBe(answers[0]);
-        expect(memo.getPropertyOfType({ id: 2 }, 'then')).toBe(answers[1]);
-        expect(memo.getPropertyOfType({ id: 1 }, 'length')).toBe(answers[2]);
-        expect(calls.getPropertyOfType).toBeUndefined();
-        expect(checker.sent(memo as unknown as Checker)).toBe(1);
-    });
-
-    it('sends only what the cache lacks', () => {
-        let { calls, checker: double } = fake(),
-            { sent } = attached(double),
-            memo = wrap(double),
-            known = memo.getApparentType({ id: 1 });
-
-        let answers = checker.batch(memo as unknown as Checker, 'getApparentType', [[{ id: 1 } as Type], [{ id: 2 } as Type]]);
-
-        expect(answers[0]).toBe(known);
-        expect(sent).toHaveLength(0);
-        expect(calls.getApparentType).toBe(2);
-
-        checker.batch(memo as unknown as Checker, 'getApparentType', [[{ id: 1 } as Type], [{ id: 2 } as Type], [{ id: 3 } as Type], [{ id: 4 } as Type]]);
-
-        expect(sent).toEqual([[{ args: [{ id: 3 }], name: 'getApparentType' }, { args: [{ id: 4 }], name: 'getApparentType' }]]);
-    });
-
-    it('sends each call alone for a checker of a project never attached', () => {
-        let { calls, checker: double } = fake(),
-            memo = wrap(double);
-
-        checker.batch(memo as unknown as Checker, 'getApparentType', [[{ id: 1 } as Type], [{ id: 2 } as Type]]);
-
-        expect(calls.getApparentType).toBe(2);
-        expect(checker.sent(memo as unknown as Checker)).toBe(2);
-    });
-
-    it('batches a program query without caching it', () => {
+    it('sends what one view asks in one turn in one batch, and each view in its own', async () => {
         let { checker: double } = fake(),
-            source = fake().checker,
-            program = { getSourceFile: source.getTypeOfSymbol } as unknown as Program,
-            { sent } = attached(double, program);
+            { contexts, program } = attached(double),
+            first = wrap(double, program),
+            second = wrap(double, program);
 
-        checker.batch(program, 'getSourceFile', [['a.ts'], ['b.ts']]);
-        checker.batch(program, 'getSourceFile', [['a.ts'], ['b.ts']]);
+        await Promise.all([
+            first.getTypeAtLocation({}),
+            first.getPropertyOfType({ id: 1 }, 'then'),
+            second.getTypeAtLocation({}),
+            second.getApparentType({ id: 2 })
+        ]);
 
-        expect(sent).toHaveLength(2);
+        expect(contexts).toEqual([['getTypeAtLocation', 'getPropertyOfType'], ['getTypeAtLocation', 'getApparentType']]);
+    });
+
+    it('lets a view await a question another view has in flight', async () => {
+        let { calls, checker: double } = fake(),
+            { contexts, program } = attached(double),
+            node = {},
+            [a, b] = await Promise.all([wrap(double, program).getTypeAtLocation(node), wrap(double, program).getTypeAtLocation(node)]);
+
+        expect(a).toBe(b);
+        expect(calls.getTypeAtLocation).toBe(1);
+        expect(contexts).toEqual([['getTypeAtLocation']]);
     });
 });
 
@@ -340,38 +344,38 @@ describe('compiler/checker type-keyed queries', () => {
         'getTypeArguments',
         'isArrayType',
         'isTupleType'
-    ])('answers %s for any object carrying the same id from one round-trip', (name) => {
+    ])('answers %s for any object carrying the same id from one round-trip', async (name) => {
         let { calls, checker: double } = fake(),
             memo = wrap(double);
 
-        let first = memo[name]({ id: 7 });
+        let first = await memo[name]({ id: 7 });
 
-        expect(memo[name]({ id: 7 })).toBe(first);
-        expect(memo[name]({ id: 8 })).not.toBe(first);
+        expect(await memo[name]({ id: 7 })).toBe(first);
+        expect(await memo[name]({ id: 8 })).not.toBe(first);
         expect(calls[name]).toBe(2);
     });
 
-    it('keys getPropertyOfType and getSignaturesOfType on the type id and the second argument', () => {
+    it('keys getPropertyOfType and getSignaturesOfType on the type id and the second argument', async () => {
         let { calls, checker: double } = fake(),
             memo = wrap(double);
 
-        let length = memo.getPropertyOfType({ id: 1 }, 'length');
+        let length = await memo.getPropertyOfType({ id: 1 }, 'length');
 
-        expect(memo.getPropertyOfType({ id: 1 }, 'length')).toBe(length);
-        expect(memo.getPropertyOfType({ id: 1 }, 'push')).not.toBe(length);
-        expect(memo.getSignaturesOfType({ id: 1 }, 0)).toBe(memo.getSignaturesOfType({ id: 1 }, 0));
-        expect(memo.getSignaturesOfType({ id: 1 }, 1)).not.toBe(memo.getSignaturesOfType({ id: 1 }, 0));
+        expect(await memo.getPropertyOfType({ id: 1 }, 'length')).toBe(length);
+        expect(await memo.getPropertyOfType({ id: 1 }, 'push')).not.toBe(length);
+        expect(await memo.getSignaturesOfType({ id: 1 }, 0)).toBe(await memo.getSignaturesOfType({ id: 1 }, 0));
+        expect(await memo.getSignaturesOfType({ id: 1 }, 1)).not.toBe(await memo.getSignaturesOfType({ id: 1 }, 0));
         expect(calls.getPropertyOfType).toBe(2);
         expect(calls.getSignaturesOfType).toBe(2);
     });
 
-    it('keys isTypeAssignableTo on both type ids', () => {
+    it('keys isTypeAssignableTo on both type ids', async () => {
         let { calls, checker: double } = fake(),
             memo = wrap(double);
 
-        memo.isTypeAssignableTo({ id: 1 }, { id: 2 });
-        memo.isTypeAssignableTo({ id: 1 }, { id: 2 });
-        memo.isTypeAssignableTo({ id: 2 }, { id: 1 });
+        await memo.isTypeAssignableTo({ id: 1 }, { id: 2 });
+        await memo.isTypeAssignableTo({ id: 1 }, { id: 2 });
+        await memo.isTypeAssignableTo({ id: 2 }, { id: 1 });
 
         expect(calls.isTypeAssignableTo).toBe(2);
     });
@@ -381,12 +385,12 @@ describe('compiler/checker type-keyed queries', () => {
 describe('compiler/checker round-trips', () => {
     let fixture = fs.mkdtempSync(path.join(process.cwd(), 'test/.checker-')).replace(/\\/g, '/');
 
-    afterAll(() => {
-        languageService.dispose();
+    afterAll(async () => {
+        await languageService.dispose();
         fs.rmSync(fixture, { force: true, recursive: true });
     });
 
-    it('sends each distinct type-keyed question once per program', () => {
+    it('sends each distinct type-keyed question once per program', async () => {
         let source = [
                 'export let a: number[] = [];',
                 'export let b: number[] = [];',
@@ -401,7 +405,7 @@ describe('compiler/checker round-trips', () => {
         fs.writeFileSync(fixture + '/src/a.ts', source);
         fs.writeFileSync(fixture + '/tsconfig.json', JSON.stringify({ compilerOptions: { lib: ['es2024'], strict: true, types: [] }, include: ['src'] }));
 
-        let { checker: raw, program } = languageService.update(fixture + '/tsconfig.json', fixture + '/src/a.ts', source),
+        let { checker: raw, program, release } = await languageService.update(fixture + '/tsconfig.json', fixture + '/src/a.ts', source),
             counting = new Proxy(raw, {
                 get(target, key) {
                     let value = Reflect.get(target, key);
@@ -415,10 +419,9 @@ describe('compiler/checker round-trips', () => {
                         : value;
                 }
             }),
-            memo = checker.cached(counting, program),
             reads: Node[] = [];
 
-        program.getSourceFile(fixture + '/src/a.ts')!.forEachChild(function visit(node) {
+        (await program.getSourceFile(fixture + '/src/a.ts'))!.forEachChild(function visit(node) {
             if (isIdentifier(node)) {
                 reads.push(node);
             }
@@ -426,33 +429,38 @@ describe('compiler/checker round-trips', () => {
             node.forEachChild(visit);
         });
 
-        let ask = (): void => {
-            let types = memo.getTypeAtLocation(reads) as (Type | undefined)[];
+        let ask = async (): Promise<Set<number>> => {
+            let memo = checker.cached(counting, program),
+                types = await memo.getTypeAtLocation(reads),
+                ids = new Set<number>();
 
-            for (let i = 0, n = types.length; i < n; i++) {
-                let type = types[i];
-
+            await Promise.all(types.map(async (type: Type | undefined) => {
                 if (!type) {
-                    continue;
+                    return [];
                 }
 
-                memo.isArrayType(type);
-                memo.isTupleType(type);
-                memo.getPropertyOfType(type, 'length');
-                memo.getNonNullableType(type);
-                memo.getBaseConstraintOfType(type);
-                memo.getSignaturesOfType(type, 0);
-            }
+                ids.add(type.id);
+
+                return Promise.all([
+                    memo.isArrayType(type),
+                    memo.isTupleType(type),
+                    memo.getPropertyOfType(type, 'length'),
+                    memo.getNonNullableType(type),
+                    memo.getBaseConstraintOfType(type),
+                    memo.getSignaturesOfType(type, 0)
+                ]);
+            }));
+
+            return ids;
         };
 
-        ask();
+        let distinct = (await ask()).size,
+            first = calls;
 
-        let first = calls,
-            distinct = new Set((memo.getTypeAtLocation(reads) as (Type | undefined)[]).filter(Boolean).map(type => type!.id)).size;
+        await ask();
+        release();
 
-        ask();
-
-        // One batched getTypeAtLocation, then six questions per distinct type
+        // One batched getTypeAtLocation, then six questions per distinct type, whichever view asks
         expect(first).toBe(1 + 6 * distinct);
         expect(calls).toBe(first);
         expect(distinct).toBeLessThan(reads.length);

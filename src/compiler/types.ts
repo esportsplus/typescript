@@ -1,5 +1,5 @@
 import type { Node, SourceFile } from 'typescript/ast';
-import type { Checker, Program } from 'typescript/sync';
+import type { Checker, Program } from 'typescript/async';
 
 
 type ImportIntent = {
@@ -24,8 +24,10 @@ type Plugin = {
     /**
      * Transform a source file, returning intents against its AST. Every plugin receives the same
      * original program and source file; the coordinator composes all of their replacements.
+     * Hosts transform many files concurrently: await checker queries rather than chaining them,
+     * and ask for everything a step needs at once (one request per turn), not one by one.
      */
-    transform: (ctx: TransformContext) => TransformResult;
+    transform: (ctx: TransformContext) => Promise<TransformResult>;
 };
 
 type PluginFactory = (options?: Record<string, unknown>) => Plugin;
@@ -62,6 +64,11 @@ type SharedContext = Map<string, unknown>;
 type Text = (node: Node) => string;
 
 type TransformContext = {
+    /**
+     * This transform's view of the program's checker: answers are shared with every concurrent
+     * transform of the program, a query in flight is awaited rather than sent again, and the
+     * queries missed in one turn go to tsgo as one request.
+     */
     checker: Checker;
     code: string;
     program: Program;

@@ -21,7 +21,7 @@ import {
     type UnionType,
 } from 'typescript/sync';
 
-import checkers from '../compiler/checker';
+import checkers from './checker';
 
 // Classic name for the checker.
 export type TypeChecker = Checker;

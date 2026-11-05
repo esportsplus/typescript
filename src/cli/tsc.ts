@@ -2,14 +2,13 @@ import type { Plugin, SharedContext } from '../compiler/types';
 import type { PositionMapping } from '../compiler/sourcemap';
 import type { Diagnostic as AnalyzeDiagnostic } from '../guard/kernel/types';
 import type { Config } from './specifiers';
-import { API, type Checker, DiagnosticCategory, type Program, type Snapshot } from 'typescript/sync';
+import { API, type Checker, type Diagnostic, DiagnosticCategory, type Program, type Snapshot } from 'typescript/sync';
 import { createRequire } from 'module';
 import { format } from './diagnostics';
 import { PACKAGE_NAME } from '../constants';
 import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
 
-import checker from '../compiler/checker';
 import coordinator from '../compiler/coordinator';
 import fs from 'fs';
 import languageService from '../compiler/language-service';
@@ -24,6 +23,13 @@ import { loadConfigFromTsconfig } from '../guard/kernel/config';
 import { stripJsonc } from '../jsonc';
 import { readPlugins } from '../tsconfig';
 
+
+// A program of either client, read the same way
+type Diagnosable = Record<
+    'getBindDiagnostics' | 'getConfigFileParsingDiagnostics' | 'getDeclarationDiagnostics' | 'getGlobalDiagnostics' |
+    'getProgramDiagnostics' | 'getSemanticDiagnostics' | 'getSyntacticDiagnostics',
+    () => readonly Diagnostic[] | Promise<readonly Diagnostic[]>
+>;
 
 type Flags = {
     // Compiler flags only tsc.js applies (the API program is opened from the tsconfig alone)
@@ -75,28 +81,29 @@ const WATCH_FLAGS = new Set(['--watch', '-w']);
 let require = createRequire(import.meta.url);
 
 
+// Builds against one program of the sync client: analyze and the diagnostics share its checker, as
+// a project without transformer plugins (most) needs nothing else. Plugins are async, so a project
+// with them is transformed through the language service (every file concurrently), whose program
+// then takes the transformed sources and reports the diagnostics.
 async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?: API, noEmit = false): Promise<void> {
     let stop = timing('open program'),
-        opened = instance === undefined ? languageService.open(tsconfig) : undefined,
         root = path.dirname(path.resolve(tsconfig)),
         owned = instance === undefined,
-        api = opened?.api ?? instance!,
-        snapshot = opened?.snapshot ?? api.createSnapshot({ openProjects: [tsconfig] }),
-        project = opened?.project ?? snapshot.getConfiguredProject(tsconfig);
+        api = instance ?? new API({ cwd: root }),
+        snapshot = api.createSnapshot({ openProjects: [tsconfig] }),
+        project = snapshot.getConfiguredProject(tsconfig);
 
     if (!project) {
-        teardown(snapshot, tsconfig, owned);
+        await teardown(api, snapshot, tsconfig, owned);
 
         throw new Error(`${PACKAGE_NAME}: project not found for ${tsconfig}`);
     }
-
-    checker.attach(api, project);
 
     let configDiagnostics = project.program.getConfigFileParsingDiagnostics();
 
     if (configDiagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
         console.error(format(configDiagnostics, root));
-        teardown(snapshot, tsconfig, owned);
+        await teardown(api, snapshot, tsconfig, owned);
         process.exit(1);
     }
 
@@ -106,7 +113,6 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         fileNames = [...parsed.fileNames],
         options: ResolvedOptions = { ...parsed.options },
         plugins: Plugin[],
-        shared: SharedContext = new Map(),
         transformedFiles = new Map<string, TransformedFile>();
 
     runAnalyze(tsconfig, project.program, project.checker);
@@ -116,52 +122,61 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     }
     catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
-        teardown(snapshot, tsconfig, owned);
+        await teardown(api, snapshot, tsconfig, owned);
         process.exit(1);
     }
 
     stop = timing('transform');
 
-    for (let i = 0, n = plugins.length > 0 ? fileNames.length : 0; i < n; i++) {
-        let fileName = fileNames[i],
-            sourceFile = project.program.getSourceFile(fileName);
+    if (plugins.length > 0) {
+        let lease = await languageService.updateMany(tsconfig, new Map()),
+            shared: SharedContext = new Map();
 
-        if (!sourceFile) {
-            continue;
+        try {
+            await Promise.all(fileNames.map(async (fileName) => {
+                let sourceFile = await lease.program.getSourceFile(fileName);
+
+                if (!sourceFile) {
+                    return;
+                }
+
+                let result = await coordinator.transform(
+                    plugins,
+                    sourceFile.getFullText(),
+                    sourceFile,
+                    { checker: lease.checker, program: lease.program },
+                    root,
+                    shared
+                );
+
+                if (result.changed) {
+                    transformedFiles.set(normalizePath(fileName), { code: result.code, mapping: result.map });
+                }
+            }));
         }
-
-        let result = coordinator.transform(
-            plugins,
-            sourceFile.getFullText(),
-            sourceFile,
-            { checker: project.checker, program: project.program },
-            root,
-            shared
-        );
-
-        if (result.changed) {
-            transformedFiles.set(normalizePath(fileName), { code: result.code, mapping: result.map });
+        finally {
+            lease.release();
         }
     }
 
     stop(`${transformedFiles.size} of ${fileNames.length} files changed`);
     stop = timing('diagnostics');
 
-    let program = transformedFiles.size === 0
-        ? project.program
-        : languageService.updateMany(tsconfig, new Map([...transformedFiles].map(([fileName, entry]) => [fileName, entry.code]))).program;
+    let diagnostics: Diagnostic[];
 
-    // Declaration diagnostics are gathered here too, so the emit pass below can skip checking
-    // (--noCheck) without losing any error it would have reported
-    let diagnostics = [
-        ...program.getConfigFileParsingDiagnostics(),
-        ...program.getSyntacticDiagnostics(),
-        ...program.getBindDiagnostics(),
-        ...program.getSemanticDiagnostics(),
-        ...program.getGlobalDiagnostics(),
-        ...program.getProgramDiagnostics(),
-        ...(options.declaration === true || options.composite === true ? program.getDeclarationDiagnostics() : [])
-    ];
+    if (transformedFiles.size === 0) {
+        diagnostics = await diagnose(project.program, options);
+    }
+    else {
+        let lease = await languageService.updateMany(tsconfig, new Map([...transformedFiles].map(([fileName, entry]) => [fileName, entry.code])));
+
+        try {
+            diagnostics = await diagnose(lease.program, options);
+        }
+        finally {
+            lease.release();
+        }
+    }
 
     stop();
 
@@ -170,12 +185,12 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
     }
 
     if (diagnostics.some((diagnostic) => diagnostic.category === DiagnosticCategory.Error)) {
-        teardown(snapshot, tsconfig, owned);
+        await teardown(api, snapshot, tsconfig, owned);
         process.exit(1);
     }
 
     if (noEmit || options.noEmit === true) {
-        teardown(snapshot, tsconfig, owned);
+        await teardown(api, snapshot, tsconfig, owned);
         process.exit(0);
     }
 
@@ -185,7 +200,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
 
     stop();
 
-    teardown(snapshot, tsconfig, owned);
+    await teardown(api, snapshot, tsconfig, owned);
     process.exit(code);
 }
 
@@ -277,6 +292,22 @@ function composeSourceMaps(mirrorOut: string, mirror: string, root: string, tran
 
         fs.writeFileSync(mapPath, JSON.stringify(composed));
     }
+}
+
+// Declaration diagnostics are gathered here too, so the emit pass can skip checking (--noCheck)
+// without losing any error it would have reported
+async function diagnose(program: Diagnosable, options: ResolvedOptions): Promise<Diagnostic[]> {
+    let groups = await Promise.all([
+        program.getConfigFileParsingDiagnostics(),
+        program.getSyntacticDiagnostics(),
+        program.getBindDiagnostics(),
+        program.getSemanticDiagnostics(),
+        program.getGlobalDiagnostics(),
+        program.getProgramDiagnostics(),
+        options.declaration === true || options.composite === true ? program.getDeclarationDiagnostics() : []
+    ]);
+
+    return groups.flat();
 }
 
 async function emit(tsconfig: string, fileNames: string[], transformedFiles: Map<string, TransformedFile>, root: string, options: ResolvedOptions): Promise<number> {
@@ -672,15 +703,15 @@ function spawnTsc(tscJs: string, args: string[]): Promise<Spawned> {
     });
 }
 
-function teardown(snapshot: Snapshot, configPath: string, owned: boolean): void {
-    if (owned) {
-        languageService.dispose(configPath);
-
-        return;
-    }
+async function teardown(api: API, snapshot: Snapshot, configPath: string, owned: boolean): Promise<void> {
+    await languageService.dispose(configPath);
 
     if (!snapshot.isDisposed()) {
         snapshot.dispose();
+    }
+
+    if (owned) {
+        api.close();
     }
 }
 

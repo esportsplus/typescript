@@ -68,7 +68,7 @@ function walk(node: Node, visit: (node: Node) => void): void {
 // Rewrites `reactive(x)` to `ns.reactive(x)` and every read of `count` to `count.value`
 function reactivity(): Plugin {
     return {
-        transform: ({ sourceFile }) => {
+        transform: async ({ sourceFile }) => {
             let replacements: ReplacementIntent[] = [];
 
             walk(sourceFile, node => {
@@ -107,14 +107,14 @@ function reactivity(): Plugin {
 // included, copying each expression it keeps into the generated call
 function template(): Plugin {
     return {
-        transform: ({ checker, program, sourceFile }) => {
-            let targets = new Set(references.exported(checker, program, 'fake-template', 'html').map(references.key)),
+        transform: async ({ checker, program, sourceFile }) => {
+            let targets = new Set((await references.exported(checker, program, 'fake-template', 'html')).map(references.key)),
                 tags = new Set<Node>(),
                 strings: string[][] = [],
                 replacements: ReplacementIntent[] = [];
 
-            for (let [identifier, origin] of references.origins(checker, program, sourceFile)) {
-                if (references.holds(checker, program, origin, targets)) {
+            for (let [identifier, origin] of await references.origins(checker, program, sourceFile)) {
+                if (await references.holds(checker, program, origin, targets)) {
                     tags.add(identifier);
                 }
             }
@@ -190,7 +190,7 @@ function template(): Plugin {
 }
 
 
-beforeAll(() => {
+beforeAll(async () => {
     fixture = fs.mkdtempSync(path.join(process.cwd(), 'test/.composition-')).replace(/\\/g, '/');
 
     for (let [name, code] of Object.entries(FILES)) {
@@ -206,18 +206,18 @@ beforeAll(() => {
     }));
 });
 
-afterAll(() => {
-    languageService.dispose();
+afterAll(async () => {
+    await languageService.dispose();
     fs.rmSync(fixture, { force: true, recursive: true });
 });
 
 
 describe('coordinator composition', () => {
-    it('produces what the staged pipeline produced for a reactivity + template chain', () => {
+    it('produces what the staged pipeline produced for a reactivity + template chain', async () => {
         let config = fixture + '/tsconfig.json',
             file = fixture + '/src/view.ts',
-            { checker, program } = languageService.update(config, file, VIEW),
-            result = coordinator.transform([reactivity(), template()], VIEW, program.getSourceFile(file)!, { checker, program }, fixture, new Map());
+            { checker, program } = await languageService.update(config, file, VIEW),
+            result = await coordinator.transform([reactivity(), template()], VIEW, (await program.getSourceFile(file))!, { checker, program }, fixture, new Map());
 
         expect(result.code).toBe(STAGED);
     });

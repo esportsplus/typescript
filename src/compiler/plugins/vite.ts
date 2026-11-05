@@ -1,3 +1,4 @@
+import type { CoordinatorResult } from '../coordinator';
 import type { Plugin, SharedContext, Warning } from '../types';
 import type { ResolvedConfig } from 'vite';
 import type { SourceMapV3 } from '../sourcemap';
@@ -107,7 +108,7 @@ type VitePlugin = {
     };
     transform: {
         filter: { id: { exclude: RegExp[]; include: RegExp } };
-        handler: (this: unknown, code: string, id: string) => Output | null;
+        handler: (this: unknown, code: string, id: string) => Promise<Output | null>;
     };
     watchChange: (id: string) => void;
 };
@@ -148,6 +149,8 @@ let state = shared('vite', () => ({
         // Virtual modules plugins emitted, by id, and the ids each compiled module (by identity) emitted
         emitted: new Map<string, string>(),
         emitters: new Map<string, string[]>(),
+        // Build-mode compiles in flight, by identity: a concurrent compile of the same text awaits it
+        pending: new Map<string, { hash: string; result: Promise<Compiled> }>(),
         results: new Map<string, Cached>(),
         roots: new Set<string>(),
         // Build results kept on disk across builds, per group name and root (null: no cache directory)
@@ -260,17 +263,17 @@ function partition(registry: Registry): Map<Host, Group> {
     return groups;
 }
 
-// Writes are left to finish after the build's state is released
+// Writes and tsgo shutdowns are left to finish after the build's state is released
 function release(): Promise<void> {
+    let writes: Promise<void>[] = [];
+
     for (let config of state.configs) {
-        languageService.dispose(config);
+        writes.push(languageService.dispose(config));
     }
 
     for (let root of state.roots) {
         state.contexts.delete(root);
     }
-
-    let writes: Promise<void>[] = [];
 
     for (let store of state.stores.values()) {
         if (store) {
@@ -281,6 +284,7 @@ function release(): Promise<void> {
     state.configs.clear();
     state.emitted.clear();
     state.emitters.clear();
+    state.pending.clear();
     state.results.clear();
     state.roots.clear();
     state.stores.clear();
@@ -437,7 +441,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
         };
 
         // Compiles `id` with the plugins of `included` (this host and those whose compile it runs)
-        let compile = (code: string, id: string, included: Host[], digest: string, members: Group): Compiled => {
+        let compile = async (code: string, id: string, included: Host[], digest: string, members: Group): Promise<Compiled> => {
             let applied: Plugin[] = [],
                 names: string[] = [];
 
@@ -454,7 +458,14 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             let identity = `${names.join('+')}\0${root || ''}\0${key(id)}`;
 
             if (building) {
-                let found = state.results.get(identity);
+                let found = state.results.get(identity),
+                    flight = state.pending.get(identity);
+
+                // A failed compile in flight leaves nothing behind, and this one compiles anew
+                if (!found && flight?.hash === digest) {
+                    await flight.result.catch(() => undefined);
+                    found = state.results.get(identity);
+                }
 
                 if (found && found.hash === digest) {
                     emit(identity, found.modules);
@@ -464,6 +475,26 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                 }
             }
 
+            if (!building) {
+                return run(code, id, applied, names, identity, digest, members);
+            }
+
+            let flight = { hash: digest, result: run(code, id, applied, names, identity, digest, members) };
+
+            state.pending.set(identity, flight);
+
+            try {
+                return await flight.result;
+            }
+            finally {
+                if (state.pending.get(identity) === flight) {
+                    state.pending.delete(identity);
+                }
+            }
+        };
+
+        // Compiles `id` against the program, or reuses its compile kept from an earlier build
+        let run = async (code: string, id: string, applied: Plugin[], names: string[], identity: string, digest: string, members: Group): Promise<Compiled> => {
             let normalizedId = normalize(id),
                 configPath = tsconfig ?? languageService.findConfig(root || ''),
                 store = building ? persisted(members, configPath) : null,
@@ -483,12 +514,9 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             }
 
             // Dependencies linked from outside node_modules (link:, workspaces) are not project files
-            if (!languageService.contains(configPath ?? '', normalizedId, code)) {
+            if (!(await languageService.contains(configPath ?? '', normalizedId, code))) {
                 return { output: null, warnings: [] };
             }
-
-            let { checker, program } = languageService.update(configPath ?? '', normalizedId, code),
-                sourceFile = program.getSourceFile(normalizedId) ?? languageService.parse(normalizedId, code);
 
             let scope = root || '',
                 ctx = state.contexts.get(scope);
@@ -498,18 +526,28 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                 state.contexts.set(scope, ctx);
             }
 
-            let isolated = true;
+            let isolated = true,
+                lease = await languageService.update(configPath ?? '', normalizedId, code),
+                result: CoordinatorResult;
 
             // Errors propagate: a file a plugin cannot compile must fail the build, never ship as-is
-            let result = coordinator.transform(
+            try {
+                let sourceFile = await lease.program.getSourceFile(normalizedId) ?? await languageService.parse(normalizedId, code);
+
+                result = await coordinator.transform(
                     applied,
                     code,
                     sourceFile,
-                    { checker, program },
+                    { checker: lease.checker, program: lease.program },
                     scope,
                     store ? observe(ctx, () => { isolated = false; }) : ctx
-                ),
-                modules = [...result.modules],
+                );
+            }
+            finally {
+                lease.release();
+            }
+
+            let modules = [...result.modules],
                 output: Output | null = result.changed
                     ? { code: result.code, map: sourcemap.toSourceMapV3(result.map, result.code, code, normalizedId) }
                     : null;
@@ -532,7 +570,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
             // Rolldown applies this natively, so assets, styles, dependencies and virtual modules
             // never call into JavaScript
             filter: { id: { exclude: [NODE_MODULES_REGEX, VIRTUAL_REGEX], include: FILE_REGEX } },
-            handler(this: unknown, code: string, id: string) {
+            async handler(this: unknown, code: string, id: string) {
                 // The filter again, for a host that does not apply it
                 if (!FILE_REGEX.test(id) || NODE_MODULES_REGEX.test(id) || VIRTUAL_REGEX.test(id)) {
                     return null;
@@ -569,7 +607,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                         return null;
                     }
 
-                    let { output, warnings } = compile(code, id, [self], digest, alone);
+                    let { output, warnings } = await compile(code, id, [self], digest, alone);
 
                     report(this, code, id, warnings);
 
@@ -579,7 +617,7 @@ export default ({ name, onWatchChange, plugins, uncompiled = [] }: VitePluginOpt
                 let at = members.members.indexOf(self),
                     before = take(members.deferred, file, digest),
                     included = members.members.filter((host, i) => i >= at || before?.hosts.has(host)),
-                    { output, warnings } = compile(code, id, included, digest, members);
+                    { output, warnings } = await compile(code, id, included, digest, members);
 
                 // The executor reports for the group: the hosts before it returned nothing for this file
                 report(this, code, id, warnings);

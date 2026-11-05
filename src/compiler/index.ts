@@ -9,6 +9,6 @@ export { default as references } from './references';
 export { default as sourcemap } from './sourcemap';
 export { default as uid } from './uid';
 export type { OffsetAnchor, PositionMapping, SourceMapV3 } from './sourcemap';
-export type { ScratchResult, UpdateResult } from './language-service';
+export type { Lease, ScratchResult } from './language-service';
 export type { Origin } from './references';
 export type * from './types';

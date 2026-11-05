@@ -11,8 +11,8 @@ const root = process.cwd().replace(/\\/g, '/');
 const config = root + '/tsconfig.json';
 
 
-afterAll(() => {
-    languageService.dispose();
+afterAll(async () => {
+    await languageService.dispose();
 });
 
 
@@ -37,40 +37,40 @@ describe('language-service', () => {
             fs.writeFileSync(fileName, 'export const value = 1;');
         });
 
-        afterEach(() => {
-            languageService.dispose();
+        afterEach(async () => {
+            await languageService.dispose();
             if (path.dirname(path.resolve(directory)) !== path.resolve(root, 'test')) {
                 throw new Error('Fixture escaped the test directory');
             }
             fs.rmSync(directory, { force: true, recursive: true });
         });
 
-        it('shares updates with the project opened through its canonical path', () => {
-            languageService.open(canonicalConfig);
-            languageService.update(configPath, fileName, 'export const value = 2;');
-            expect(languageService.open(canonicalConfig).project.program.getSourceFile(fileName)?.text)
+        it('shares updates with the project opened through its canonical path', async () => {
+            await languageService.updateMany(canonicalConfig, new Map());
+            await languageService.update(configPath, fileName, 'export const value = 2;');
+            expect((await (await languageService.updateMany(canonicalConfig, new Map())).program.getSourceFile(fileName))?.text)
                 .toBe('export const value = 2;');
 
-            languageService.updateMany(configPath, new Map([[fileName, 'export const value = 3;']]));
-            expect(languageService.open(configPath).project.program.getSourceFile(fileName)?.text)
+            await languageService.updateMany(configPath, new Map([[fileName, 'export const value = 3;']]));
+            expect((await (await languageService.updateMany(configPath, new Map())).program.getSourceFile(fileName))?.text)
                 .toBe('export const value = 3;');
         });
 
-        it('invalidates the existing overlay so the next snapshot reads disk', () => {
-            languageService.update(canonicalConfig, fileName, 'export const value = 2;');
+        it('invalidates the existing overlay so the next snapshot reads disk', async () => {
+            await languageService.update(canonicalConfig, fileName, 'export const value = 2;');
             languageService.invalidate(configPath, fileName);
-            let { program } = languageService.updateMany(canonicalConfig, new Map());
+            let { program } = await languageService.updateMany(canonicalConfig, new Map());
 
-            expect(program.getSourceFile(fileName)?.text).toBe('export const value = 1;');
+            expect((await program.getSourceFile(fileName))?.text).toBe('export const value = 1;');
         });
 
-        it('disposes the existing project and drops its overlay', () => {
-            languageService.update(canonicalConfig, fileName, 'export const value = 2;');
-            let opened = languageService.open(canonicalConfig);
+        it('disposes the existing project and drops its overlay', async () => {
+            let lease = await languageService.update(canonicalConfig, fileName, 'export const value = 2;');
 
-            languageService.dispose(configPath);
-            expect(opened.snapshot.isDisposed()).toBe(true);
-            expect(languageService.open(canonicalConfig).project.program.getSourceFile(fileName)?.text)
+            lease.release();
+            await languageService.dispose(configPath);
+            await expect(lease.program.getSourceFile(fileName)).rejects.toThrow();
+            expect((await (await languageService.updateMany(canonicalConfig, new Map())).program.getSourceFile(fileName))?.text)
                 .toBe('export const value = 1;');
         });
     });
@@ -87,151 +87,177 @@ describe('language-service', () => {
             fs.writeFileSync(directory + '/src/entry.ts', 'export const value = 1;');
         });
 
-        afterEach(() => {
-            languageService.dispose();
+        afterEach(async () => {
+            await languageService.dispose();
             fs.rmSync(directory, { force: true, recursive: true });
         });
 
-        it('includes a project source file', () => {
-            expect(languageService.contains(project, directory + '/src/entry.ts')).toBe(true);
+        it('includes a project source file', async () => {
+            expect(await languageService.contains(project, directory + '/src/entry.ts')).toBe(true);
         });
 
-        it('excludes a file outside the config (e.g. a dependency linked from another checkout)', () => {
-            expect(languageService.contains(project, root + '/src/compiler/ast.ts')).toBe(false);
+        it('excludes a file outside the config (e.g. a dependency linked from another checkout)', async () => {
+            expect(await languageService.contains(project, root + '/src/compiler/ast.ts')).toBe(false);
         });
 
-        it('includes a virtual module the config would match, and excludes one it would not', () => {
-            expect(languageService.contains(project, directory + '/src/virtual.ts', 'export const v = 1;')).toBe(true);
-            expect(languageService.contains(project, directory + '/outside.ts', 'export const v = 1;')).toBe(false);
+        it('includes a virtual module the config would match, and excludes one it would not', async () => {
+            expect(await languageService.contains(project, directory + '/src/virtual.ts', 'export const v = 1;')).toBe(true);
+            expect(await languageService.contains(project, directory + '/outside.ts', 'export const v = 1;')).toBe(false);
         });
 
-        it('admits a file created after a miss once it is invalidated', () => {
+        it('admits a file created after a miss once it is invalidated', async () => {
             let created = directory + '/src/created.ts';
 
-            expect(languageService.contains(project, created)).toBe(false);
+            expect(await languageService.contains(project, created)).toBe(false);
 
             fs.writeFileSync(created, 'export const created = 1;');
             languageService.invalidate(project, created);
 
-            expect(languageService.contains(project, created)).toBe(true);
+            expect(await languageService.contains(project, created)).toBe(true);
         });
 
-        it('admits a file outside the config that a later snapshot imports', () => {
+        it('admits a file outside the config that a later snapshot imports', async () => {
             let entry = directory + '/src/entry.ts',
                 linked = directory + '/lib/linked.ts';
 
-            expect(languageService.contains(project, entry)).toBe(true);
+            expect(await languageService.contains(project, entry)).toBe(true);
 
             fs.mkdirSync(directory + '/lib');
             fs.writeFileSync(linked, 'export const linked = 1;');
             languageService.invalidate(project, linked);
-            languageService.update(project, entry, "import { linked } from '../lib/linked';\nexport const value = linked;");
+            await languageService.update(project, entry, "import { linked } from '../lib/linked';\nexport const value = linked;");
 
-            expect(languageService.contains(project, linked)).toBe(true);
+            expect(await languageService.contains(project, linked)).toBe(true);
         });
     });
 
     describe('update', () => {
-        it('returns a checker and program when given valid root + fileName + content', () => {
+        it('returns a checker and program when given valid root + fileName + content', async () => {
             let fileName = root + '/src/test-virtual-update.ts',
                 content = 'let x: number = 42;',
-                result = languageService.update(config, fileName, content);
+                result = await languageService.update(config, fileName, content);
 
             expect(result.program).toBeDefined();
             expect(result.checker).toBeDefined();
         });
 
-        it('updated content is reflected in the program SourceFile', () => {
+        it('updated content is reflected in the program SourceFile', async () => {
             let fileName = root + '/src/test-virtual-reflect.ts',
                 content = 'let hello = "world";',
-                { program } = languageService.update(config, fileName, content),
-                sourceFile = program.getSourceFile(fileName);
+                { program } = await languageService.update(config, fileName, content),
+                sourceFile = await program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
             expect(sourceFile!.text).toBe(content);
         });
 
-        it('keeps the current program when a file is synced with the content it already has', () => {
+        it('keeps the current program when a file is synced with the content it already has', async () => {
             let fileName = root + '/src/test-virtual-unchanged.ts',
-                first = languageService.update(config, fileName, 'let a = 1;'),
-                second = languageService.update(config, fileName, 'let a = 1;');
+                first = await languageService.update(config, fileName, 'let a = 1;'),
+                second = await languageService.update(config, fileName, 'let a = 1;');
 
             expect(second.program).toBe(first.program);
-            expect(languageService.update(config, fileName, 'let a = 2;').program).not.toBe(first.program);
+            expect((await languageService.update(config, fileName, 'let a = 2;')).program).not.toBe(first.program);
         });
 
-        it('reflects the latest content across repeated updates', () => {
+        it('reflects the latest content across repeated updates', async () => {
             let fileName = root + '/src/test-virtual-version.ts';
 
-            languageService.update(config, fileName, 'let a = 1;');
+            await languageService.update(config, fileName, 'let a = 1;');
 
-            let { program } = languageService.update(config, fileName, 'let a = 2;'),
-                sourceFile = program.getSourceFile(fileName);
+            let { program } = await languageService.update(config, fileName, 'let a = 2;'),
+                sourceFile = await program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
             expect(sourceFile!.text).toBe('let a = 2;');
         });
 
-        it('adds new files to the program', () => {
+        it('adds new files to the program', async () => {
             let fileName = root + '/src/test-virtual-new-root.ts',
                 content = 'export const value = 1;',
-                { program } = languageService.update(config, fileName, content),
-                sourceFile = program.getSourceFile(fileName);
+                { program } = await languageService.update(config, fileName, content),
+                sourceFile = await program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
             expect(sourceFile!.text).toBe(content);
         });
 
-        it('keeps an on-disk file listed once after overlaying it', () => {
+        it('keeps an on-disk file listed once after overlaying it', async () => {
             let fileName = root + '/src/compiler/imports.ts',
                 content = fs.readFileSync(fileName, 'utf8'),
-                { program } = languageService.update(config, fileName, content),
-                matches = program.getSourceFileNames().filter(name => name.replace(/\\/g, '/') === fileName);
+                { program } = await languageService.update(config, fileName, content),
+                matches = (await program.getSourceFileNames()).filter(name => name.replace(/\\/g, '/') === fileName);
 
             expect(matches).toHaveLength(1);
         });
 
-        it('updates multiple overlay files in one snapshot', () => {
+        it('updates multiple overlay files in one snapshot', async () => {
             let first = root + '/src/test-virtual-batch-first.ts',
                 second = root + '/src/test-virtual-batch-second.ts',
-                { program } = languageService.updateMany(config, new Map([
+                { program } = await languageService.updateMany(config, new Map([
                     [first, 'export let first = 1;'],
                     [second, 'export let second = 2;']
                 ]));
 
-            expect(program.getSourceFile(first)?.text).toBe('export let first = 1;');
-            expect(program.getSourceFile(second)?.text).toBe('export let second = 2;');
+            expect((await program.getSourceFile(first))?.text).toBe('export let first = 1;');
+            expect((await program.getSourceFile(second))?.text).toBe('export let second = 2;');
+        });
+
+        it('shares one snapshot between concurrent transforms of files the program holds', async () => {
+            let a = root + '/src/compiler/ast.ts',
+                b = root + '/src/compiler/code.ts',
+                [first, second] = await Promise.all([
+                    languageService.update(config, a, fs.readFileSync(a, 'utf8')),
+                    languageService.update(config, b, fs.readFileSync(b, 'utf8'))
+                ]);
+
+            expect(second.program).toBe(first.program);
+            first.release();
+            second.release();
+        });
+
+        it('keeps a leased snapshot readable after a later update replaces it', async () => {
+            let fileName = root + '/src/test-virtual-leased.ts',
+                leased = await languageService.update(config, fileName, 'export let leased = 1;'),
+                later = await languageService.update(config, fileName, 'export let leased = 2;');
+
+            expect(later.program).not.toBe(leased.program);
+            expect((await leased.program.getSourceFile(fileName))?.text).toBe('export let leased = 1;');
+            expect((await later.program.getSourceFile(fileName))?.text).toBe('export let leased = 2;');
+
+            leased.release();
+            later.release();
         });
     });
 
     describe('invalidate', () => {
-        it('removes content so the next update reflects fresh content', () => {
+        it('removes content so the next update reflects fresh content', async () => {
             let fileName = root + '/src/test-virtual-invalidate.ts';
 
-            languageService.update(config, fileName, 'let val = 99;');
+            await languageService.update(config, fileName, 'let val = 99;');
             languageService.invalidate(config, fileName);
 
-            let { program } = languageService.update(config, fileName, 'let val = 100;'),
-                sourceFile = program.getSourceFile(fileName);
+            let { program } = await languageService.update(config, fileName, 'let val = 100;'),
+                sourceFile = await program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
             expect(sourceFile!.text).toBe('let val = 100;');
         });
 
-        it('reflects new content for invalidated files', () => {
+        it('reflects new content for invalidated files', async () => {
             let fileName = root + '/src/test-virtual-inv-version.ts';
 
-            languageService.update(config, fileName, 'let a = 1;');
+            await languageService.update(config, fileName, 'let a = 1;');
             languageService.invalidate(config, fileName);
 
-            let { program } = languageService.update(config, fileName, 'let a = 3;'),
-                sourceFile = program.getSourceFile(fileName);
+            let { program } = await languageService.update(config, fileName, 'let a = 3;'),
+                sourceFile = await program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
             expect(sourceFile!.text).toBe('let a = 3;');
         });
 
-        it('no-op when root does not exist in cache', () => {
+        it('no-op when root does not exist in cache', async () => {
             expect(() => {
                 languageService.invalidate('/nonexistent/root', 'file.ts');
             }).not.toThrow();
@@ -250,32 +276,32 @@ describe('language-service', () => {
             fs.writeFileSync(directory + '/src/a.ts', 'export const a = 1;');
         });
 
-        afterEach(() => {
-            languageService.dispose();
+        afterEach(async () => {
+            await languageService.dispose();
             fs.rmSync(directory, { force: true, recursive: true });
         });
 
-        it('admits a file created after the file list was read, and still rejects outsiders', () => {
-            expect(languageService.contains(project, directory + '/outside.ts')).toBe(false);
+        it('admits a file created after the file list was read, and still rejects outsiders', async () => {
+            expect(await languageService.contains(project, directory + '/outside.ts')).toBe(false);
 
             languageService.invalidate(project, directory + '/src/a.ts');
             fs.writeFileSync(directory + '/src/b.ts', 'export const b = 1;');
             languageService.invalidate(project, directory + '/src/b.ts');
 
-            expect(languageService.contains(project, directory + '/src/b.ts')).toBe(true);
-            expect(languageService.contains(project, directory + '/outside.ts')).toBe(false);
+            expect(await languageService.contains(project, directory + '/src/b.ts')).toBe(true);
+            expect(await languageService.contains(project, directory + '/outside.ts')).toBe(false);
         });
 
-        it('reloads a file whose disk text changed under the open program', () => {
+        it('reloads a file whose disk text changed under the open program', async () => {
             let file = directory + '/src/a.ts',
-                { program } = languageService.update(project, file, 'export const a = 1;');
+                { program } = await languageService.update(project, file, 'export const a = 1;');
 
-            expect(languageService.update(project, file, 'export const a = 1;').program).toBe(program);
+            expect((await languageService.update(project, file, 'export const a = 1;')).program).toBe(program);
 
             fs.writeFileSync(file, 'export const a = 22;');
             languageService.invalidate(project, file);
 
-            expect(languageService.update(project, file, 'export const a = 22;').program.getSourceFile(file)?.text).toBe('export const a = 22;');
+            expect((await (await languageService.update(project, file, 'export const a = 22;')).program.getSourceFile(file))?.text).toBe('export const a = 22;');
         });
     });
 
@@ -292,75 +318,75 @@ describe('language-service', () => {
             fs.writeFileSync(directory + '/src/entry.ts', 'export const value = 1;');
         });
 
-        afterEach(() => {
-            languageService.dispose();
+        afterEach(async () => {
+            await languageService.dispose();
             fs.rmSync(directory, { force: true, recursive: true });
         });
 
-        it('resolves an import of a file that exists only in the overlay', () => {
+        it('resolves an import of a file that exists only in the overlay', async () => {
             let entry = directory + '/src/entry.ts',
                 virtual = directory + '/lib/virtual.ts';
 
-            let { checker, program } = languageService.updateMany(project, new Map([
+            let { checker, program } = await languageService.updateMany(project, new Map([
                     [virtual, 'export const v = 1;'],
                     [entry, "import { v } from '../lib/virtual';\nexport const value = v;"]
                 ])),
-                declaration = program.getSourceFile(entry)!.statements[0];
+                declaration = (await program.getSourceFile(entry))!.statements[0];
 
-            expect(isImportDeclaration(declaration) && checker.getSymbolAtLocation(declaration.moduleSpecifier)).toBeTruthy();
+            expect(isImportDeclaration(declaration) && await checker.getSymbolAtLocation(declaration.moduleSpecifier)).toBeTruthy();
         });
     });
 
     describe('parse', () => {
-        it('returns a SourceFile whose text round-trips', () => {
+        it('returns a SourceFile whose text round-trips', async () => {
             let fileName = root + '/src/test-virtual-parse.ts',
                 content = 'let x: number = 42;\nfunction foo() { return 1; }',
-                sourceFile = languageService.parse(fileName, content);
+                sourceFile = await languageService.parse(fileName, content);
 
             expect(sourceFile.kind).toBe(SyntaxKind.SourceFile);
             expect(sourceFile.text).toBe(content);
         });
 
-        it('parses the correct statement count', () => {
+        it('parses the correct statement count', async () => {
             let fileName = root + '/src/test-virtual-parse-count.ts',
-                sourceFile = languageService.parse(fileName, 'const a = 1;\nconst b = 2;\nconst c = 3;');
+                sourceFile = await languageService.parse(fileName, 'const a = 1;\nconst b = 2;\nconst c = 3;');
 
             expect(sourceFile.statements.length).toBe(3);
         });
 
-        it('produces usable positions', () => {
+        it('produces usable positions', async () => {
             let fileName = root + '/src/test-virtual-parse-pos.ts',
                 content = 'let x = 1;\nfunction foo() {}',
-                sourceFile = languageService.parse(fileName, content),
+                sourceFile = await languageService.parse(fileName, content),
                 second = sourceFile.statements[1];
 
             expect(second.kind).toBe(SyntaxKind.FunctionDeclaration);
             expect(second.getStart(sourceFile)).toBe(content.indexOf('function'));
         });
 
-        it('keeps each file current while alternating between files', () => {
+        it('keeps each file current while alternating between files', async () => {
             let a = root + '/src/test-virtual-alternate-a.ts',
                 b = root + '/src/test-virtual-alternate-b.ts';
 
             for (let i = 0; i < 3; i++) {
-                expect(languageService.parse(a, `const a = ${i};`).text).toBe(`const a = ${i};`);
-                expect(languageService.parse(b, `const b = ${i};`).text).toBe(`const b = ${i};`);
+                expect((await languageService.parse(a, `const a = ${i};`)).text).toBe(`const a = ${i};`);
+                expect((await languageService.parse(b, `const b = ${i};`)).text).toBe(`const b = ${i};`);
             }
         });
 
-        it('keeps an earlier tree walkable once later parses release it', () => {
+        it('keeps an earlier tree walkable once later parses release it', async () => {
             let fileName = root + '/src/test-virtual-parse-released.ts',
-                earlier = languageService.parse(fileName, 'export const a = 1;\nexport function f() {}');
+                earlier = await languageService.parse(fileName, 'export const a = 1;\nexport function f() {}');
 
-            languageService.parse(fileName, 'export const b = 2;');
-            languageService.parse(root + '/src/test-virtual-parse-released-other.ts', 'export {};');
+            await languageService.parse(fileName, 'export const b = 2;');
+            await languageService.parse(root + '/src/test-virtual-parse-released-other.ts', 'export {};');
 
             expect(earlier.statements.length).toBe(2);
             expect(earlier.statements[1].getText(earlier)).toBe('export function f() {}');
         });
 
-        it('parses JSX by the file extension', () => {
-            let sourceFile = languageService.parse(root + '/src/test-virtual-parse-jsx.tsx', 'export const v = <div class="x">{1}</div>;');
+        it('parses JSX by the file extension', async () => {
+            let sourceFile = await languageService.parse(root + '/src/test-virtual-parse-jsx.tsx', 'export const v = <div class="x">{1}</div>;');
 
             expect(sourceFile.fileName).toBe(root + '/src/test-virtual-parse-jsx.tsx');
             expect(sourceFile.statements.length).toBe(1);
@@ -368,33 +394,33 @@ describe('language-service', () => {
     });
 
     describe('scratch', () => {
-        function declared(result: ReturnType<typeof languageService.scratch>): string {
+        async function declared(result: Awaited<ReturnType<typeof languageService.scratch>>): Promise<string> {
             let statement = result.sourceFile.statements[0] as unknown as { declarationList: { declarations: { name: never }[] } };
 
-            return result.checker.typeToString(result.checker.getTypeAtLocation(statement.declarationList.declarations[0].name)!);
+            return result.checker.typeToString(await result.checker.getTypeAtLocation(statement.declarationList.declarations[0].name));
         }
 
-        it('answers type queries for a file after switching away from another', () => {
-            languageService.scratch(root + '/src/test-virtual-scratch-a.ts', 'export const a: string = "a";');
+        it('answers type queries for a file after switching away from another', async () => {
+            await languageService.scratch(root + '/src/test-virtual-scratch-a.ts', 'export const a: string = "a";');
 
-            expect(declared(languageService.scratch(root + '/src/test-virtual-scratch-b.ts', 'export const b = 42 as const;'))).toBe('42');
+            expect(await declared(await languageService.scratch(root + '/src/test-virtual-scratch-b.ts', 'export const b = 42 as const;'))).toBe('42');
         });
 
-        it('sees new content when returning to an earlier file', () => {
+        it('sees new content when returning to an earlier file', async () => {
             let a = root + '/src/test-virtual-scratch-return-a.ts';
 
-            languageService.scratch(a, 'export const value = 1;');
-            languageService.scratch(root + '/src/test-virtual-scratch-return-b.ts', 'export const other = 2;');
+            await languageService.scratch(a, 'export const value = 1;');
+            await languageService.scratch(root + '/src/test-virtual-scratch-return-b.ts', 'export const other = 2;');
 
-            let result = languageService.scratch(a, 'export const value = "changed" as const;');
+            let result = await languageService.scratch(a, 'export const value = "changed" as const;');
 
             expect(result.sourceFile.text).toBe('export const value = "changed" as const;');
-            expect(declared(result)).toBe('"changed"');
+            expect(await declared(result)).toBe('"changed"');
         });
     });
 
     describe('findConfig', () => {
-        it('finds the repository tsconfig from a nested directory', () => {
+        it('finds the repository tsconfig from a nested directory', async () => {
             let config = languageService.findConfig(root + '/src/compiler');
 
             expect(config).not.toBeNull();
@@ -402,7 +428,7 @@ describe('language-service', () => {
             expect(fs.existsSync(config!)).toBe(true);
         });
 
-        it('returns null when no tsconfig exists up the tree', () => {
+        it('returns null when no tsconfig exists up the tree', async () => {
             let directory = '/no-tsconfig/nested/deep';
             if (process.platform === 'win32') {
                 const drive = ['Z', 'Y', 'X', 'W', 'V'].find((letter) => !fs.existsSync(letter + ':/'));
@@ -414,15 +440,15 @@ describe('language-service', () => {
     });
 
     describe('dispose', () => {
-        it('is idempotent and recreates the entry on the next update', () => {
+        it('is idempotent and recreates the entry on the next update', async () => {
             let fileName = root + '/src/test-virtual-dispose.ts';
 
-            languageService.update(config, fileName, 'let a = 1;');
-            languageService.dispose(config);
-            languageService.dispose(config);
+            await languageService.update(config, fileName, 'let a = 1;');
+            await languageService.dispose(config);
+            await languageService.dispose(config);
 
-            let { program } = languageService.update(config, fileName, 'let a = 2;'),
-                sourceFile = program.getSourceFile(fileName);
+            let { program } = await languageService.update(config, fileName, 'let a = 2;'),
+                sourceFile = await program.getSourceFile(fileName);
 
             expect(sourceFile).toBeDefined();
             expect(sourceFile!.text).toBe('let a = 2;');

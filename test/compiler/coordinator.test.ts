@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
-import type { Checker, Program } from 'typescript/sync';
+import type { Checker, Program } from 'typescript/async';
 import type { ImportIntent, Plugin, ReplacementIntent, SharedContext, TransformContext } from '~/compiler/types';
 import { isCallExpression, isIdentifier, isImportDeclaration, isNamedImports } from 'typescript/ast/is';
 import type { Node, SourceFile } from 'typescript/ast';
@@ -15,8 +15,8 @@ const root = process.cwd().split(path.sep).join('/');
 const fileName = root + '/src/coordinator-fixture.ts';
 
 
-function makePlugin(transformFn: (ctx: TransformContext) => ReturnType<Plugin['transform']>): Plugin {
-    return { transform: transformFn };
+function makePlugin(transformFn: (ctx: TransformContext) => Awaited<ReturnType<Plugin['transform']>>): Plugin {
+    return { transform: async (ctx) => transformFn(ctx) };
 }
 
 function makeProject(file: SourceFile): { checker: Checker; program: Program } {
@@ -26,43 +26,45 @@ function makeProject(file: SourceFile): { checker: Checker; program: Program } {
     };
 }
 
-function parse(code: string, name = fileName): SourceFile {
+function parse(code: string, name = fileName): Promise<SourceFile> {
     return languageService.parse(name, code);
 }
 
 
 describe('coordinator.transform', () => {
-    afterAll(() => {
-        languageService.dispose();
+    afterAll(async () => {
+        await languageService.dispose();
     });
 
-    it('returns unchanged when no plugins', () => {
+    it('returns unchanged when no plugins', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
-            result = coordinator.transform([], code, file, project, root, new Map());
+            result = await coordinator.transform([], code, file, project, root, new Map());
 
         expect(result.changed).toBe(false);
         expect(result.code).toBe(code);
     });
 
-    it('hands every plugin one memoized checker per program', () => {
+    it('hands every plugin one memoized checker per program', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             calls = 0,
             project = {
                 checker: { getTypeAtLocation: () => ++calls } as unknown as Checker,
                 program: { getSourceFile: () => file } as unknown as Program
             },
             seen: Checker[] = [],
-            plugin = makePlugin((ctx) => {
-                seen.push(ctx.checker);
-                ctx.checker.getTypeAtLocation(file);
+            plugin: Plugin = {
+                transform: async (ctx) => {
+                    seen.push(ctx.checker);
+                    await ctx.checker.getTypeAtLocation(file);
 
-                return {};
-            });
+                    return {};
+                }
+            };
 
-        coordinator.transform([plugin, plugin], code, file, project, root, new Map());
+        await coordinator.transform([plugin, plugin], code, file, project, root, new Map());
 
         expect(seen).toHaveLength(2);
         expect(seen[0]).toBe(seen[1]);
@@ -70,9 +72,9 @@ describe('coordinator.transform', () => {
         expect(calls).toBe(1);
     });
 
-    it('applies replacement intents', () => {
+    it('applies replacement intents', async () => {
         let code = 'let x = OLD;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let node: Node | undefined;
@@ -96,21 +98,21 @@ describe('coordinator.transform', () => {
 
                 return { replacements: intents };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('NEW');
         expect(result.code).not.toContain('OLD');
     });
 
-    it('applies prepend after imports', () => {
+    it('applies prepend after imports', async () => {
         let code = "import { a } from 'pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 prepend: ['const GENERATED = true;']
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const GENERATED = true;');
@@ -123,52 +125,52 @@ describe('coordinator.transform', () => {
         expect(generatedIdx).toBeLessThan(letIdx);
     });
 
-    it('applies import intents', () => {
+    it('applies import intents', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             intents: ImportIntent[] = [{
                 add: ['foo'],
                 package: 'my-pkg'
             }],
             plugin = makePlugin(() => ({ imports: intents })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import { foo } from 'my-pkg';");
     });
 
-    it('skips plugin when patterns do not match', () => {
+    it('skips plugin when patterns do not match', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin: Plugin = {
                 patterns: ['MAGIC_TOKEN'],
-                transform: () => ({ prepend: ['SHOULD_NOT_APPEAR'] })
+                transform: async () => ({ prepend: ['SHOULD_NOT_APPEAR'] })
             },
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(false);
         expect(result.code).not.toContain('SHOULD_NOT_APPEAR');
     });
 
-    it('runs plugin when patterns match', () => {
+    it('runs plugin when patterns match', async () => {
         let code = 'let MAGIC_TOKEN = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin: Plugin = {
                 patterns: ['MAGIC_TOKEN'],
-                transform: () => ({ prepend: ['const FOUND = true;'] })
+                transform: async () => ({ prepend: ['const FOUND = true;'] })
             },
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const FOUND = true;');
     });
 
-    it('re-parses AST between replacements and prepend (F-001 fix)', () => {
+    it('re-parses AST between replacements and prepend (F-001 fix)', async () => {
         let code = "import { a } from 'pkg';\nlet OLD = 1;\nlet y = 2;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let node: Node | undefined;
@@ -193,7 +195,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('REPLACED_LONGER_NAME');
@@ -206,22 +208,22 @@ describe('coordinator.transform', () => {
         expect(prependIdx).toBeGreaterThan(importEnd);
     });
 
-    it('chains multiple plugins', () => {
+    it('chains multiple plugins', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin1 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
             plugin2 = makePlugin(() => ({ prepend: ['const B = 2;'] })),
-            result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const A = 1;');
         expect(result.code).toContain('const B = 2;');
     });
 
-    it('shares context between plugins', () => {
+    it('shares context between plugins', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             shared: SharedContext = new Map(),
             plugin1 = makePlugin((ctx) => {
@@ -233,15 +235,15 @@ describe('coordinator.transform', () => {
 
                 return { prepend: [`const B = '${String(val)}';`] };
             }),
-            result = coordinator.transform([plugin1, plugin2], code, file, project, root, shared);
+            result = await coordinator.transform([plugin1, plugin2], code, file, project, root, shared);
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("const B = 'value';");
     });
 
-    it('applies replacements + imports together with AST re-parse', () => {
+    it('applies replacements + imports together with AST re-parse', async () => {
         let code = 'let OLD = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let node: Node | undefined;
@@ -266,7 +268,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('REPLACED');
@@ -275,9 +277,9 @@ describe('coordinator.transform', () => {
 
     // F-TEST-001: Coordinator integration tests with real-world patterns
 
-    it('plugin producing replacements + prepend + imports simultaneously', () => {
+    it('plugin producing replacements + prepend + imports simultaneously', async () => {
         let code = "import { reactive } from 'my-pkg';\nlet x = reactive(1);",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let node: Node | undefined;
@@ -303,7 +305,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('NS.reactive');
@@ -319,9 +321,9 @@ describe('coordinator.transform', () => {
         expect(classIdx).toBeLessThan(bodyIdx);
     });
 
-    it('plugin with generate() closures capturing scope variables', () => {
+    it('plugin with generate() closures capturing scope variables', async () => {
         let code = 'let myVar = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let node: Node | undefined,
@@ -347,20 +349,20 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('NS.write(myVar, myVar.value)');
     });
 
-    it('file with existing imports, plugin adds namespace + removes specifier', () => {
+    it('file with existing imports, plugin adds namespace + removes specifier', async () => {
         let code = "import { other, reactive } from 'my-pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ namespace: 'NS', package: 'my-pkg', remove: ['reactive'] }]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import * as NS from 'my-pkg';");
@@ -368,14 +370,14 @@ describe('coordinator.transform', () => {
         expect(result.code).not.toMatch(/import\s*\{[^}]*reactive[^}]*\}\s*from\s*'my-pkg'/);
     });
 
-    it('preserves a type-only import when rewriting a package\'s imports', () => {
+    it('preserves a type-only import when rewriting a package\'s imports', async () => {
         let code = "import { html } from 'my-pkg';\nimport type { Renderable } from 'my-pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ namespace: 'NS', package: 'my-pkg', remove: ['html'] }]
             })),
-            result = coordinator.transform([plugin], code, file, project, '/root', new Map());
+            result = await coordinator.transform([plugin], code, file, project, '/root', new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import * as NS from 'my-pkg';");
@@ -387,14 +389,14 @@ describe('coordinator.transform', () => {
 
     // F-TEST-003: Import manipulation integration tests
 
-    it('adds specifiers to existing import', () => {
+    it('adds specifiers to existing import', async () => {
         let code = "import { a } from 'pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ add: ['b', 'c'], package: 'pkg' }]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('a');
@@ -403,57 +405,57 @@ describe('coordinator.transform', () => {
         expect(result.code).toMatch(/import\s*\{[^}]*a[^}]*b[^}]*c[^}]*\}\s*from\s*'pkg'/);
     });
 
-    it('preserves a default import when adding named imports', () => {
+    it('preserves a default import when adding named imports', async () => {
         let code = "import React, { a } from 'pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({ imports: [{ add: ['b'], package: 'pkg' }] })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.code).toContain("import React, { a, b } from 'pkg';");
     });
 
-    it('keeps a namespace import when adding named imports', () => {
+    it('keeps a namespace import when adding named imports', async () => {
         let code = "import * as ns from 'pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({ imports: [{ add: ['a'], package: 'pkg' }] })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.code).toContain("import * as ns from 'pkg';");
         expect(result.code).toContain("import { a } from 'pkg';");
     });
 
-    it('does not duplicate a requested namespace import that already exists', () => {
+    it('does not duplicate a requested namespace import that already exists', async () => {
         let code = "import * as ns from 'pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({ imports: [{ namespace: 'ns', package: 'pkg' }] })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toBe(code);
     });
 
-    it('rewrites a side-effect-only import when adding named imports', () => {
+    it('rewrites a side-effect-only import when adding named imports', async () => {
         let code = "import 'pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({ imports: [{ add: ['a'], package: 'pkg' }] })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.code).toContain("import { a } from 'pkg';");
         expect(result.code).not.toContain("import 'pkg';");
     });
 
-    it('removes specifier from import keeping others', () => {
+    it('removes specifier from import keeping others', async () => {
         let code = "import { a, b, reactive } from 'my-pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ package: 'my-pkg', remove: ['reactive'] }]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('a');
@@ -461,27 +463,27 @@ describe('coordinator.transform', () => {
         expect(result.code).not.toMatch(/import\s*\{[^}]*reactive[^}]*\}\s*from\s*'my-pkg'/);
     });
 
-    it('adds namespace import to file without package imports', () => {
+    it('adds namespace import to file without package imports', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ namespace: 'NS', package: 'my-pkg' }]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import * as NS from 'my-pkg';");
     });
 
-    it('merges duplicate import statements', () => {
+    it('merges duplicate import statements', async () => {
         let code = "import { a } from 'pkg';\nimport { b } from 'pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ add: ['c'], package: 'pkg' }]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
 
@@ -493,28 +495,28 @@ describe('coordinator.transform', () => {
         expect(result.code).toContain('c');
     });
 
-    it('namespace + remove specifier combined', () => {
+    it('namespace + remove specifier combined', async () => {
         let code = "import { reactive } from 'my-pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ namespace: 'NS', package: 'my-pkg', remove: ['reactive'] }]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import * as NS from 'my-pkg';");
         expect(result.code).not.toMatch(/import\s*\{[^}]*reactive[^}]*\}\s*from\s*'my-pkg'/);
     });
 
-    it('adds import to file with different package imports', () => {
+    it('adds import to file with different package imports', async () => {
         let code = "import { x } from 'other';\nlet a = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ add: ['y'], package: 'new-pkg' }]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain("import { x } from 'other';");
@@ -523,9 +525,9 @@ describe('coordinator.transform', () => {
 
     // F-TEST-004: replaceReverse edge cases
 
-    it('multiple non-overlapping replacements', () => {
+    it('multiple non-overlapping replacements', async () => {
         let code = 'let OLD1 = 1; let OLD2 = 2;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let nodes: Node[] = [];
@@ -545,7 +547,7 @@ describe('coordinator.transform', () => {
                     }))
                 };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('NEW1');
@@ -554,9 +556,9 @@ describe('coordinator.transform', () => {
         expect(result.code).not.toContain('OLD2');
     });
 
-    it('replacement with empty string deletes a node', () => {
+    it('replacement with empty string deletes a node', async () => {
         let code = 'let DELETEME = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let node: Node | undefined;
@@ -580,15 +582,15 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).not.toContain('DELETEME');
     });
 
-    it('replacement at file start', () => {
+    it('replacement at file start', async () => {
         let code = 'FIRST_TOKEN;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let node: Node | undefined;
@@ -612,7 +614,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('REPLACED_FIRST');
@@ -621,9 +623,9 @@ describe('coordinator.transform', () => {
 
     // F-TEST-006: Multi-plugin pipeline
 
-    it('every plugin receives the original code and source file', () => {
+    it('every plugin receives the original code and source file', async () => {
         let code = 'let OLD = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin1 = makePlugin((ctx) => {
                 let node: Node | undefined;
@@ -653,23 +655,23 @@ describe('coordinator.transform', () => {
 
                 return {};
             }),
-            result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
         expect(result.code).toBe('let TRANSFORMED = 1;');
         expect(seen).toEqual([[code, file]]);
     });
 
-    it('three plugins — first skipped, second and third run', () => {
+    it('three plugins — first skipped, second and third run', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin1: Plugin = {
                 patterns: ['MISSING'],
-                transform: () => ({ prepend: ['const SHOULD_NOT_APPEAR = true;'] })
+                transform: async () => ({ prepend: ['const SHOULD_NOT_APPEAR = true;'] })
             },
             plugin2 = makePlugin(() => ({ prepend: ['const A = 1;'] })),
             plugin3 = makePlugin(() => ({ prepend: ['const B = 2;'] })),
-            result = coordinator.transform([plugin1, plugin2, plugin3], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin1, plugin2, plugin3], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).not.toContain('SHOULD_NOT_APPEAR');
@@ -679,9 +681,9 @@ describe('coordinator.transform', () => {
 
     // F-TEST-009: generate() sourceFile correctness
 
-    it('generate() receives correct sourceFile after prior replacement', () => {
+    it('generate() receives correct sourceFile after prior replacement', async () => {
         let code = "let TARGET = 'hello';",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin((ctx) => {
                 let node: Node | undefined;
@@ -705,7 +707,7 @@ describe('coordinator.transform', () => {
                     }]
                 };
             }),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain(`REPLACED_IN_${fileName}`);
@@ -713,40 +715,40 @@ describe('coordinator.transform', () => {
 
     // F-TEST-005: Pattern filtering edge cases
 
-    it('pattern in string literal still matches', () => {
+    it('pattern in string literal still matches', async () => {
         let code = 'let x = "reactive(";',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin: Plugin = {
                 patterns: ['reactive('],
-                transform: () => ({ prepend: ['const MATCHED = true;'] })
+                transform: async () => ({ prepend: ['const MATCHED = true;'] })
             },
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const MATCHED = true;');
     });
 
-    it('multiple patterns, only one matches', () => {
+    it('multiple patterns, only one matches', async () => {
         let code = 'let PRESENT = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin: Plugin = {
                 patterns: ['MISSING', 'PRESENT'],
-                transform: () => ({ prepend: ['const FOUND = true;'] })
+                transform: async () => ({ prepend: ['const FOUND = true;'] })
             },
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const FOUND = true;');
     });
 
-    it('no patterns property — plugin always runs', () => {
+    it('no patterns property — plugin always runs', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({ prepend: ['const ALWAYS = true;'] })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const ALWAYS = true;');
@@ -754,12 +756,12 @@ describe('coordinator.transform', () => {
 
     // F-TEST-010: applyPrepend edge cases
 
-    it('no imports — prepend goes to start', () => {
+    it('no imports — prepend goes to start', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({ prepend: ['const A = 1;'] })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
 
@@ -769,12 +771,12 @@ describe('coordinator.transform', () => {
         expect(prependIdx).toBeLessThan(letIdx);
     });
 
-    it('multiple prepend strings appear in order', () => {
+    it('multiple prepend strings appear in order', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({ prepend: ['const A = 1;', 'const B = 2;'] })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('const A = 1;');
@@ -788,9 +790,9 @@ describe('coordinator.transform', () => {
 
     // F-TEST-011: applyImports multi-intent
 
-    it('two ImportIntents for different packages', () => {
+    it('two ImportIntents for different packages', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [
@@ -798,20 +800,20 @@ describe('coordinator.transform', () => {
                     { add: ['b'], package: 'pkg-2' }
                 ]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toBe("import { b } from 'pkg-2';\nimport { a } from 'pkg-1';\nlet x = 1;");
     });
 
-    it('ImportIntent with only remove', () => {
+    it('ImportIntent with only remove', async () => {
         let code = "import { a, b } from 'pkg';\nlet x = 1;",
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => ({
                 imports: [{ package: 'pkg', remove: ['a'] }]
             })),
-            result = coordinator.transform([plugin], code, file, project, root, new Map());
+            result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
         expect(result.changed).toBe(true);
         expect(result.code).toContain('b');
@@ -819,18 +821,18 @@ describe('coordinator.transform', () => {
         expect(result.code).toContain("import { b } from 'pkg';");
     });
 
-    it('propagates plugin.transform() exception', () => {
+    it('propagates plugin.transform() exception', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             plugin = makePlugin(() => { throw new Error('plugin crashed'); });
 
-        expect(() => coordinator.transform([plugin], code, file, project, root, new Map())).toThrow('plugin crashed');
+        await expect(coordinator.transform([plugin], code, file, project, root, new Map())).rejects.toThrow('plugin crashed');
     });
 
-    it('every plugin analyses the project program, which stays in place', () => {
+    it('every plugin analyses the project program, which stays in place', async () => {
         let code = 'let x = 1;',
-            file = parse(code),
+            file = await parse(code),
             project = makeProject(file),
             seen: Program[] = [],
             plugin1 = makePlugin((ctx) => {
@@ -844,7 +846,7 @@ describe('coordinator.transform', () => {
                 return {};
             });
 
-        coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
+        await coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
         expect(seen).toEqual([project.program, project.program]);
     });
@@ -873,10 +875,10 @@ describe('coordinator.transform', () => {
             }));
         }
 
-        it("nests one plugin's intents, the outer generating from the inner's output", () => {
+        it("nests one plugin's intents, the outer generating from the inner's output", async () => {
             let code = 'let v = f(g(1));',
-                file = parse(code),
-                result = coordinator.transform(
+                file = await parse(code),
+                result = await coordinator.transform(
                     [wrapping(isCallExpression, inner => `[${inner}]`)],
                     code,
                     file,
@@ -888,25 +890,25 @@ describe('coordinator.transform', () => {
             expect(result.code).toBe('let v = [f([g(1)])];');
         });
 
-        it('nests replacements across plugins both ways', () => {
+        it('nests replacements across plugins both ways', async () => {
             let code = 'let v = f(a);',
-                file = parse(code),
+                file = await parse(code),
                 outerFirst = wrapping(isCallExpression, inner => `outer(${inner})`),
                 innerSecond = wrapping(n => isIdentifier(n) && n.text === 'a', inner => `${inner}.value`),
-                result = coordinator.transform([outerFirst, innerSecond], code, file, makeProject(file), root, new Map());
+                result = await coordinator.transform([outerFirst, innerSecond], code, file, makeProject(file), root, new Map());
 
             expect(result.code).toBe('let v = outer(f(a.value));');
 
-            result = coordinator.transform([innerSecond, outerFirst], code, file, makeProject(file), root, new Map());
+            result = await coordinator.transform([innerSecond, outerFirst], code, file, makeProject(file), root, new Map());
 
             expect(result.code).toBe('let v = outer(f(a.value));');
         });
 
-        it('treats a later plugin as the outer of two equal ranges', () => {
+        it('treats a later plugin as the outer of two equal ranges', async () => {
             let code = 'let v = a;',
-                file = parse(code),
+                file = await parse(code),
                 isA = (n: Node) => isIdentifier(n) && n.text === 'a',
-                result = coordinator.transform(
+                result = await coordinator.transform(
                     [wrapping(isA, inner => `first(${inner})`), wrapping(isA, inner => `second(${inner})`)],
                     code,
                     file,
@@ -918,9 +920,9 @@ describe('coordinator.transform', () => {
             expect(result.code).toBe('let v = second(first(a));');
         });
 
-        it('applies the replacements inside any node text() is asked for', () => {
+        it('applies the replacements inside any node text() is asked for', async () => {
             let code = 'let a = 1;\nlet b = x;',
-                file = parse(code),
+                file = await parse(code),
                 [x] = nodes(file, n => isIdentifier(n) && n.text === 'x'),
                 [literal] = nodes(file, n => n.getText(file) === '1'),
                 source = file.statements[0],
@@ -930,14 +932,14 @@ describe('coordinator.transform', () => {
                         { generate: (_sf: SourceFile, text: (node: Node) => string) => JSON.stringify(text(source)), node: x }
                     ]
                 })),
-                result = coordinator.transform([copy], code, file, makeProject(file), root, new Map());
+                result = await coordinator.transform([copy], code, file, makeProject(file), root, new Map());
 
             expect(result.code).toBe('let a = one;\nlet b = "let a = one;";');
         });
 
-        it('evaluates function prepends after composition, with text()', () => {
+        it('evaluates function prepends after composition, with text()', async () => {
             let code = 'let v = a;',
-                file = parse(code),
+                file = await parse(code),
                 [statement] = file.statements,
                 recorded: string[] = [],
                 reads = wrapping(n => isIdentifier(n) && n.text === 'a', inner => `${inner}.value`),
@@ -955,29 +957,29 @@ describe('coordinator.transform', () => {
                         node
                     }))
                 })),
-                result = coordinator.transform([hoisting, reads], code, file, makeProject(file), root, new Map());
+                result = await coordinator.transform([hoisting, reads], code, file, makeProject(file), root, new Map());
 
             expect(result.code).toBe('const plain = 1;\nconst hoisted = "let w = a.value;"; // generated\nlet w = a.value;');
         });
 
-        it('fails naming both plugins when two replacements overlap without nesting', () => {
+        it('fails naming both plugins when two replacements overlap without nesting', async () => {
             let code = 'let value = 1;',
-                file = parse(code),
+                file = await parse(code),
                 span = (start: number, end: number) => ({ end, getStart: () => start, parent: undefined }) as unknown as Node,
-                first: Plugin = { name: 'first-plugin', transform: () => ({ replacements: [{ generate: () => 'A', node: span(4, 9) }] }) },
-                second: Plugin = { transform: () => ({ replacements: [{ generate: () => 'B', node: span(6, 13) }] }) };
+                first: Plugin = { name: 'first-plugin', transform: async () => ({ replacements: [{ generate: () => 'A', node: span(4, 9) }] }) },
+                second: Plugin = { transform: async () => ({ replacements: [{ generate: () => 'B', node: span(6, 13) }] }) };
 
-            expect(() => coordinator.transform([first, second], code, file, makeProject(file), root, new Map()))
+            await expect(coordinator.transform([first, second], code, file, makeProject(file), root, new Map())).rejects
                 .toThrow(/first-plugin \(4-9\) and plugin #2 \(6-13\).*overlap/);
         });
     });
 
     describe('import layout', () => {
-        afterEach(() => {
+        afterEach(async () => {
             vi.restoreAllMocks();
         });
 
-        function replacing(name: string, text: string, rest: Omit<ReturnType<Plugin['transform']>, 'replacements'>) {
+        function replacing(name: string, text: string, rest: Omit<Awaited<ReturnType<Plugin['transform']>>, 'replacements'>) {
             return makePlugin((ctx) => {
                 let node: Node | undefined;
 
@@ -993,37 +995,37 @@ describe('coordinator.transform', () => {
             });
         }
 
-        it('follows an import declared after other statements through the edits before it', () => {
+        it('follows an import declared after other statements through the edits before it', async () => {
             let code = "import { a } from 'x';\nlet v = OLD;\nimport { b } from 'y';\nb(v, a);",
-                file = parse(code),
+                file = await parse(code),
                 reparse = vi.spyOn(languageService, 'parse'),
                 plugin = replacing('OLD', 'A_LONGER_REPLACEMENT', {
                     imports: [{ add: ['c'], package: 'y' }],
                     prepend: ['const P = 1;']
                 }),
-                result = coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
+                result = await coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
 
             expect(result.code).toBe("import { a } from 'x';\nconst P = 1;\n\nlet v = A_LONGER_REPLACEMENT;\nimport { b, c } from 'y';\nb(v, a);");
             expect(reparse).not.toHaveBeenCalled();
         });
 
-        it('re-parses when a replacement may itself declare an import', () => {
+        it('re-parses when a replacement may itself declare an import', async () => {
             let code = "import { b } from 'y';\nOLD;\nb();",
-                file = parse(code),
+                file = await parse(code),
                 reparse = vi.spyOn(languageService, 'parse'),
                 plugin = replacing('OLD', "0;\nimport { z } from 'y'", { imports: [{ add: ['c'], package: 'y' }] }),
-                result = coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
+                result = await coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
 
             expect(result.code).toContain("import { b, c, z } from 'y';");
             expect(reparse).toHaveBeenCalledTimes(1);
         });
 
-        it('re-parses when a replacement starts the first statement after the imports', () => {
+        it('re-parses when a replacement starts the first statement after the imports', async () => {
             let code = "import { b } from 'y';\nOLD();",
-                file = parse(code),
+                file = await parse(code),
                 reparse = vi.spyOn(languageService, 'parse'),
                 plugin = replacing('OLD', 'NEW', { imports: [{ add: ['c'], package: 'y' }] }),
-                result = coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
+                result = await coordinator.transform([plugin], code, file, makeProject(file), root, new Map());
 
             expect(result.code).toBe("import { b, c } from 'y';\nNEW();");
             expect(reparse).toHaveBeenCalledTimes(1);
@@ -1033,14 +1035,14 @@ describe('coordinator.transform', () => {
     // F-003: applyImports batching
 
     describe('applyImports batching', () => {
-        it('resolves barrel removals before reparsing and preserves unrelated bindings and source positions', () => {
+        it('resolves barrel removals before reparsing and preserves unrelated bindings and source positions', async () => {
             let code = [
                     "import fallback, { html, reactive, other, type Value } from './app';",
                     "import * as app from './app';",
                     "import { reactive as untouched } from './other';",
                     'export const value = 1;'
                 ].join('\n'),
-                file = parse(code),
+                file = await parse(code),
                 origins = new Map<Node, string>(),
                 project = makeProject(file);
 
@@ -1073,7 +1075,7 @@ describe('coordinator.transform', () => {
                     ],
                     prepend: ['const generated = true;']
                 })),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.code).toContain("import fallback, { other, type Value } from './app';");
             expect(result.code).toContain("import * as app from './app';");
@@ -1084,9 +1086,9 @@ describe('coordinator.transform', () => {
             expect(sourcemap.resolveOffset(result.map, result.code.indexOf('export const value'))).toBe(code.indexOf('export const value'));
         });
 
-        it('batches multiple intents for the same package into one modify call', () => {
+        it('batches multiple intents for the same package into one modify call', async () => {
             let code = 'let x = 1;',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin = makePlugin(() => ({
                     imports: [
@@ -1095,7 +1097,7 @@ describe('coordinator.transform', () => {
                         { add: ['baz'], package: '@pkg/a' }
                     ]
                 })),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import { bar, baz, foo } from '@pkg/a';");
@@ -1105,9 +1107,9 @@ describe('coordinator.transform', () => {
             expect(importMatches).toHaveLength(1);
         });
 
-        it('re-parses only between distinct packages', () => {
+        it('re-parses only between distinct packages', async () => {
             let code = 'let x = 1;',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin = makePlugin(() => ({
                     imports: [
@@ -1116,16 +1118,16 @@ describe('coordinator.transform', () => {
                         { add: ['qux'], package: '@pkg/b' }
                     ]
                 })),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import { bar, foo } from '@pkg/a';");
             expect(result.code).toContain("import { qux } from '@pkg/b';");
         });
 
-        it('merges add and remove for same package', () => {
+        it('merges add and remove for same package', async () => {
             let code = "import { bar, foo } from '@pkg/a';\nlet x = 1;",
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin = makePlugin(() => ({
                     imports: [
@@ -1133,16 +1135,16 @@ describe('coordinator.transform', () => {
                         { package: '@pkg/a', remove: ['bar'] }
                     ]
                 })),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import { baz, foo } from '@pkg/a';");
             expect(result.code).not.toMatch(/import\s*\{[^}]*bar[^}]*\}\s*from\s*'@pkg\/a'/);
         });
 
-        it('preserves namespace across merged intents', () => {
+        it('preserves namespace across merged intents', async () => {
             let code = 'let x = 1;',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin = makePlugin(() => ({
                     imports: [
@@ -1150,7 +1152,7 @@ describe('coordinator.transform', () => {
                         { add: ['foo'], package: '@pkg/a' }
                     ]
                 })),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import * as utils from '@pkg/a';");
@@ -1161,43 +1163,43 @@ describe('coordinator.transform', () => {
     // Sourcemap composition: the coordinator surfaces an original->transformed mapping.
 
     describe('surfaced mapping', () => {
-        it('surfaces an identity mapping when no plugins run', () => {
+        it('surfaces an identity mapping when no plugins run', async () => {
             let code = 'let x = 1;\nlet y = 2;',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
-                result = coordinator.transform([], code, file, project, root, new Map());
+                result = await coordinator.transform([], code, file, project, root, new Map());
 
             expect(result.map.generations).toEqual([]);
             expect(sourcemap.originalPositionFor(result.map, result.code, code, 1, 4)).toEqual({ column: 4, line: 1 });
         });
 
-        it('prepend-only: shifts post-injection lines back to their real source lines', () => {
+        it('prepend-only: shifts post-injection lines back to their real source lines', async () => {
             let code = 'let a = 1;\nlet b = 2;',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin = makePlugin(() => ({ prepend: ['const INJECTED = 0;'] })),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(sourcemap.originalPositionFor(result.map, result.code, code, 1, 4)).toEqual({ column: 4, line: 0 });
             expect(sourcemap.originalPositionFor(result.map, result.code, code, 2, 4)).toEqual({ column: 4, line: 1 });
         });
 
-        it('import-injection: the untouched body maps back past the injected import', () => {
+        it('import-injection: the untouched body maps back past the injected import', async () => {
             let code = 'let x = 1;',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin = makePlugin(() => ({ imports: [{ add: ['foo'], package: 'my-pkg' }] })),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toContain("import { foo } from 'my-pkg';");
             expect(sourcemap.originalPositionFor(result.map, result.code, code, 1, 4)).toEqual({ column: 4, line: 0 });
         });
 
-        it('replacement with line growth: text after the grown span maps to the real line', () => {
+        it('replacement with line growth: text after the grown span maps to the real line', async () => {
             let code = 'let x = OLD;',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin = makePlugin((ctx) => {
                     let node: Node | undefined;
@@ -1216,7 +1218,7 @@ describe('coordinator.transform', () => {
 
                     return { replacements: [{ generate: () => 'NEW\nEXTRA', node }] };
                 }),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toBe('let x = NEW\nEXTRA;');
@@ -1226,9 +1228,9 @@ describe('coordinator.transform', () => {
             expect(sourcemap.originalPositionFor(result.map, result.code, code, 1, 5)).toEqual({ column: 11, line: 0 });
         });
 
-        it('replacement with line shrink: a multi-line node collapses and later text keeps its real line', () => {
+        it('replacement with line shrink: a multi-line node collapses and later text keeps its real line', async () => {
             let code = 'let x = foo(\n    1\n);',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin = makePlugin((ctx) => {
                     let node: Node | undefined;
@@ -1247,7 +1249,7 @@ describe('coordinator.transform', () => {
 
                     return { replacements: [{ generate: () => 'BAR', node }] };
                 }),
-                result = coordinator.transform([plugin], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.code).toBe('let x = BAR;');
@@ -1255,13 +1257,13 @@ describe('coordinator.transform', () => {
             expect(sourcemap.originalPositionFor(result.map, result.code, code, 0, 11)).toEqual({ column: 1, line: 2 });
         });
 
-        it('multi-plugin chaining: two prepend generations compose into one mapping', () => {
+        it('multi-plugin chaining: two prepend generations compose into one mapping', async () => {
             let code = 'let a = 1;\nlet b = 2;',
-                file = parse(code),
+                file = await parse(code),
                 project = makeProject(file),
                 plugin1 = makePlugin(() => ({ prepend: ['const P1 = 1;'] })),
                 plugin2 = makePlugin(() => ({ prepend: ['const P2 = 2;'] })),
-                result = coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
+                result = await coordinator.transform([plugin1, plugin2], code, file, project, root, new Map());
 
             expect(result.changed).toBe(true);
             expect(result.map.generations.length).toBe(2);
@@ -1272,23 +1274,23 @@ describe('coordinator.transform', () => {
 });
 
 describe('coordinator.accepts', () => {
-    it('is false when no plugin pattern occurs in the code', () => {
-        let plugins: Plugin[] = [{ patterns: ['reactive('], transform: () => ({}) }, { patterns: ['html`'], transform: () => ({}) }];
+    it('is false when no plugin pattern occurs in the code', async () => {
+        let plugins: Plugin[] = [{ patterns: ['reactive('], transform: async () => ({}) }, { patterns: ['html`'], transform: async () => ({}) }];
 
         expect(coordinator.accepts(plugins, 'let x = 1;')).toBe(false);
     });
 
-    it('is true when any plugin pattern occurs in the code', () => {
-        let plugins: Plugin[] = [{ patterns: ['reactive('], transform: () => ({}) }, { patterns: ['html`'], transform: () => ({}) }];
+    it('is true when any plugin pattern occurs in the code', async () => {
+        let plugins: Plugin[] = [{ patterns: ['reactive('], transform: async () => ({}) }, { patterns: ['html`'], transform: async () => ({}) }];
 
         expect(coordinator.accepts(plugins, 'let x = html`<b></b>`;')).toBe(true);
     });
 
-    it('is true for a plugin without patterns, which runs on every file', () => {
-        expect(coordinator.accepts([{ transform: () => ({}) }], 'let x = 1;')).toBe(true);
+    it('is true for a plugin without patterns, which runs on every file', async () => {
+        expect(coordinator.accepts([{ transform: async () => ({}) }], 'let x = 1;')).toBe(true);
     });
 
-    it('is false with no plugins', () => {
+    it('is false with no plugins', async () => {
         expect(coordinator.accepts([], 'let x = 1;')).toBe(false);
     });
 });

@@ -1,7 +1,7 @@
 import { isImportDeclaration, isNamedImports, isStringLiteral } from 'typescript/ast/is';
 import { PACKAGE_NAME } from '../constants';
 import type { Node, SourceFile } from 'typescript/ast';
-import type { Checker, Program } from 'typescript/sync';
+import type { Checker, Program } from 'typescript/async';
 import type { ImportInfo, ModifyOptions } from './imports';
 import type { OffsetAnchor, PositionMapping } from './sourcemap';
 import type { ImportIntent, Plugin, Prepend, Replacement, ReplacementIntent, SharedContext, Text, Warning } from './types';
@@ -419,7 +419,7 @@ function replaceReverse(code: string, replacements: Replacement[]): string {
     return parts.reverse().join('');
 }
 
-function resolveImports(file: SourceFile, checker: Checker, intents: ImportIntent[]): ImportIntent[] {
+async function resolveImports(file: SourceFile, checker: Checker, intents: ImportIntent[]): Promise<ImportIntent[]> {
     let resolved = [...intents];
 
     for (let i = 0, n = intents.length; i < n; i++) {
@@ -442,13 +442,13 @@ function resolveImports(file: SourceFile, checker: Checker, intents: ImportInten
                 continue;
             }
 
-            let names: string[] = [];
+            let elements = bindings.elements.filter((element) => remove.has(element.name.text) || remove.has(element.propertyName?.text ?? element.name.text)),
+                included = await Promise.all(elements.map((element) => imports.includes(checker, element.name, intent.package))),
+                names: string[] = [];
 
-            for (let element of bindings.elements) {
-                let name = element.name.text;
-
-                if ((remove.has(name) || remove.has(element.propertyName?.text ?? name)) && imports.includes(checker, element.name, intent.package)) {
-                    names.push(name);
+            for (let j = 0, m = elements.length; j < m; j++) {
+                if (included[j]) {
+                    names.push(elements[j].name.text);
                 }
             }
 
@@ -459,6 +459,136 @@ function resolveImports(file: SourceFile, checker: Checker, intents: ImportInten
     }
 
     return resolved;
+}
+
+// Runs every plugin over the file and composes their intents, within the file's uid scope
+async function run(plugins: Plugin[], code: string, file: SourceFile, project: { checker: Checker; program: Program }, shared: SharedContext): Promise<CoordinatorResult> {
+    let changed = false,
+        currentCode = code,
+        dependencies = new Set<string>(),
+        // currentCode is `outlined`'s text with `edited` applied in order; outline() and shift() follow it
+        // so it is re-parsed only when they cannot
+        edited: Replacement[][] = [],
+        fileName = file.fileName,
+        generations: OffsetAnchor[][] = [],
+        intents: Intent[] = [],
+        memoized = checker.cached(project.checker, project.program),
+        modules = new Map<string, string>(),
+        names: string[] = [],
+        outlined = file,
+        steps: { imports: ImportIntent[]; prepend: Prepend[] }[] = [],
+        warnings: Warning[] = [];
+
+    let layout = async (): Promise<Layout> => {
+        let result: Layout | null = outline(outlined);
+
+        for (let i = 0, n = edited.length; i < n && result; i++) {
+            result = shift(result, edited[i]);
+        }
+
+        if (!result) {
+            outlined = await languageService.parse(fileName, currentCode);
+            edited = [];
+            result = outline(outlined);
+        }
+
+        return result;
+    };
+
+    for (let i = 0, n = plugins.length; i < n; i++) {
+        let plugin = plugins[i];
+
+        names.push(plugin.name ?? `plugin #${i + 1}`);
+
+        if (plugin.patterns && !hasPattern(code, plugin.patterns)) {
+            continue;
+        }
+
+        let { dependencies: relied, imports, modules: emitted, prepend, replacements, warnings: warned } = await plugin.transform({
+                checker: memoized,
+                code,
+                program: project.program,
+                shared,
+                sourceFile: file
+            });
+
+        if (relied) {
+            for (let j = 0, m = relied.length; j < m; j++) {
+                dependencies.add(relied[j]);
+            }
+        }
+
+        if (emitted) {
+            for (let [id, module] of emitted) {
+                if (modules.has(id)) {
+                    throw new Error(`${PACKAGE_NAME}: two plugins compiling ${fileName} emit the virtual module '${id}'`);
+                }
+
+                modules.set(id, module);
+            }
+        }
+
+        if (warned) {
+            warnings.push(...warned);
+        }
+
+        if (replacements) {
+            for (let j = 0, m = replacements.length; j < m; j++) {
+                let { generate, node } = replacements[j];
+
+                intents.push({
+                    busy: false,
+                    children: [],
+                    end: node.end,
+                    generate,
+                    node,
+                    order: intents.length,
+                    plugin: i,
+                    start: node.getStart(file),
+                    text: null
+                });
+            }
+        }
+
+        steps.push({ imports: imports?.length ? await resolveImports(file, memoized, imports) : [], prepend: prepend ?? [] });
+    }
+
+    let { edits, text } = compose(code, file, names, intents);
+
+    if (edits.length > 0) {
+        generations.push(sourcemap.buildGeneration(code, edits));
+        currentCode = replaceReverse(code, edits);
+        edited.push(edits);
+        changed = true;
+    }
+
+    for (let i = 0, n = steps.length; i < n; i++) {
+        let { imports: importIntents, prepend } = steps[i];
+
+        if (prepend.length > 0) {
+            let before = currentCode,
+                result = applyPrepend(currentCode, await layout(), prepend.map(entry => typeof entry === 'string' ? entry : entry(text)));
+
+            generations.push(sourcemap.buildGeneration(before, result.edits));
+            currentCode = result.code;
+            edited.push(result.edits);
+            changed = true;
+        }
+
+        if (importIntents.length > 0) {
+            let result = applyImports(currentCode, await layout(), importIntents);
+
+            for (let j = 0, m = result.batches.length; j < m; j++) {
+                generations.push(sourcemap.buildGeneration(result.batches[j].before, result.batches[j].edits));
+                edited.push(result.batches[j].edits);
+            }
+
+            currentCode = result.code;
+            changed = true;
+        }
+    }
+
+    return { changed, code: currentCode, dependencies: [...dependencies], map: { generations }, modules, warnings };
 }
 
 // The layout once `edits` (against the layout's text) are applied, without re-parsing. Null when an edit could
@@ -534,146 +664,19 @@ const accepts = (plugins: Plugin[], code: string): boolean => {
 // Every plugin analyses the same program and source and returns intents against that AST; their
 // replacements compose in one generation (see compose), then each plugin's prepends (a function entry
 // reading the composed text through text()) and imports apply in plugin order
-const transform = (
+const transform = async (
     plugins: Plugin[],
     code: string,
     file: SourceFile,
     project: { checker: Checker; program: Program },
     root: string,
     shared: SharedContext
-): CoordinatorResult => {
+): Promise<CoordinatorResult> => {
     if (plugins.length === 0) {
         return { changed: false, code, dependencies: [], map: { generations: [] }, modules: new Map(), warnings: [] };
     }
 
-    uid.scope(root, file.fileName, code);
-
-    let changed = false,
-        currentCode = code,
-        dependencies = new Set<string>(),
-        // currentCode is `outlined`'s text with `edited` applied in order; outline() and shift() follow it
-        // so it is re-parsed only when they cannot
-        edited: Replacement[][] = [],
-        fileName = file.fileName,
-        generations: OffsetAnchor[][] = [],
-        intents: Intent[] = [],
-        memoized = checker.cached(project.checker, project.program),
-        modules = new Map<string, string>(),
-        names: string[] = [],
-        outlined = file,
-        steps: { imports: ImportIntent[]; prepend: Prepend[] }[] = [],
-        warnings: Warning[] = [];
-
-    let layout = (): Layout => {
-        let result: Layout | null = outline(outlined);
-
-        for (let i = 0, n = edited.length; i < n && result; i++) {
-            result = shift(result, edited[i]);
-        }
-
-        if (!result) {
-            outlined = languageService.parse(fileName, currentCode);
-            edited = [];
-            result = outline(outlined);
-        }
-
-        return result;
-    };
-
-    for (let i = 0, n = plugins.length; i < n; i++) {
-        let plugin = plugins[i];
-
-        names.push(plugin.name ?? `plugin #${i + 1}`);
-
-        if (plugin.patterns && !hasPattern(code, plugin.patterns)) {
-            continue;
-        }
-
-        let { dependencies: relied, imports, modules: emitted, prepend, replacements, warnings: warned } = plugin.transform({
-                checker: memoized,
-                code,
-                program: project.program,
-                shared,
-                sourceFile: file
-            });
-
-        if (relied) {
-            for (let j = 0, m = relied.length; j < m; j++) {
-                dependencies.add(relied[j]);
-            }
-        }
-
-        if (emitted) {
-            for (let [id, module] of emitted) {
-                if (modules.has(id)) {
-                    throw new Error(`${PACKAGE_NAME}: two plugins compiling ${fileName} emit the virtual module '${id}'`);
-                }
-
-                modules.set(id, module);
-            }
-        }
-
-        if (warned) {
-            warnings.push(...warned);
-        }
-
-        if (replacements) {
-            for (let j = 0, m = replacements.length; j < m; j++) {
-                let { generate, node } = replacements[j];
-
-                intents.push({
-                    busy: false,
-                    children: [],
-                    end: node.end,
-                    generate,
-                    node,
-                    order: intents.length,
-                    plugin: i,
-                    start: node.getStart(file),
-                    text: null
-                });
-            }
-        }
-
-        steps.push({ imports: imports?.length ? resolveImports(file, memoized, imports) : [], prepend: prepend ?? [] });
-    }
-
-    let { edits, text } = compose(code, file, names, intents);
-
-    if (edits.length > 0) {
-        generations.push(sourcemap.buildGeneration(code, edits));
-        currentCode = replaceReverse(code, edits);
-        edited.push(edits);
-        changed = true;
-    }
-
-    for (let i = 0, n = steps.length; i < n; i++) {
-        let { imports: importIntents, prepend } = steps[i];
-
-        if (prepend.length > 0) {
-            let before = currentCode,
-                result = applyPrepend(currentCode, layout(), prepend.map(entry => typeof entry === 'string' ? entry : entry(text)));
-
-            generations.push(sourcemap.buildGeneration(before, result.edits));
-            currentCode = result.code;
-            edited.push(result.edits);
-            changed = true;
-        }
-
-        if (importIntents.length > 0) {
-            let result = applyImports(currentCode, layout(), importIntents);
-
-            for (let j = 0, m = result.batches.length; j < m; j++) {
-                generations.push(sourcemap.buildGeneration(result.batches[j].before, result.batches[j].edits));
-                edited.push(result.batches[j].edits);
-            }
-
-            currentCode = result.code;
-            changed = true;
-        }
-    }
-
-    return { changed, code: currentCode, dependencies: [...dependencies], map: { generations }, modules, warnings };
+    return uid.scope(root, file.fileName, code, () => run(plugins, code, file, project, shared));
 };
 
 

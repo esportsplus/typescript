@@ -1,6 +1,6 @@
 import type { SourceFile } from 'typescript/ast';
 import { type FileSystemCallbacks, serverFS } from 'typescript/fs';
-import { API, type Checker, DiagnosticCategory, type Program, type Project, type RetainedSourceFile, type Snapshot } from 'typescript/sync';
+import { API, type Checker, DiagnosticCategory, type Program, type Project, type Snapshot } from 'typescript/async';
 import { PACKAGE_NAME } from '../constants';
 
 import checker from './checker';
@@ -17,63 +17,63 @@ type Disk = {
 };
 
 type Entry = {
-    api: API;
     configFileName: string;
     contents: Overlay;
+    current: Generation;
     disk: Map<string, Disk>;
+    // Settles once the update or membership check before it has; each waits for the last
+    lock: Promise<void>;
     // The config's file list as of the last membership miss; null until needed, or after invalidate()
     // of a file the list may not cover (one it lacks, or a config)
     members: Set<string> | null;
     // Files proven not to belong to the project; cleared by invalidate() when the file changes
     outside: Set<string>;
     pending: Set<string>;
-    project: Project;
     root: string;
     seen: Set<string>;
-    snapshot: Snapshot;
     // Whether the overlay has held a file absent from disk, so existence checks must consult it
     virtual: boolean;
 };
 
-// Parses without a project: tsgo returns the tree whole and it is decoded client-side, so the lease
-// that keeps it alive in tsgo is released with the next parse, in the same round-trip
-type Parser = {
-    api: API;
-    lease: RetainedSourceFile | null;
+// A program snapshot and the transforms reading it: one replaced while transforms still read it is
+// disposed once the last of them releases it
+type Generation = {
+    project: Project;
+    readers: number;
+    retired: boolean;
+    server: Server;
+    snapshot: Snapshot;
+};
+
+// A program snapshot leased to a transform, until it calls release()
+type Lease = {
+    checker: Checker;
+    program: Program;
+    release: () => void;
 };
 
 type ScratchEntry = {
-    api: API;
     config: string;
     contents: Overlay;
     count: number;
     file: string;
     project: Project;
+    server: Server;
     snapshot: Snapshot;
 };
 
+// Valid until the next scratch()
 type ScratchResult = {
     checker: Checker;
     program: Program;
     sourceFile: SourceFile;
 };
 
-type Session = {
+// A tsgo API process, closed once retired and none of its snapshots is still read
+type Server = {
     api: API;
-    project: Project;
-    snapshot: Snapshot;
-};
-
-type UpdateResult = {
-    checker: Checker;
-    program: Program;
-};
-
-type OpenProject = {
-    api: API;
-    dispose: () => void;
-    project: Project;
-    snapshot: Snapshot;
+    live: number;
+    retired: boolean;
 };
 
 
@@ -82,9 +82,11 @@ const backslashes = /\\/g;
 const CONFIG_REGEX = /\.json$/;
 
 
-let cache = new Map<string, Entry>(),
-    parser: Parser | null = null,
+let entries = new Map<string, Entry>(),
+    opening = new Map<string, Promise<Entry>>(),
+    parser: API | null = null,
     scratchEntry: ScratchEntry | null = null,
+    scratchLock: Promise<void> = Promise.resolve(),
     // Per project: texts staged by stage(), applied by the next update
     staged = new Map<string, Map<string, string>>();
 
@@ -123,21 +125,45 @@ function absent(entry: Entry, id: string): boolean {
     return !entry.virtual && !fs.existsSync(id);
 }
 
-function advance(session: Session, configFileName: string, changed: string[]): void {
-    let snapshot = session.snapshot.update({ fileNotifications: { changed }, openProjects: [configFileName] });
+function acquire(generation: Generation): Lease {
+    let released = false;
 
-    if (snapshot !== session.snapshot && !session.snapshot.isDisposed()) {
-        session.snapshot.dispose();
-    }
+    generation.readers++;
 
-    session.api.clearSourceFileCache();
-    session.project = resolveProject(session.api, snapshot, configFileName);
-    session.snapshot = snapshot;
+    return {
+        checker: generation.project.checker,
+        program: generation.project.program,
+        release: () => {
+            if (released) {
+                return;
+            }
+
+            released = true;
+            generation.readers--;
+
+            if (generation.retired && generation.readers === 0) {
+                void drop(generation);
+            }
+        }
+    };
 }
 
-function advanceScratch(id: string, content: string): ScratchEntry {
+async function advance(entry: Entry, changed: string[]): Promise<void> {
+    let previous = entry.current,
+        snapshot = await previous.snapshot.update({ fileNotifications: { changed }, openProjects: [entry.configFileName] });
+
+    if (snapshot === previous.snapshot) {
+        return;
+    }
+
+    previous.server.api.clearSourceFileCache();
+    entry.current = generation(previous.server, snapshot, entry.configFileName);
+    retire(previous);
+}
+
+async function advanceScratch(id: string, content: string): Promise<ScratchEntry> {
     if (!scratchEntry) {
-        return scratchEntry = createScratch(id, content);
+        return scratchEntry = await createScratch(id, content);
     }
 
     let entry = scratchEntry;
@@ -145,59 +171,75 @@ function advanceScratch(id: string, content: string): ScratchEntry {
     entry.contents.set(id, content);
 
     if (entry.file === id) {
-        advance(entry, entry.config, [id]);
+        await replaceScratch(entry, entry.config, { fileNotifications: { changed: [id] }, openProjects: [entry.config] });
     }
     else {
-        retargetScratch(entry, id);
+        let config = scratchConfigPath(entry.count++),
+            previous = entry.config;
+
+        // A tsgo project's file set is fixed when the project opens, so each new scratch file gets
+        // a project of its own, opened in the live API process (~1ms) rather than by respawning it
+        // (~55ms); the previous project is closed in the same snapshot update
+        entry.contents.delete(entry.file);
+        entry.contents.set(config, scratchConfig(id));
+        await replaceScratch(entry, config, { closeProjects: [previous], fileNotifications: { changed: [id] }, openProjects: [config] });
+        entry.contents.delete(previous);
+        entry.config = config;
+        entry.file = id;
     }
 
     return entry;
 }
 
-function createEntry(configFileName: string): Entry {
-    let root = path.dirname(configFileName);
+async function close(server: Server): Promise<void> {
+    try {
+        await server.api.close();
+    }
+    catch {
+        // the process is gone either way
+    }
+}
 
+async function createEntry(configFileName: string): Promise<Entry> {
     let contents = new Overlay(),
-        opened = open(configFileName, overlayFileSystem(contents, false)),
-        { api, project, snapshot } = opened;
+        root = path.dirname(configFileName),
+        current = await launch(root, configFileName, overlayFileSystem(contents, false));
 
-    for (let diagnostic of project.program.getConfigFileParsingDiagnostics()) {
+    for (let diagnostic of await current.project.program.getConfigFileParsingDiagnostics()) {
         if (diagnostic.category === DiagnosticCategory.Error) {
-            snapshot.dispose();
-            api.close();
+            current.server.retired = true;
+            retire(current);
 
             throw new Error(`${PACKAGE_NAME}: error parsing tsconfig.json ${diagnostic.text}`);
         }
     }
 
     return {
-        api,
         configFileName,
         contents,
+        current,
         disk: new Map(),
+        lock: Promise.resolve(),
         members: null,
         outside: new Set(),
         pending: new Set(),
-        project,
         root,
-        seen: seed(project.program),
-        snapshot,
+        seen: await seed(current.project.program),
         virtual: false
     };
 }
 
-function createScratch(file: string, content: string): ScratchEntry {
+async function createScratch(file: string, content: string): Promise<ScratchEntry> {
     let config = scratchConfigPath(0),
         contents = new Overlay();
 
     contents.set(config, scratchConfig(file));
     contents.set(file, content);
 
-    let api = new API({ cwd: process.cwd(), fs: overlayFileSystem(contents, true) }),
-        snapshot = api.createSnapshot({ openProjects: [config] }),
-        project = resolveProject(api, snapshot, config);
+    let server: Server = { api: new API({ cwd: process.cwd(), fs: overlayFileSystem(contents, true) }), live: 0, retired: false },
+        snapshot = await server.api.createSnapshot({ openProjects: [config] });
 
-    return { api, config, contents, count: 1, file, project, snapshot };
+    return { config, contents, count: 1, file, project: project(server, snapshot, config), server, snapshot };
 }
 
 // The text the program holds for a file it has seen: the overlay when one was synced, the disk
@@ -228,26 +270,67 @@ function current(entry: Entry, id: string): string | undefined {
     }
 }
 
-function disposeEntry(entry: Pick<Entry, 'api' | 'snapshot'>): void {
-    if (!entry.snapshot.isDisposed()) {
-        entry.snapshot.dispose();
+async function drop(generation: Generation): Promise<void> {
+    let server = generation.server;
+
+    try {
+        await generation.snapshot.dispose();
+    }
+    catch {
+        // a snapshot of a closed process is gone already
     }
 
-    entry.api.close();
+    server.live--;
+
+    if (server.retired && server.live === 0) {
+        await close(server);
+    }
 }
 
-function getEntry(configFileName: string): Entry {
+// Runs `task` once every update and membership check queued before it has settled
+function exclusive<T>(entry: Entry, task: () => Promise<T>): Promise<T> {
+    let result = entry.lock.then(task);
+
+    entry.lock = result.then(() => undefined, () => undefined);
+
+    return result;
+}
+
+function generation(server: Server, snapshot: Snapshot, configFileName: string): Generation {
+    let found = project(server, snapshot, configFileName);
+
+    server.live++;
+
+    return { project: found, readers: 0, retired: false, server, snapshot };
+}
+
+function getEntry(configFileName: string): Promise<Entry> {
     // Every caller must address the same project, including relative and Windows paths.
     configFileName = normalize(path.resolve(configFileName));
 
-    let entry = cache.get(configFileName);
+    let entry = entries.get(configFileName);
 
-    if (!entry) {
-        entry = createEntry(configFileName);
-        cache.set(configFileName, entry);
+    if (entry) {
+        return Promise.resolve(entry);
     }
 
-    return entry;
+    let pending = opening.get(configFileName);
+
+    if (!pending) {
+        pending = createEntry(configFileName)
+            .then((created) => {
+                entries.set(configFileName, created);
+
+                return created;
+            })
+            .finally(() => {
+                opening.delete(configFileName);
+            });
+
+        opening.set(configFileName, pending);
+    }
+
+    return pending;
 }
 
 // Path identity for membership checks: Windows file systems are case-insensitive, and hosts
@@ -258,32 +341,21 @@ function key(fileName: string): string {
     return process.platform === 'win32' ? id.toLowerCase() : id;
 }
 
-function normalize(fileName: string): string {
-    return fileName.replace(backslashes, '/');
+async function launch(root: string, configFileName: string, overlay: FileSystemCallbacks): Promise<Generation> {
+    let server: Server = { api: new API({ cwd: root, fs: overlay }), live: 0, retired: false };
+
+    try {
+        return generation(server, await server.api.createSnapshot({ openProjects: [configFileName] }), configFileName);
+    }
+    catch (error) {
+        await close(server);
+
+        throw error;
+    }
 }
 
-function open(configPath: string, overlay?: FileSystemCallbacks): OpenProject {
-    let configFileName = normalize(path.resolve(configPath)),
-        entry = overlay === undefined ? getEntry(configFileName) : undefined,
-        api = entry?.api ?? new API({ cwd: path.dirname(configFileName), fs: overlay }),
-        snapshot = entry?.snapshot ?? api.createSnapshot({ openProjects: [configFileName] }),
-        project = entry?.project ?? resolveProject(api, snapshot, configFileName);
-
-    if (entry) {
-        return {
-            api,
-            dispose: () => dispose(configFileName),
-            project,
-            snapshot
-        };
-    }
-
-    return {
-        api,
-        dispose: () => disposeEntry({ api, snapshot }),
-        project,
-        snapshot,
-    };
+function normalize(fileName: string): string {
+    return fileName.replace(backslashes, '/');
 }
 
 // Every callback is a round-trip from tsgo, and a program whose imports change re-resolves every
@@ -343,51 +415,46 @@ function overlayFileSystem(contents: Overlay, virtual: boolean): FileSystemCallb
     return overlay;
 }
 
-function recreate(entry: Entry): void {
-    disposeEntry(entry);
-    entry.api = new API({ cwd: entry.root, fs: overlayFileSystem(entry.contents, entry.virtual) });
-    entry.snapshot = entry.api.createSnapshot({ openProjects: [entry.configFileName] });
-    entry.project = resolveProject(entry.api, entry.snapshot, entry.configFileName);
-    entry.seen = seed(entry.project.program);
-}
+function project(server: Server, snapshot: Snapshot, configFileName: string): Project {
+    let found = snapshot.getConfiguredProject(configFileName);
 
-// A tsgo project's file set is fixed when the project opens, so each new scratch file gets a
-// project of its own. Opening it in the live API process costs ~1ms; respawning the process (the
-// only other way to admit an unseen file) costs ~55ms, which every host that transforms more than
-// one file paid per file. The previous project is closed in the same snapshot update.
-function retargetScratch(entry: ScratchEntry, file: string): void {
-    let config = scratchConfigPath(entry.count++),
-        previous = entry.config;
-
-    entry.contents.delete(entry.file);
-    entry.contents.set(config, scratchConfig(file));
-
-    let snapshot = entry.snapshot.update({
-            closeProjects: [previous],
-            fileNotifications: { changed: [file] },
-            openProjects: [config]
-        });
-
-    if (snapshot !== entry.snapshot && !entry.snapshot.isDisposed()) {
-        entry.snapshot.dispose();
-    }
-
-    entry.api.clearSourceFileCache();
-    entry.contents.delete(previous);
-    entry.config = config;
-    entry.file = file;
-    entry.project = resolveProject(entry.api, snapshot, config);
-    entry.snapshot = snapshot;
-}
-
-function resolveProject(api: API, snapshot: Snapshot, configFileName: string): Project {
-    let project = snapshot.getConfiguredProject(configFileName);
-
-    if (!project) {
+    if (!found) {
         throw new Error(`${PACKAGE_NAME}: project not found for ${configFileName}`);
     }
 
-    return checker.attach(api, project);
+    return checker.attach(server.api, found);
+}
+
+// tsgo fixes each project's file-set when its API process opens; incremental created/changed events
+// and project close+reopen do NOT admit a file unseen at that point, so a first-sight file enters
+// the program only through a new API process. The previous one closes once nothing reads it.
+async function recreate(entry: Entry): Promise<void> {
+    let previous = entry.current;
+
+    entry.current = await launch(entry.root, entry.configFileName, overlayFileSystem(entry.contents, entry.virtual));
+    previous.server.retired = true;
+    retire(previous);
+    entry.seen = await seed(entry.current.project.program);
+}
+
+async function replaceScratch(entry: ScratchEntry, config: string, params: Parameters<Snapshot['update']>[0]): Promise<void> {
+    let snapshot = await entry.snapshot.update(params);
+
+    if (snapshot !== entry.snapshot && !entry.snapshot.isDisposed()) {
+        void entry.snapshot.dispose().catch(() => undefined);
+    }
+
+    entry.server.api.clearSourceFileCache();
+    entry.project = project(entry.server, snapshot, config);
+    entry.snapshot = snapshot;
+}
+
+function retire(generation: Generation): void {
+    generation.retired = true;
+
+    if (generation.readers === 0) {
+        void drop(generation);
+    }
 }
 
 function scratchConfig(file: string): string {
@@ -407,10 +474,10 @@ function scratchConfigPath(ordinal: number): string {
     return normalize(process.cwd()) + `/tsconfig.tsparse.${ordinal}.json`;
 }
 
-function seed(program: Program): Set<string> {
+async function seed(program: Program): Promise<Set<string>> {
     let seen = new Set<string>();
 
-    for (let name of program.getSourceFileNames()) {
+    for (let name of await program.getSourceFileNames()) {
         seen.add(normalize(name));
     }
 
@@ -425,8 +492,8 @@ function seed(program: Program): Set<string> {
 // negative answers are cached until invalidate().
 // `content` stands in for a file absent from disk (a host's virtual module) while the config's
 // include globs are expanded, so such a file matches exactly as it would on disk.
-const contains = (configFileName: string, fileName: string, content?: string): boolean => {
-    let entry = getEntry(configFileName),
+const contains = async (configFileName: string, fileName: string, content?: string): Promise<boolean> => {
+    let entry = await getEntry(configFileName),
         id = key(fileName),
         path = normalize(fileName);
 
@@ -434,82 +501,105 @@ const contains = (configFileName: string, fileName: string, content?: string): b
         return true;
     }
 
-    if (entry.project.program.getSourceFile(path)) {
-        entry.outside.delete(id);
-        entry.seen.add(path);
-        return true;
-    }
-
-    if (entry.outside.has(id)) {
-        return false;
-    }
-
-    let staged = content !== undefined && !entry.contents.has(path) && !fs.existsSync(path);
-
-    if (staged) {
-        entry.contents.set(path, content!);
-    }
-
-    let members = new Set<string>(),
-        { fileNames } = entry.api.parseConfigFile(entry.configFileName);
-
-    for (let i = 0, n = fileNames.length; i < n; i++) {
-        members.add(key(fileNames[i]));
-    }
-
-    entry.members = members;
-
-    if (members.has(id)) {
-        // Include globs list the overlay without asking whether files exist; an import of this
-        // file resolves only once existence checks are routed to the overlay
-        if (staged) {
-            entry.virtual = true;
+    return exclusive(entry, async () => {
+        if (entry.seen.has(path) || entry.members?.has(id)) {
+            return true;
         }
 
-        return true;
-    }
+        if (await entry.current.project.program.getSourceFile(path)) {
+            entry.outside.delete(id);
+            entry.seen.add(path);
+            return true;
+        }
 
-    if (staged) {
-        entry.contents.delete(path);
-    }
+        if (entry.outside.has(id)) {
+            return false;
+        }
 
-    entry.outside.add(id);
+        let staged = content !== undefined && !entry.contents.has(path) && !fs.existsSync(path);
 
-    return false;
+        if (staged) {
+            entry.contents.set(path, content!);
+        }
+
+        let members = new Set<string>(),
+            { fileNames } = await entry.current.server.api.parseConfigFile(entry.configFileName);
+
+        for (let i = 0, n = fileNames.length; i < n; i++) {
+            members.add(key(fileNames[i]));
+        }
+
+        entry.members = members;
+
+        if (members.has(id)) {
+            // Include globs list the overlay without asking whether files exist; an import of this
+            // file resolves only once existence checks are routed to the overlay
+            if (staged) {
+                entry.virtual = true;
+            }
+
+            return true;
+        }
+
+        if (staged) {
+            entry.contents.delete(path);
+        }
+
+        entry.outside.add(id);
+
+        return false;
+    });
 };
 
-const dispose = (root?: string): void => {
-    if (root === undefined) {
-        for (let entry of cache.values()) {
-            disposeEntry(entry);
-        }
+// Closes a project's tsgo process (every project's, and the parsers', without `root`) once no
+// transform reads its snapshots
+const dispose = async (root?: string): Promise<void> => {
+    let configs: string[];
 
-        cache.clear();
+    if (root === undefined) {
+        configs = [...new Set([...entries.keys(), ...opening.keys()])];
 
         if (parser) {
-            parser.api.close();
+            let api = parser;
+
             parser = null;
+            await close({ api, live: 0, retired: true });
         }
 
         if (scratchEntry) {
-            disposeEntry(scratchEntry);
+            let { server } = scratchEntry;
+
             scratchEntry = null;
+            await close(server);
         }
 
         staged.clear();
-
-        return;
+    }
+    else {
+        root = normalize(path.resolve(root));
+        configs = [root];
+        staged.delete(root);
     }
 
-    root = normalize(path.resolve(root));
-    staged.delete(root);
+    await Promise.all(configs.map(async (config) => {
+        let entry = entries.get(config) ?? await opening.get(config)?.catch(() => undefined);
 
-    let entry = cache.get(root);
+        entries.delete(config);
 
-    if (entry) {
-        disposeEntry(entry);
-        cache.delete(root);
-    }
+        if (!entry) {
+            return;
+        }
+
+        entry.current.server.retired = true;
+
+        if (entry.current.readers === 0) {
+            entry.current.retired = true;
+            await drop(entry.current);
+        }
+        else {
+            retire(entry.current);
+        }
+    }));
 };
 
 const findConfig = (startDir: string): string | null => {
@@ -535,7 +625,7 @@ const findConfig = (startDir: string): string | null => {
 const invalidate = (configFileName: string, fileName: string): void => {
     configFileName = normalize(path.resolve(configFileName));
 
-    let entry = cache.get(configFileName),
+    let entry = entries.get(configFileName),
         id = normalize(fileName);
 
     staged.get(configFileName)?.delete(id);
@@ -556,29 +646,34 @@ const invalidate = (configFileName: string, fileName: string): void => {
     entry.pending.add(id);
 };
 
-const parse = (fileName: string, content: string): SourceFile => {
-    parser ??= { api: new API({ cwd: process.cwd() }), lease: null };
+// Parses without a project: tsgo returns the tree whole and it is decoded client-side, so the lease
+// keeping it alive in tsgo is released at once, sent with the next request
+const parse = async (fileName: string, content: string): Promise<SourceFile> => {
+    parser ??= new API({ cwd: process.cwd() });
 
-    let { api, lease } = parser,
-        id = normalize(fileName);
+    let lease = await parser.createSourceFile(normalize(fileName), content);
 
-    parser.lease = lease
-        ? api.batch(lease.dispose.gen(), api.createSourceFile.gen(id, content))[1]
-        : api.createSourceFile(id, content);
+    void lease.dispose().catch(() => undefined);
 
-    return parser.lease.sourceFile;
+    return lease.sourceFile;
 };
 
-const scratch = (fileName: string, content: string): ScratchResult => {
-    let id = normalize(fileName),
-        entry = advanceScratch(id, content),
-        source = entry.project.program.getSourceFile(id);
+const scratch = (fileName: string, content: string): Promise<ScratchResult> => {
+    let result = scratchLock.then(async () => {
+        let id = normalize(fileName),
+            entry = await advanceScratch(id, content),
+            source = await entry.project.program.getSourceFile(id);
 
-    if (!source) {
-        throw new Error(`${PACKAGE_NAME}: failed to parse ${fileName}`);
-    }
+        if (!source) {
+            throw new Error(`${PACKAGE_NAME}: failed to parse ${fileName}`);
+        }
 
-    return { checker: entry.project.checker, program: entry.project.program, sourceFile: source };
+        return { checker: entry.project.checker, program: entry.project.program, sourceFile: source };
+    });
+
+    scratchLock = result.then(() => undefined, () => undefined);
+
+    return result;
 };
 
 // Records the text a host compiled a file from without a round-trip, for a host that reused the
@@ -597,82 +692,84 @@ const stage = (configFileName: string, fileName: string, content: string): void 
     files.set(normalize(fileName), content);
 };
 
-const update = (configFileName: string, fileName: string, content: string): UpdateResult => {
+const update = (configFileName: string, fileName: string, content: string): Promise<Lease> => {
     return updateMany(configFileName, new Map([[fileName, content]]));
 };
 
-const updateMany = (configFileName: string, updates: Map<string, string>): UpdateResult => {
-    let entry = getEntry(configFileName),
-        ids: string[] = [],
-        routed = entry.virtual,
-        waiting = staged.get(entry.configFileName);
+// The project's program with `updates` applied, leased until release(): transforms running
+// concurrently share one snapshot, which a later update replaces only for the transforms after it
+const updateMany = async (configFileName: string, updates: Map<string, string>): Promise<Lease> => {
+    let entry = await getEntry(configFileName);
 
-    if (waiting) {
-        staged.delete(entry.configFileName);
-        updates = new Map([...waiting, ...updates]);
-    }
+    return exclusive(entry, async () => {
+        let ids: string[] = [],
+            routed = entry.virtual,
+            waiting = staged.get(entry.configFileName);
 
-    for (let [fileName, content] of updates) {
-        let id = normalize(fileName);
-
-        // Every host transforms every project file; one the program already holds verbatim needs
-        // no new snapshot, which keeps a build's per-file cost off the tsgo round-trip
-        if (entry.seen.has(id) && !entry.pending.has(id) && current(entry, id) === content) {
-            continue;
+        if (waiting) {
+            staged.delete(entry.configFileName);
+            updates = new Map([...waiting, ...updates]);
         }
 
-        if (absent(entry, id)) {
-            entry.virtual = true;
+        for (let [fileName, content] of updates) {
+            let id = normalize(fileName);
+
+            // Every host transforms every project file; one the program already holds verbatim
+            // needs no new snapshot, which keeps a build's per-file cost off the tsgo round-trip
+            if (entry.seen.has(id) && !entry.pending.has(id) && current(entry, id) === content) {
+                continue;
+            }
+
+            if (absent(entry, id)) {
+                entry.virtual = true;
+            }
+
+            entry.contents.set(id, content);
+            ids.push(id);
         }
 
-        entry.contents.set(id, content);
-        ids.push(id);
-    }
+        if (ids.length === 0 && entry.pending.size === 0) {
+            return acquire(entry.current);
+        }
 
-    if (ids.length === 0 && entry.pending.size === 0) {
-        return { checker: entry.project.checker, program: entry.project.program };
-    }
+        // A file absent from disk is only visible once existence checks are routed to the overlay
+        if (routed === entry.virtual && ids.every(id => entry.seen.has(id))) {
+            for (let i = 0, n = ids.length; i < n; i++) {
+                entry.pending.add(ids[i]);
+            }
 
-    // A file absent from disk is only visible once existence checks are routed to the overlay
-    if (routed === entry.virtual && ids.every(id => entry.seen.has(id))) {
+            let changed = [...entry.pending];
+
+            entry.pending.clear();
+            await advance(entry, changed);
+        }
+        else {
+            await recreate(entry);
+            entry.pending.clear();
+
+            for (let i = 0, n = ids.length; i < n; i++) {
+                entry.seen.add(ids[i]);
+            }
+        }
+
+        let program = entry.current.project.program,
+            sources = await Promise.all(ids.map((id) => program.getSourceFile(id)));
+
         for (let i = 0, n = ids.length; i < n; i++) {
-            entry.pending.add(ids[i]);
+            if (!sources[i] || sources[i]!.text !== entry.contents.get(ids[i])) {
+                throw new Error(`${PACKAGE_NAME}: failed to load ${ids[i]} into the program`);
+            }
         }
 
-        let changed = [...entry.pending];
-
-        entry.pending.clear();
-        advance(entry, entry.configFileName, changed);
-    }
-    else {
-        // tsgo fixes each project's file-set when its API process opens; incremental
-        // created/changed events and project close+reopen do NOT admit a file unseen
-        // at that point, so a first-sight file enters the program only by recreating the API.
-        recreate(entry);
-        entry.pending.clear();
-        for (let i = 0, n = ids.length; i < n; i++) {
-            entry.seen.add(ids[i]);
-        }
-    }
-
-    for (let i = 0, n = ids.length; i < n; i++) {
-        let id = ids[i],
-            source = entry.project.program.getSourceFile(id),
-            content = entry.contents.get(id);
-
-        if (!source || source.text !== content) {
-            throw new Error(`${PACKAGE_NAME}: failed to load ${id} into the program`);
-        }
-    }
-
-    return { checker: entry.project.checker, program: entry.project.program };
+        return acquire(entry.current);
+    });
 };
 
 
 // Every copy of this package in the process uses the first one's service, so its tsgo processes
 // and programs are opened once
-let service = shared('language-service', () => ({ contains, dispose, findConfig, invalidate, open, parse, scratch, stage, update, updateMany }));
+let service = shared('language-service', () => ({ contains, dispose, findConfig, invalidate, parse, scratch, stage, update, updateMany }));
 
 
 export default service;
-export type { ScratchResult, UpdateResult };
+export type { Lease, ScratchResult };

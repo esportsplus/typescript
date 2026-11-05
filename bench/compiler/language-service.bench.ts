@@ -12,19 +12,19 @@ const SOURCE = 'export const value = 1;\nexport function add(a: number) { return
 // Every host that transforms more than one file parses a different file on each call; that path
 // must stay as cheap as re-parsing the same file (it once respawned the tsgo process per file)
 describe('language-service', () => {
-    afterAll(() => {
-        languageService.dispose();
+    afterAll(async () => {
+        await languageService.dispose();
     });
 
     test('parse', async ({ bench }) => {
         let i = 0;
 
         await bench.compare(
-            bench('same file', () => {
-                languageService.parse(root + '/src/bench-parse-same.ts', SOURCE + '//' + i++);
+            bench('same file', async () => {
+                await languageService.parse(root + '/src/bench-parse-same.ts', SOURCE + '//' + i++);
             }),
-            bench('alternating files', () => {
-                languageService.parse(root + '/src/bench-parse-' + (i++ % 2) + '.ts', SOURCE);
+            bench('alternating files', async () => {
+                await languageService.parse(root + '/src/bench-parse-' + (i++ % 2) + '.ts', SOURCE);
             })
         );
     });

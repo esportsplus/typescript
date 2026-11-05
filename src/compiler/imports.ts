@@ -1,8 +1,8 @@
 import type { ImportDeclaration, Node, SourceFile } from 'typescript/ast';
 import { SyntaxKind } from 'typescript/ast';
 import { isIdentifier, isImportDeclaration, isNamedImports, isNamespaceImport, isStringLiteral } from 'typescript/ast/is';
-import type { Checker } from 'typescript/sync';
-import { SymbolFlags } from 'typescript/sync';
+import type { Checker } from 'typescript/async';
+import { SymbolFlags } from 'typescript/async';
 
 import manifest from './manifest';
 
@@ -93,7 +93,7 @@ const describe = (file: SourceFile, stmt: ImportDeclaration): ImportInfo => {
 };
 
 // Check if node's symbol originates from a specific package (with optional symbol name validation)
-const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string): boolean => {
+const includes = async (checker: Checker, node: Node, pkg: string, symbolName?: string): Promise<boolean> => {
     if (!isIdentifier(node)) {
         return false;
     }
@@ -128,7 +128,7 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
 
     // Fast path: direct import from package
     if (names.has(node.text)) {
-        let symbol = checker.getSymbolAtLocation(node);
+        let symbol = await checker.getSymbolAtLocation(node);
 
         if (symbol) {
             let declarations = symbol.declarations;
@@ -138,7 +138,7 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
                     let handle = declarations[i];
 
                     if (handle.kind === SyntaxKind.ImportSpecifier) {
-                        let decl = handle.resolve();
+                        let decl = await handle.resolve();
 
                         if (decl) {
                             let importDecl = decl.parent?.parent?.parent;
@@ -164,7 +164,7 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
     }
 
     // Slow path: check for re-exports via aliased symbol
-    let symbol = checker.getSymbolAtLocation(node);
+    let symbol = await checker.getSymbolAtLocation(node);
 
     if (!symbol) {
         return false;
@@ -185,7 +185,7 @@ const includes = (checker: Checker, node: Node, pkg: string, symbolName?: string
 
     // Check aliased symbol for re-exports
     if ((symbol.flags & SymbolFlags.Alias) !== 0) {
-        let aliased = checker.getAliasedSymbol(symbol);
+        let aliased = await checker.getAliasedSymbol(symbol);
 
         if (aliased && aliased !== symbol) {
             let aliasedDecls = aliased.declarations;

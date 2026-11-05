@@ -13,7 +13,7 @@ function findFirst(file: SourceFile, predicate: (n: Node) => boolean): Node | un
     return file.forEachChild((node) => visit(node, predicate));
 }
 
-function parse(code: string): SourceFile {
+function parse(code: string): Promise<SourceFile> {
     return languageService.parse(fileName, code);
 }
 
@@ -30,24 +30,24 @@ afterAll(() => languageService.dispose());
 
 
 describe('ast.expression.name', () => {
-    it('returns text for identifiers', () => {
-        let file = parse('let x = foo;'),
+    it('returns text for identifiers', async () => {
+        let file = await parse('let x = foo;'),
             node = findFirst(file, isIdentifier);
 
         expect(node).toBeDefined();
         expect(ast.expression.name(node as Expression)).toBe('x');
     });
 
-    it('returns dotted path for property access', () => {
-        let file = parse('a.b.c;'),
+    it('returns dotted path for property access', async () => {
+        let file = await parse('a.b.c;'),
             node = findFirst(file, isPropertyAccessExpression);
 
         expect(node).toBeDefined();
         expect(ast.expression.name(node as Expression)).toBe('a.b.c');
     });
 
-    it('returns null for unsupported expressions', () => {
-        let file = parse('foo();'),
+    it('returns null for unsupported expressions', async () => {
+        let file = await parse('foo();'),
             node = findFirst(file, isCallExpression);
 
         expect(node).toBeDefined();
@@ -57,27 +57,27 @@ describe('ast.expression.name', () => {
 
 
 describe('ast.inRange', () => {
-    it('returns true when node is within range', () => {
+    it('returns true when node is within range', async () => {
         expect(ast.inRange([{ end: 100, start: 0 }], 10, 50)).toBe(true);
     });
 
-    it('returns true at exact boundaries', () => {
+    it('returns true at exact boundaries', async () => {
         expect(ast.inRange([{ end: 50, start: 10 }], 10, 50)).toBe(true);
     });
 
-    it('returns false when node is outside range', () => {
+    it('returns false when node is outside range', async () => {
         expect(ast.inRange([{ end: 50, start: 10 }], 0, 9)).toBe(false);
     });
 
-    it('returns false when node partially overlaps', () => {
+    it('returns false when node partially overlaps', async () => {
         expect(ast.inRange([{ end: 50, start: 10 }], 5, 30)).toBe(false);
     });
 
-    it('returns false for empty ranges', () => {
+    it('returns false for empty ranges', async () => {
         expect(ast.inRange([], 0, 10)).toBe(false);
     });
 
-    it('checks multiple ranges', () => {
+    it('checks multiple ranges', async () => {
         let ranges = [{ end: 10, start: 0 }, { end: 30, start: 20 }];
 
         expect(ast.inRange(ranges, 0, 10)).toBe(true);
@@ -88,16 +88,16 @@ describe('ast.inRange', () => {
 
 
 describe('ast.property.path', () => {
-    it('returns dotted path for nested access', () => {
-        let file = parse('a.b.c.d;'),
+    it('returns dotted path for nested access', async () => {
+        let file = await parse('a.b.c.d;'),
             node = findFirst(file, (n) => isPropertyAccessExpression(n) && !isPropertyAccessExpression(n.parent));
 
         expect(node).toBeDefined();
         expect(ast.property.path(node as Expression)).toBe('a.b.c.d');
     });
 
-    it('returns null for non-identifier base', () => {
-        let file = parse('foo().bar;'),
+    it('returns null for non-identifier base', async () => {
+        let file = await parse('foo().bar;'),
             node = findFirst(file, isPropertyAccessExpression);
 
         expect(node).toBeDefined();
@@ -107,22 +107,22 @@ describe('ast.property.path', () => {
 
 
 describe('ast.test', () => {
-    it('returns true when predicate matches root', () => {
-        let file = parse('let x = 1;'),
+    it('returns true when predicate matches root', async () => {
+        let file = await parse('let x = 1;'),
             found = ast.test(file, (n) => isVariableStatement(n));
 
         expect(found).toBe(true);
     });
 
-    it('returns true when predicate matches deep child', () => {
-        let file = parse('function f() { return { a: 1 }; }'),
+    it('returns true when predicate matches deep child', async () => {
+        let file = await parse('function f() { return { a: 1 }; }'),
             found = ast.test(file, (n) => isObjectLiteralExpression(n));
 
         expect(found).toBe(true);
     });
 
-    it('returns false when predicate never matches', () => {
-        let file = parse('let x = 1;'),
+    it('returns false when predicate never matches', async () => {
+        let file = await parse('let x = 1;'),
             found = ast.test(file, (n) => isClassDeclaration(n));
 
         expect(found).toBe(false);

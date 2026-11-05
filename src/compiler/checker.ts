@@ -1,27 +1,28 @@
-import type { AnyAPIRequestGenerator, API, Checker, Program, Project } from 'typescript/sync';
+import type { API, Checker, Program, Project } from 'typescript/async';
 
 import shared from '../shared';
 
 
-type Call<O, K extends keyof O> = O[K] extends (...args: infer A) => unknown ? A : never;
+// Answers keyed on (second argument, first argument)
+type Memo = Map<unknown, Map<unknown, Promise<unknown>>>;
 
-type Memo = {
-    get(args: unknown[]): unknown;
-    has(args: unknown[]): boolean;
-    set(args: unknown[], value: unknown): void;
-};
+type Query = (...args: unknown[]) => Promise<unknown>;
 
-type Method<O> = { [K in keyof O]: O[K] extends (...args: never[]) => unknown ? K : never }[keyof O];
-
-type Proxied = {
-    memo: (key: PropertyKey) => Memo | undefined;
+// One program's answers, shared by every view of its checker
+type Store = {
+    answers: Map<PropertyKey, Memo>;
+    api: API | undefined;
     sent: { count: number };
     target: Checker;
 };
 
-type Query = (...args: unknown[]) => unknown;
-
-type Result<O, K extends keyof O> = O[K] extends (...args: never[]) => infer R ? R : never;
+// One transform's lane to tsgo: the queries it misses in one turn are sent as one request
+type View = {
+    methods: Map<PropertyKey, Query>;
+    pending: (() => void)[];
+    scheduled: boolean;
+    store: Store;
+};
 
 
 // Queries whose array form answers each element as the single form would, in order
@@ -37,6 +38,7 @@ const CACHED = new Set<PropertyKey>([
     'getBaseConstraintOfType',
     'getDeclaredTypeOfSymbol',
     'getImmediateAliasedSymbol',
+    'getMemberInModuleExports',
     'getNonNullableType',
     'getPropertiesOfType',
     'getPropertyOfType',
@@ -46,6 +48,7 @@ const CACHED = new Set<PropertyKey>([
     'getSymbolAtLocation',
     'getTypeArguments',
     'getTypeAtLocation',
+    'isArrayLikeType',
     'isArrayType',
     'isTupleType',
     'isTypeAssignableTo',
@@ -59,28 +62,56 @@ const TYPED = new Set<PropertyKey>([
     'getApparentType',
     'getBaseConstraintOfType',
     'getImmediateAliasedSymbol',
+    'getMemberInModuleExports',
     'getNonNullableType',
     'getPropertiesOfType',
     'getPropertyOfType',
     'getReturnTypeOfSignature',
     'getSignaturesOfType',
     'getTypeArguments',
+    'isArrayLikeType',
     'isArrayType',
     'isTupleType',
     'isTypeAssignableTo'
 ]);
 
 
-// The API each attached project's checker and program answer through; shared with every copy of
-// this package, whose language service may be the one that attached them
+// The API each attached project's checker answers through; shared with every copy of this package,
+// whose language service may be the one that attached it
 let apis = shared('checker-apis', () => new WeakMap<object, API>());
 
-// The cached checker of each program, dropped with the program
-let programs = new WeakMap<Program, { checker: Checker; proxy: Checker }>();
+// The answers kept for each program, dropped with the program
+let programs = new WeakMap<Program, Store>();
 
-// What each cached checker wraps, the answers it holds and the round-trips it made
-let proxies = new WeakMap<Checker, Proxied>();
+let views = new WeakMap<Checker, View>();
 
+
+// Sends every query the view missed this turn in one batch: opening a batch context first sends
+// what other views queued, so tsgo receives each transform's queries as a request of its own and
+// answers concurrent transforms in parallel (it answers the items of one batch in order)
+function flush(view: View): void {
+    let pending = view.pending;
+
+    view.pending = [];
+    view.scheduled = false;
+
+    if (pending.length === 0) {
+        return;
+    }
+
+    view.store.sent.count++;
+
+    let context = view.store.api?.batchContext();
+
+    try {
+        for (let i = 0, n = pending.length; i < n; i++) {
+            pending[i]();
+        }
+    }
+    finally {
+        context?.[Symbol.dispose]();
+    }
+}
 
 // A type argument's identity: its id rather than the object holding it
 function identity(value: unknown): unknown {
@@ -89,105 +120,120 @@ function identity(value: unknown): unknown {
         : value;
 }
 
-// Answers keyed on (first argument, second argument); a batched query's array form keeps one entry
-// per element under the same key its single form would use
-function memo(typed: boolean): Memo {
-    let results = new Map<unknown, Map<unknown, unknown>>();
+function keep(memo: Memo, typed: boolean, args: unknown[], answer: Promise<unknown>): void {
+    let inner = typed ? identity(args[1]) : args[1],
+        outer = typed ? identity(args[0]) : args[0],
+        found = memo.get(inner);
 
-    let entries = (args: unknown[]): Map<unknown, unknown> => {
-        let key = typed ? identity(args[1]) : args[1],
-            found = results.get(key);
+    if (!found) {
+        found = new Map();
+        memo.set(inner, found);
+    }
 
-        if (!found) {
-            found = new Map();
-            results.set(key, found);
+    found.set(outer, answer);
+
+    // A failed query (its snapshot disposed underneath it) is asked again by the next caller
+    answer.catch(() => {
+        if (found.get(outer) === answer) {
+            found.delete(outer);
         }
+    });
+}
 
-        return found;
-    };
-
-    let first = (args: unknown[]): unknown => {
-        return typed ? identity(args[0]) : args[0];
-    };
-
-    return {
-        get: (args) => entries(args).get(first(args)),
-        has: (args) => entries(args).has(first(args)),
-        set: (args, value) => {
-            entries(args).set(first(args), value);
-        }
-    };
+function lookup(memo: Memo, typed: boolean, args: unknown[]): Promise<unknown> | undefined {
+    return memo.get(typed ? identity(args[1]) : args[1])?.get(typed ? identity(args[0]) : args[0]);
 }
 
 // A call passing more than two arguments (e.g. resolveName's optional location) is answered by the
 // checker directly rather than risk a wrong cache hit. A batched query's array form shares the
-// single form's entries and sends only the misses.
-function memoize(query: Query, batched: boolean, answers: Memo): Query {
+// single form's entries and sends only the misses; a query already in flight is awaited, not sent.
+function memoize(view: View, key: PropertyKey, query: Query): Query {
+    if (!CACHED.has(key)) {
+        return (...args) => send(view, query, args);
+    }
+
+    let batched = BATCHED.has(key),
+        typed = TYPED.has(key);
+
     return (...args) => {
         if (args.length > 2) {
-            return query(...args);
+            return send(view, query, args);
+        }
+
+        let memo = view.store.answers.get(key);
+
+        if (!memo) {
+            memo = new Map();
+            view.store.answers.set(key, memo);
         }
 
         if (batched && Array.isArray(args[0])) {
             let items = args[0] as unknown[],
-                misses: unknown[] = [];
+                misses: unknown[] = [],
+                seen = new Set<unknown>();
 
             for (let i = 0, n = items.length; i < n; i++) {
-                if (!answers.has([items[i], args[1]])) {
+                if (!seen.has(items[i]) && !lookup(memo, typed, [items[i], args[1]])) {
                     misses.push(items[i]);
                 }
+
+                seen.add(items[i]);
             }
 
             if (misses.length > 0) {
-                let found = query(...(args.length > 1 ? [misses, args[1]] : [misses])) as unknown[];
+                let found = send(view, query, args.length > 1 ? [misses, args[1]] : [misses]) as Promise<unknown[]>;
 
                 for (let i = 0, n = misses.length; i < n; i++) {
-                    answers.set([misses[i], args[1]], found[i]);
+                    keep(memo, typed, [misses[i], args[1]], found.then((answers) => answers[i]));
                 }
             }
 
-            let result: unknown[] = [];
+            let result: Promise<unknown>[] = [];
 
             for (let i = 0, n = items.length; i < n; i++) {
-                result.push(answers.get([items[i], args[1]]));
+                result.push(lookup(memo, typed, [items[i], args[1]])!);
             }
 
-            return result;
+            return Promise.all(result);
         }
 
-        if (answers.has(args)) {
-            return answers.get(args);
+        let found = lookup(memo, typed, args);
+
+        if (found) {
+            return found;
         }
 
-        let result = query(...args);
-
-        answers.set(args, result);
-
-        return result;
-    };
-}
-
-function proxy(checker: Checker): Checker {
-    let memos = new Map<PropertyKey, Memo>(),
-        methods = new Map<PropertyKey, Query>(),
-        sent = { count: 0 };
-
-    let answers = (key: PropertyKey): Memo | undefined => {
-        if (!CACHED.has(key)) {
-            return undefined;
-        }
-
-        let found = memos.get(key);
-
-        if (!found) {
-            found = memo(TYPED.has(key));
-            memos.set(key, found);
-        }
+        found = send(view, query, args);
+        keep(memo, typed, args, found);
 
         return found;
     };
+}
 
-    let wrapper = new Proxy(checker, {
+function send(view: View, query: Query, args: unknown[]): Promise<unknown> {
+    let { promise, reject, resolve } = Promise.withResolvers<unknown>();
+
+    view.pending.push(() => {
+        try {
+            Promise.resolve(query(...args)).then(resolve, reject);
+        }
+        catch (error) {
+            reject(error);
+        }
+    });
+
+    if (!view.scheduled) {
+        view.scheduled = true;
+        setImmediate(flush, view);
+    }
+
+    return promise;
+}
+
+function wrap(store: Store): Checker {
+    let view: View = { methods: new Map(), pending: [], scheduled: false, store };
+
+    let wrapper = new Proxy(store.target, {
         get(target, key) {
             let value = Reflect.get(target, key);
 
@@ -195,123 +241,57 @@ function proxy(checker: Checker): Checker {
                 return value;
             }
 
-            let method = methods.get(key);
+            let method = view.methods.get(key);
 
             if (!method) {
-                let bound = value.bind(target) as Query,
-                    cache = answers(key);
-
-                method = (...args) => {
-                    sent.count++;
-
-                    return bound(...args);
-                };
-
-                if (cache) {
-                    method = memoize(method, BATCHED.has(key), cache);
-                }
-
-                methods.set(key, method);
+                method = memoize(view, key, value.bind(target) as Query);
+                view.methods.set(key, method);
             }
 
             return method;
         }
     });
 
-    proxies.set(wrapper, { memo: answers, sent, target: checker });
+    views.set(wrapper, view);
 
     return wrapper;
 }
 
 
-// Records the API a project answers through, so batch() can send its queries together
+// Records the API a project answers through, so a view can send its queries as one request
 const attach = <P extends Project>(api: API, project: P): P => {
     apis.set(project.checker, api);
-    apis.set(project.program, api);
 
     return project;
 };
 
-// Answers each call as `owner[method](...call)` would, in one round-trip. A cached checker answers
-// what it already holds and keeps what it learns, so later single calls are answered from it; an
-// owner of a project never attached sends each call alone.
-const batch = <O extends Checker | Program, K extends Method<O>>(owner: O, method: K, calls: Call<O, K>[]): Result<O, K>[] => {
-    let proxied = proxies.get(owner as Checker),
-        target = (proxied?.target ?? owner) as unknown as Record<PropertyKey, Query & { gen: (...args: unknown[]) => AnyAPIRequestGenerator }>,
-        answers = calls.every((call) => call.length <= 2) ? proxied?.memo(method) : undefined,
-        misses: unknown[][] = [];
-
-    for (let i = 0, n = calls.length; i < n; i++) {
-        if (!answers?.has(calls[i])) {
-            misses.push(calls[i]);
-        }
-    }
-
-    if (misses.length === 0) {
-        return calls.map((call) => answers!.get(call)) as Result<O, K>[];
-    }
-
-    let api = apis.get(target),
-        query = target[method],
-        found: unknown[];
-
-    if (api === undefined || misses.length === 1) {
-        found = misses.map((call) => query(...call));
-
-        if (proxied) {
-            proxied.sent.count += misses.length;
-        }
-    }
-    else {
-        let requests: AnyAPIRequestGenerator[] = [];
-
-        for (let i = 0, n = misses.length; i < n; i++) {
-            requests.push(query.gen(...misses[i]));
-        }
-
-        found = api.batch(...requests);
-
-        if (proxied) {
-            proxied.sent.count++;
-        }
-    }
-
-    if (!answers) {
-        return found as Result<O, K>[];
-    }
-
-    for (let i = 0, n = misses.length; i < n; i++) {
-        answers.set(misses[i], found[i]);
-    }
-
-    return calls.map((call) => answers.get(call)) as Result<O, K>[];
-};
-
-// Every checker query is a synchronous IPC round-trip to tsgo, and plugins ask the same question
-// about the same node repeatedly (and of each other's nodes). One cache serves every transform of a
-// program, since its answers are fixed for that snapshot; a new program, or a new checker for it,
-// starts a new cache. Wrapping an already cached checker returns it unchanged.
+// A transform's view of a program's checker. Plugins ask the same question about the same node
+// repeatedly (and of each other's nodes), and concurrent transforms ask the same questions: one
+// memo serves every view of a program, since its answers are fixed for that snapshot, and a query
+// in flight is awaited rather than sent again. Each view sends what it misses in one turn as one
+// request. A new program, or a new checker for it, starts a new memo; a view is returned unchanged.
 const cached = (checker: Checker, program?: Program): Checker => {
-    if (program === undefined) {
-        return proxy(checker);
+    if (views.has(checker)) {
+        return checker;
     }
 
-    let entry = programs.get(program);
+    let store = program === undefined ? undefined : programs.get(program);
 
-    if (entry !== undefined && (entry.checker === checker || entry.proxy === checker)) {
-        return entry.proxy;
+    if (!store || store.target !== checker) {
+        store = { answers: new Map(), api: apis.get(checker), sent: { count: 0 }, target: checker };
+
+        if (program !== undefined) {
+            programs.set(program, store);
+        }
     }
 
-    entry = { checker, proxy: proxy(checker) };
-    programs.set(program, entry);
-
-    return entry.proxy;
+    return wrap(store);
 };
 
-// Round-trips a cached checker has made so far; 0 for a checker `cached` did not create
+// Requests the views of a checker's memo have sent so far; 0 for a checker `cached` did not create
 const sent = (checker: Checker): number => {
-    return proxies.get(checker)?.sent.count ?? 0;
+    return views.get(checker)?.store.sent.count ?? 0;
 };
 
 
-export default { attach, batch, cached, sent };
+export default { attach, cached, sent };

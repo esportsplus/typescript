@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Node } from 'typescript/ast';
 import { SyntaxKind } from 'typescript/ast';
 import { isBindingElement } from 'typescript/ast/is';
-import type { Checker, Program } from 'typescript/sync';
+import type { Checker, Program } from 'typescript/async';
 
 import fs from 'fs';
 import languageService from '~/compiler/language-service';
@@ -147,7 +147,7 @@ let checker: Checker,
     program: Program;
 
 
-function find(file: string, predicate: (node: Node) => boolean): Node {
+async function find(file: string, predicate: (node: Node) => boolean): Promise<Node> {
     let found: Node | undefined,
         visit = (node: Node): void => {
             if (!found && predicate(node)) {
@@ -157,20 +157,20 @@ function find(file: string, predicate: (node: Node) => boolean): Node {
             node.forEachChild(visit);
         };
 
-    visit(program.getSourceFile(fixture + '/' + file)!);
+    visit((await program.getSourceFile(fixture + '/' + file))!);
 
     return found!;
 }
 
 // Parent expression text of every value in `file` that holds the package's export, the way the
 // template and reactivity compilers find their sites: origins, then holds through const aliases
-function sites(file: string, name: string): string[] {
-    let targets = new Set(references.exported(checker, program, 'fake-pkg', name).map(references.key)),
-        sourceFile = program.getSourceFile(fixture + '/' + file)!,
+async function sites(file: string, name: string): Promise<string[]> {
+    let targets = new Set((await references.exported(checker, program, 'fake-pkg', name)).map(references.key)),
+        sourceFile = (await program.getSourceFile(fixture + '/' + file))!,
         result: string[] = [];
 
-    for (let [identifier, origin] of references.origins(checker, program, sourceFile)) {
-        if (references.holds(checker, program, origin, targets)) {
+    for (let [identifier, origin] of await references.origins(checker, program, sourceFile)) {
+        if (await references.holds(checker, program, origin, targets)) {
             let parent = identifier.parent!;
 
             result.push(sourceFile.text.slice(parent.getStart(), parent.end));
@@ -181,12 +181,12 @@ function sites(file: string, name: string): string[] {
 }
 
 // Parent expression text of every identifier in `file` whose value comes from the package's export
-function uses(file: string, name: string): string[] {
-    let targets = new Set(references.exported(checker, program, 'fake-pkg', name).map(references.key)),
-        sourceFile = program.getSourceFile(fixture + '/' + file)!,
+async function uses(file: string, name: string): Promise<string[]> {
+    let targets = new Set((await references.exported(checker, program, 'fake-pkg', name)).map(references.key)),
+        sourceFile = (await program.getSourceFile(fixture + '/' + file))!,
         result: string[] = [];
 
-    for (let [identifier, origin] of references.origins(checker, program, sourceFile)) {
+    for (let [identifier, origin] of await references.origins(checker, program, sourceFile)) {
         if (targets.has(references.key(origin.declaration))) {
             let parent = identifier.parent!;
 
@@ -198,7 +198,7 @@ function uses(file: string, name: string): string[] {
 }
 
 
-beforeAll(() => {
+beforeAll(async () => {
     fixture = fs.mkdtempSync(path.join(process.cwd(), 'test/.references-')).replace(/\\/g, '/');
 
     for (let [name, code] of Object.entries(FILES)) {
@@ -211,37 +211,37 @@ beforeAll(() => {
         include: ['src']
     }));
 
-    ({ checker, program } = languageService.update(fixture + '/tsconfig.json', fixture + '/src/alias.ts', FILES['src/alias.ts']));
+    ({ checker, program } = await languageService.update(fixture + '/tsconfig.json', fixture + '/src/alias.ts', FILES['src/alias.ts']));
 });
 
-afterAll(() => {
-    languageService.dispose();
+afterAll(async () => {
+    await languageService.dispose();
     fs.rmSync(fixture, { force: true, recursive: true });
 });
 
 
 describe('references', () => {
     describe('exported', () => {
-        it('resolves a package export to its declaration', () => {
-            let declarations = references.exported(checker, program, 'fake-pkg', 'make');
+        it('resolves a package export to its declaration', async () => {
+            let declarations = await references.exported(checker, program, 'fake-pkg', 'make');
 
             expect(declarations).toHaveLength(1);
             expect(declarations[0].kind).toBe(SyntaxKind.FunctionDeclaration);
         });
 
-        it('is empty for an export the package does not have', () => {
-            expect(references.exported(checker, program, 'fake-pkg', 'missing')).toEqual([]);
+        it('is empty for an export the package does not have', async () => {
+            expect(await references.exported(checker, program, 'fake-pkg', 'missing')).toEqual([]);
         });
 
-        it('is empty for a package the program does not load', () => {
-            expect(references.exported(checker, program, 'absent-pkg', 'make')).toEqual([]);
+        it('is empty for a package the program does not load', async () => {
+            expect(await references.exported(checker, program, 'absent-pkg', 'make')).toEqual([]);
         });
     });
 
     describe('origins', () => {
-        it('resolves every value read through aliases, barrels, namespaces and defaults', () => {
-            expect(uses('src/alias.ts', 'make')).toEqual(['m(1)']);
-            expect(uses('src/consumer.ts', 'make')).toEqual([
+        it('resolves every value read through aliases, barrels, namespaces and defaults', async () => {
+            expect(await uses('src/alias.ts', 'make')).toEqual(['m(1)']);
+            expect(await uses('src/consumer.ts', 'make')).toEqual([
                 "B['build']",
                 'B.P.make',
                 'B.build',
@@ -256,18 +256,18 @@ describe('references', () => {
             ].sort());
         });
 
-        it('never resolves a same-named local declaration to the export', () => {
-            expect(uses('src/unrelated.ts', 'make')).toEqual([]);
+        it('never resolves a same-named local declaration to the export', async () => {
+            expect(await uses('src/unrelated.ts', 'make')).toEqual([]);
         });
 
-        it('resolves a const export used as a template tag', () => {
-            expect(uses('src/alias.ts', 'tag')).toEqual(['tag`x`']);
+        it('resolves a const export used as a template tag', async () => {
+            expect(await uses('src/alias.ts', 'tag')).toEqual(['tag`x`']);
         });
 
-        it('lists the files an origin resolves through', () => {
-            let sourceFile = program.getSourceFile(fixture + '/src/consumer.ts')!,
-                call = find('src/consumer.ts', node => node.kind === SyntaxKind.CallExpression && node.getText() === 'build(1)'),
-                origin = references.origins(checker, program, sourceFile).get((call as unknown as { expression: Node }).expression)!;
+        it('lists the files an origin resolves through', async () => {
+            let sourceFile = (await program.getSourceFile(fixture + '/src/consumer.ts'))!,
+                call = await find('src/consumer.ts', node => node.kind === SyntaxKind.CallExpression && node.getText() === 'build(1)'),
+                origin = (await references.origins(checker, program, sourceFile)).get((call as unknown as { expression: Node }).expression)!;
 
             expect(origin.through.map(file => file.toLowerCase())).toEqual(
                 [fixture + '/src/consumer.ts', fixture + '/src/barrel.ts'].map(file => file.toLowerCase())
@@ -278,67 +278,67 @@ describe('references', () => {
     // Each case is a shape that has broken the compilers before; none may depend on the name a
     // value is imported, re-exported or bound under
     describe('sites under any name', () => {
-        it('resolves a renamed import', () => {
-            expect(sites('src/renamed.ts', 'make')).toContain('x(1)');
+        it('resolves a renamed import', async () => {
+            expect(await sites('src/renamed.ts', 'make')).toContain('x(1)');
         });
 
-        it('resolves a renamed template tag', () => {
-            expect(sites('src/renamed.ts', 'tag')).toContain('h`a`');
+        it('resolves a renamed template tag', async () => {
+            expect(await sites('src/renamed.ts', 'tag')).toContain('h`a`');
         });
 
-        it('resolves a rename re-exported by a central module', () => {
-            expect(sites('src/renamed.ts', 'make')).toContain('viaApp(2)');
-            expect(sites('src/renamed.ts', 'tag')).toContain('t`c`');
+        it('resolves a rename re-exported by a central module', async () => {
+            expect(await sites('src/renamed.ts', 'make')).toContain('viaApp(2)');
+            expect(await sites('src/renamed.ts', 'tag')).toContain('t`c`');
         });
 
-        it('resolves through export * two modules deep', () => {
-            expect(sites('src/renamed.ts', 'make')).toContain('starred(3)');
-            expect(sites('src/renamed.ts', 'tag')).toContain('starredTag`b`');
+        it('resolves through export * two modules deep', async () => {
+            expect(await sites('src/renamed.ts', 'make')).toContain('starred(3)');
+            expect(await sites('src/renamed.ts', 'tag')).toContain('starredTag`b`');
         });
 
-        it('resolves a default export imported under another name', () => {
-            expect(sites('src/renamed.ts', 'make')).toContain('r(4)');
+        it('resolves a default export imported under another name', async () => {
+            expect(await sites('src/renamed.ts', 'make')).toContain('r(4)');
         });
 
-        it('resolves a const export holding the export, consumed from another file', () => {
-            expect(sites('src/app.ts', 'make')).toEqual(['held = make']);
-            expect(sites('src/renamed.ts', 'make')).toContain('held(5)');
+        it('resolves a const export holding the export, consumed from another file', async () => {
+            expect(await sites('src/app.ts', 'make')).toEqual(['held = make']);
+            expect(await sites('src/renamed.ts', 'make')).toContain('held(5)');
         });
 
-        it('resolves members and destructuring of a namespace import', () => {
-            expect(sites('src/renamed.ts', 'make')).toEqual(expect.arrayContaining(['app.x', "app['x']", 'x: y', 'y(8)']));
+        it('resolves members and destructuring of a namespace import', async () => {
+            expect(await sites('src/renamed.ts', 'make')).toEqual(expect.arrayContaining(['app.x', "app['x']", 'x: y', 'y(8)']));
         });
 
-        it('resolves a library-internal barrel rename', () => {
-            expect(sites('src/renamed.ts', 'wire')).toEqual(['w(10)', 'wire(9)']);
+        it('resolves a library-internal barrel rename', async () => {
+            expect(await sites('src/renamed.ts', 'wire')).toEqual(['w(10)', 'wire(9)']);
         });
 
-        it('resolves every site of the renamed fixture and nothing else', () => {
-            expect(sites('src/renamed.ts', 'make')).toEqual(
+        it('resolves every site of the renamed fixture and nothing else', async () => {
+            expect(await sites('src/renamed.ts', 'make')).toEqual(
                 ['app.x', "app['x']", 'held(5)', 'r(4)', 'starred(3)', 'viaApp(2)', 'x(1)', 'x: y', 'y(8)'].sort()
             );
-            expect(sites('src/renamed.ts', 'tag')).toEqual(['h`a`', 'starredTag`b`', 't`c`'].sort());
+            expect(await sites('src/renamed.ts', 'tag')).toEqual(['h`a`', 'starredTag`b`', 't`c`'].sort());
         });
 
-        it('resolves const aliases of a namespace member to a fixpoint', () => {
-            expect(sites('src/chain.ts', 'make')).toEqual(['P.make', 'a', 'b = a', 'b(1)'].sort());
-            expect(sites('src/chain.ts', 'tag')).toEqual(['c`x`']);
+        it('resolves const aliases of a namespace member to a fixpoint', async () => {
+            expect(await sites('src/chain.ts', 'make')).toEqual(['P.make', 'a', 'b = a', 'b(1)'].sort());
+            expect(await sites('src/chain.ts', 'tag')).toEqual(['c`x`']);
         });
 
-        it('resolves members of a dynamic import', () => {
-            expect(sites('src/dynamic.ts', 'make')).toEqual(["(await import('fake-pkg')).make", 'm.make'].sort());
+        it('resolves members of a dynamic import', async () => {
+            expect(await sites('src/dynamic.ts', 'make')).toEqual(["(await import('fake-pkg')).make", 'm.make'].sort());
         });
 
-        it('resolves members of a parameter typed as a module namespace', () => {
-            expect(sites('src/typed.ts', 'make')).toEqual(['N.P.make', 'P.make']);
+        it('resolves members of a parameter typed as a module namespace', async () => {
+            expect(await sites('src/typed.ts', 'make')).toEqual(['N.P.make', 'P.make']);
         });
 
-        it('rejects a parameter shadowing the import and a member of a parameter', () => {
-            expect(sites('src/shadow.ts', 'make')).toEqual(['make(2)']);
-            expect(sites('src/shadow.ts', 'tag')).toEqual(['tag`d`']);
+        it('rejects a parameter shadowing the import and a member of a parameter', async () => {
+            expect(await sites('src/shadow.ts', 'make')).toEqual(['make(2)']);
+            expect(await sites('src/shadow.ts', 'tag')).toEqual(['tag`d`']);
         });
 
-        it('never asks the checker about reads that cannot reach an import', () => {
+        it('never asks the checker about reads that cannot reach an import', async () => {
             let sent: string[] = [],
                 recording = new Proxy(checker, {
                     get(target, key) {
@@ -358,17 +358,17 @@ describe('references', () => {
                     }
                 });
 
-            references.origins(recording, program, program.getSourceFile(fixture + '/src/receivers.ts')!);
+            await references.origins(recording, program, (await program.getSourceFile(fixture + '/src/receivers.ts'))!);
 
             expect(sent).toEqual(['make']);
-            expect(sites('src/receivers.ts', 'make')).toEqual(['make(1)']);
+            expect(await sites('src/receivers.ts', 'make')).toEqual(['make(1)']);
         });
 
-        it('resolves reads of a let assigned from the export, before and after the assignment', () => {
-            let sourceFile = program.getSourceFile(fixture + '/src/assigned.ts')!,
+        it('resolves reads of a let assigned from the export, before and after the assignment', async () => {
+            let sourceFile = (await program.getSourceFile(fixture + '/src/assigned.ts'))!,
                 reads: number[] = [];
 
-            for (let [identifier, origin] of references.origins(checker, program, sourceFile)) {
+            for (let [identifier, origin] of await references.origins(checker, program, sourceFile)) {
                 if (
                     identifier.getText() === 'x' &&
                     origin.declaration.kind === SyntaxKind.VariableDeclaration &&
@@ -387,33 +387,33 @@ describe('references', () => {
     });
 
     describe('denotes', () => {
-        function callee(file: string, text: string): Node {
-            let call = find(file, node => node.kind === SyntaxKind.CallExpression && node.getText() === text);
+        async function callee(file: string, text: string): Promise<Node> {
+            let call = await find(file, node => node.kind === SyntaxKind.CallExpression && node.getText() === text);
 
             return (call as unknown as { expression: Node }).expression;
         }
 
-        it('follows const aliases and destructuring to the export', () => {
-            let targets = new Set(references.exported(checker, program, 'fake-pkg', 'make').map(references.key));
+        it('follows const aliases and destructuring to the export', async () => {
+            let targets = new Set((await references.exported(checker, program, 'fake-pkg', 'make')).map(references.key));
 
-            expect(references.denotes(checker, program, callee('src/consumer.ts', 'alias(9)'), targets)).toBe(true);
-            expect(references.denotes(checker, program, callee('src/consumer.ts', 'destructured(10)'), targets)).toBe(true);
-            expect(references.denotes(checker, program, callee('src/consumer.ts', "B['build'](8)"), targets)).toBe(true);
+            expect(await references.denotes(checker, program, await callee('src/consumer.ts', 'alias(9)'), targets)).toBe(true);
+            expect(await references.denotes(checker, program, await callee('src/consumer.ts', 'destructured(10)'), targets)).toBe(true);
+            expect(await references.denotes(checker, program, await callee('src/consumer.ts', "B['build'](8)"), targets)).toBe(true);
         });
 
-        it('does not follow a reassignable binding or a same-named local', () => {
-            let targets = new Set(references.exported(checker, program, 'fake-pkg', 'make').map(references.key));
+        it('does not follow a reassignable binding or a same-named local', async () => {
+            let targets = new Set((await references.exported(checker, program, 'fake-pkg', 'make')).map(references.key));
 
-            expect(references.denotes(checker, program, callee('src/consumer.ts', 'loose(11)'), targets)).toBe(false);
-            expect(references.denotes(checker, program, callee('src/unrelated.ts', 'make(8)'), targets)).toBe(false);
+            expect(await references.denotes(checker, program, await callee('src/consumer.ts', 'loose(11)'), targets)).toBe(false);
+            expect(await references.denotes(checker, program, await callee('src/unrelated.ts', 'make(8)'), targets)).toBe(false);
         });
     });
 
     describe('origin', () => {
-        it('resolves the property a binding element destructures', () => {
-            let element = find('src/consumer.ts', node => isBindingElement(node)),
-                origin = references.origin(checker, program, element)!,
-                targets = references.exported(checker, program, 'fake-pkg', 'make').map(references.key);
+        it('resolves the property a binding element destructures', async () => {
+            let element = await find('src/consumer.ts', node => isBindingElement(node)),
+                origin = (await references.origin(checker, program, element))!,
+                targets = (await references.exported(checker, program, 'fake-pkg', 'make')).map(references.key);
 
             expect(targets).toContain(references.key(origin.declaration));
         });

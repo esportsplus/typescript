@@ -69,56 +69,61 @@ describe('uid', () => {
 
 describe('uid.scope', () => {
     it('derives the same namespace for the same file and source', () => {
-        uid.scope('/project', '/project/src/a.ts', 'let value = 1;');
+        let first = uid.scope('/project', '/project/src/a.ts', 'let value = 1;', () => uid('x'));
 
-        let first = uid('x');
-
-        uid.scope('/project', '/project/src/a.ts', 'let value = 1;');
-
-        expect(uid('x')).toBe(first);
+        expect(uid.scope('/project', '/project/src/a.ts', 'let value = 1;', () => uid('x'))).toBe(first);
     });
 
     it('derives the namespace from the project-relative path', () => {
-        uid.scope('/one', '/one/src/a.ts', '');
+        let first = uid.scope('/one', '/one/src/a.ts', '', () => uid('x'));
 
-        let first = uid('x');
-
-        uid.scope('/two', '/two/src/a.ts', '');
-
-        expect(uid('x')).toBe(first);
+        expect(uid.scope('/two', '/two/src/a.ts', '', () => uid('x'))).toBe(first);
     });
 
     it('derives different namespaces for different files', () => {
-        uid.scope('/project', '/project/src/a.ts', '');
+        let first = uid.scope('/project', '/project/src/a.ts', '', () => uid('x'));
 
-        let first = uid('x');
-
-        uid.scope('/project', '/project/src/b.ts', '');
-
-        expect(uid('x')).not.toBe(first);
+        expect(uid.scope('/project', '/project/src/b.ts', '', () => uid('x'))).not.toBe(first);
     });
 
-    it('resets the counter on every scope', () => {
-        uid.scope('/project', '/project/src/a.ts', '');
-        uid('x');
-        uid('x');
-        uid.scope('/project', '/project/src/a.ts', '');
+    it('starts the counter at zero in every scope', () => {
+        uid.scope('/project', '/project/src/a.ts', '', () => {
+            uid('x');
+            uid('x');
+        });
 
-        expect(uid('x').endsWith('0')).toBe(true);
+        expect(uid.scope('/project', '/project/src/a.ts', '', () => uid('x')).endsWith('0')).toBe(true);
+    });
+
+    it('keeps each scope across the awaits of concurrent transforms', async () => {
+        let tick = () => new Promise((resolve) => setImmediate(resolve)),
+            run = (file: string) => uid.scope('/project', file, '', async () => {
+                let ids = [uid('x')];
+
+                await tick();
+                ids.push(uid('x'));
+                await tick();
+                ids.push(uid('x'));
+
+                return ids;
+            }),
+            [a, b] = await Promise.all([run('/project/src/a.ts'), run('/project/src/b.ts')]);
+
+        expect(a).toEqual(await run('/project/src/a.ts'));
+        expect(b).toEqual(await run('/project/src/b.ts'));
+        expect(a.map((id) => id.slice(-1))).toEqual(['0', '1', '2']);
     });
 
     it('salts the namespace until it is absent from the source', () => {
-        uid.scope('/project', '/project/src/a.ts', '');
-
-        let natural = uid('x').slice(2, -1),
+        let natural = uid.scope('/project', '/project/src/a.ts', '', () => uid('x')).slice(2, -1),
             code = `let ${natural} = 1;`;
 
-        uid.scope('/project', '/project/src/a.ts', code);
+        uid.scope('/project', '/project/src/a.ts', code, () => {
+            let generated = uid('x');
 
-        let generated = uid('x');
-
-        expect(generated.slice(2, -1)).not.toBe(natural);
-        expect(code.includes(generated)).toBe(false);
-        expect(code.includes(uid('other'))).toBe(false);
+            expect(generated.slice(2, -1)).not.toBe(natural);
+            expect(code.includes(generated)).toBe(false);
+            expect(code.includes(uid('other'))).toBe(false);
+        });
     });
 });

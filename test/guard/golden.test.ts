@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { analyzeProgram } from '~/guard/kernel/analyze';
+import { buildProgram } from '~/guard/kernel/program';
 import { loadConfigFromTsconfig } from '~/guard/kernel/config';
 
 import crypto from 'node:crypto';
 import cp from 'node:child_process';
 import fs from 'node:fs';
-import languageService from '~/compiler/language-service';
 import os from 'node:os';
 import path from 'node:path';
 import url from 'node:url';
@@ -168,7 +168,7 @@ describe('guard golden findings', () => {
             let guard = await analyzer(),
                 config = guard.loadConfigFromTsconfig(tsconfig),
                 file = path.join(DIRECTORY, `${name}.json`),
-                opened = languageService.open(tsconfig);
+                opened = buildProgram(tsconfig);
 
             if (config === undefined) {
                 throw new Error(`golden: ${tsconfig} has no tsc-guard config`);
@@ -176,8 +176,8 @@ describe('guard golden findings', () => {
 
             try {
                 let recording: Recording = {
-                        findings: serialize(guard.analyzeProgram(opened.project.program, opened.project.checker, config).diagnostics, path.dirname(tsconfig)),
-                        fingerprint: fingerprint(opened.project.program.getSourceFileNames())
+                        findings: serialize(guard.analyzeProgram(opened.program, opened.checker, config).diagnostics, path.dirname(tsconfig)),
+                        fingerprint: fingerprint(opened.program.getSourceFileNames())
                     },
                     text = JSON.stringify(recording, null, 4) + '\n';
 

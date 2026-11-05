@@ -3,7 +3,7 @@ import { isFunctionLike } from '../kernel/ids';
 import type { FunctionLike } from '../kernel/types';
 
 import * as ts from '../adapter';
-import checkers from '../../compiler/checker';
+import checkers from '../checker';
 
 
 // Answers fixed for the program snapshot: per type id whether it is a promise, per file whether it

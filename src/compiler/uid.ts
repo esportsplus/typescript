@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import path from 'path';
 
 
@@ -12,8 +14,9 @@ const NAMESPACE_WIDTH = 7;
 const UNSCOPED_NAMESPACE = 'u';
 
 
-let counter = 0,
-    namespace = UNSCOPED_NAMESPACE;
+// The scope of the transform running, which concurrent transforms each keep across their awaits
+let scopes = new AsyncLocalStorage<{ counter: number; namespace: string }>(),
+    unscoped = { counter: 0, namespace: UNSCOPED_NAMESPACE };
 
 
 function derive(id: string, code: string): string {
@@ -45,13 +48,15 @@ function hash(value: string): number {
 
 
 const uid = (name: string): string => {
-    return name + '_' + namespace + (counter++).toString(36);
+    let scope = scopes.getStore() ?? unscoped;
+
+    return name + '_' + scope.namespace + (scope.counter++).toString(36);
 };
 
-// Every generated id embeds `namespace`, so proving the namespace absent from the file once makes all of them collision-free.
-uid.scope = (root: string, fileName: string, code: string): void => {
-    counter = 0;
-    namespace = derive(path.relative(root, fileName).replace(BACKSLASH_REGEX, '/') || fileName, code);
+// Runs a file's transform with ids of its own: every id generated within `run` embeds the file's
+// namespace, so proving the namespace absent from the file once makes all of them collision-free
+uid.scope = <T>(root: string, fileName: string, code: string, run: () => T): T => {
+    return scopes.run({ counter: 0, namespace: derive(path.relative(root, fileName).replace(BACKSLASH_REGEX, '/') || fileName, code) }, run);
 };
 
 

@@ -1,5 +1,5 @@
 import * as ts from '../adapter';
-import checkers from '../../compiler/checker';
+import checkers from '../checker';
 
 import { hasModifier, unwrap } from './ast';
 import { isFunctionLike, makeFunctionInfo } from './ids';

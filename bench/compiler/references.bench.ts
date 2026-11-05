@@ -77,12 +77,12 @@ function file(): string {
 }
 
 // Identifiers origins() sends to the checker for one file, counted on a fresh program
-function sent(name: string): { identifiers: number; sent: number } {
+async function sent(name: string): Promise<{ identifiers: number; sent: number }> {
     let count = 0,
         identifiers = 0,
         source = fs.readFileSync(path.join(fixture, name), 'utf8') + `\n// ${Math.random()}\n`,
-        updated = languageService.update(fixture + '/tsconfig.json', fixture + '/' + name, source),
-        sourceFile = updated.program.getSourceFile(fixture + '/' + name)!,
+        updated = await languageService.update(fixture + '/tsconfig.json', fixture + '/' + name, source),
+        sourceFile = (await updated.program.getSourceFile(fixture + '/' + name))!,
         counting = new Proxy(updated.checker, {
             get(target, key) {
                 let value = Reflect.get(target, key);
@@ -108,13 +108,14 @@ function sent(name: string): { identifiers: number; sent: number } {
     };
 
     visit(sourceFile);
-    references.origins(counting, updated.program, sourceFile);
+    await references.origins(counting, updated.program, sourceFile);
+    updated.release();
 
     return { identifiers, sent: count };
 }
 
 
-beforeAll(() => {
+beforeAll(async () => {
     fixture = fs.mkdtempSync(path.join(process.cwd(), 'bench/.references-')).replace(/\\/g, '/');
 
     for (let [name, code] of Object.entries(PACKAGES)) {
@@ -131,13 +132,13 @@ beforeAll(() => {
         include: ['src']
     }));
 
-    let { identifiers, sent: count } = sent('src/view0.ts');
+    let { identifiers, sent: count } = await sent('src/view0.ts');
 
     console.log(`references: ${count} of ${identifiers} identifiers sent to the checker per file`);
 });
 
-afterAll(() => {
-    languageService.dispose();
+afterAll(async () => {
+    await languageService.dispose();
     fs.rmSync(fixture, { force: true, recursive: true });
 });
 
@@ -147,21 +148,22 @@ describe('references', () => {
     test('origins per file, fresh program', async ({ bench }) => {
         let i = 0;
 
-        await bench('origins', () => {
+        await bench('origins', async () => {
             let name = `src/view${i++ % FILES}.ts`,
-                updated = languageService.update(fixture + '/tsconfig.json', fixture + '/' + name, file() + `// ${i}\n`);
+                updated = await languageService.update(fixture + '/tsconfig.json', fixture + '/' + name, file() + `// ${i}\n`);
 
-            references.origins(updated.checker, updated.program, updated.program.getSourceFile(fixture + '/' + name)!);
+            await references.origins(updated.checker, updated.program, (await updated.program.getSourceFile(fixture + '/' + name))!);
+            updated.release();
         }).run();
     });
 
     test('snapshot update alone (baseline for the line above)', async ({ bench }) => {
         let i = 0;
 
-        await bench('update', () => {
+        await bench('update', async () => {
             let name = `src/view${i++ % FILES}.ts`;
 
-            languageService.update(fixture + '/tsconfig.json', fixture + '/' + name, file() + `// update ${i}\n`);
+            (await languageService.update(fixture + '/tsconfig.json', fixture + '/' + name, file() + `// update ${i}\n`)).release();
         }).run();
     });
 });

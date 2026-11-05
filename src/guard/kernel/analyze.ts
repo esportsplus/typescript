@@ -6,7 +6,7 @@ import { buildProgram } from './program';
 import { createThrowIndex, disposeThrowIndex } from '../exceptions/derive';
 import { runChannel } from './fixpoint';
 import { loadOverlays } from '../overlay/load';
-import checkers from '../../compiler/checker';
+import checkers from '../checker';
 import timing from '../../timing';
 
 import type {
