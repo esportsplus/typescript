@@ -201,36 +201,44 @@ function relative(from: string, to: string): string {
     return specifier.startsWith('.') ? specifier : './' + specifier;
 }
 
-// The specifier Node's ESM loader needs for an extensionless relative import, or null when it
-// already names a file or names nothing that was emitted
-function resolve(state: State, directory: string, specifier: string, declaration: boolean): string | null {
-    let base = path.resolve(directory, specifier),
-        suffix = declaration ? '.d.ts' : '.js';
+// The specifier a relative import becomes: the emitted location of the source module it names.
+// Looked up in the source tree, as the import was written there, because the output can still hold
+// files whose sources moved or were deleted, and those must never answer. Null when it names no
+// source module or one outside rootDir, which is not emitted.
+function resolve(state: State, file: string, specifier: string, declaration: boolean): string | null {
+    let { config } = state,
+        directory = path.dirname(file),
+        emitted = path.relative(declaration ? config.declarationDir : config.outDir, directory);
 
-    if (exists(state, base)) {
+    if (emitted.startsWith('..') || path.isAbsolute(emitted)) {
         return null;
     }
 
-    if (exists(state, base + suffix) || exists(state, base + '.js')) {
-        return specifier + '.js';
+    let source = locate(state, path.resolve(config.rootDir, emitted, specifier));
+
+    if (source === null || DECLARATION.test(source)) {
+        return null;
     }
 
-    if (exists(state, path.join(base, 'index' + suffix)) || exists(state, path.join(base, 'index.js'))) {
-        return specifier.replace(/\/?$/, '/index.js');
+    let target = output(config, source, declaration);
+
+    if (target === source) {
+        return null;
     }
 
-    return null;
+    let resolved = relative(directory, target);
+
+    return resolved === specifier ? null : resolved;
 }
 
 function transform(state: State, file: string, text: string): string {
-    let declaration = DECLARATION.test(file),
-        directory = path.dirname(file);
+    let declaration = DECLARATION.test(file);
 
     return text.replace(SPECIFIER, (match, head: string, quote: string, specifier: string) => {
         let resolved: string | null;
 
         if (specifier.startsWith('./') || specifier.startsWith('../') || specifier === '.' || specifier === '..') {
-            resolved = resolve(state, directory, specifier, declaration);
+            resolved = resolve(state, file, specifier, declaration);
         }
         else if (state.config.patterns.length > 0) {
             resolved = alias(state, file, declaration, specifier);

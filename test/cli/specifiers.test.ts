@@ -104,11 +104,50 @@ describe('specifiers.rewrite', async () => {
         expect(fs.readFileSync(files[1], 'utf8')).toBe("import { a } from '../a.js';\n");
     });
 
+    it('names the source module of a relative specifier, never a stale file left in the output', async () => {
+        let files = write(root, {
+                'build/index.d.ts': "export * from './plugins/css';\n",
+                'build/index.js': "export * from './plugins/css';\nexport * from './util';\nimport './styles.css';\n",
+                'build/plugins/css.d.ts': 'export {};\n',
+                'build/plugins/css.js': 'export {};\n',
+                'build/plugins/css/index.d.ts': 'export {};\n',
+                'build/plugins/css/index.js': 'export {};\n',
+                'build/util.js': 'export {};\n',
+                'src/index.ts': "export * from './plugins/css';\nexport * from './util';\nimport './styles.css';\n",
+                'src/plugins/css/index.ts': 'export {};\n',
+                'src/styles.css': '\n',
+                'src/util.ts': 'export {};\n'
+            }),
+            config = specifiers.configure({ outDir: path.join(root, 'build'), rootDir: path.join(root, 'src') }, []);
+
+        await specifiers.rewrite(files.filter((file) => file.includes('build')), config);
+
+        expect(fs.readFileSync(files[0], 'utf8')).toBe("export * from './plugins/css/index.js';\n");
+        expect(fs.readFileSync(files[1], 'utf8')).toBe("export * from './plugins/css/index.js';\nexport * from './util.js';\nimport './styles.css';\n");
+    });
+
+    it('leaves a relative specifier naming no source module untouched', async () => {
+        let files = write(root, {
+                'build/gone.js': 'export {};\n',
+                'build/index.js': "import './gone';\nimport '../outside';\n",
+                'outside.ts': 'export {};\n',
+                'src/index.ts': 'export {};\n'
+            }),
+            config = specifiers.configure({ outDir: path.join(root, 'build'), rootDir: path.join(root, 'src') }, []);
+
+        await specifiers.rewrite([files[1]], config);
+
+        expect(fs.readFileSync(files[1], 'utf8')).toBe("import './gone';\nimport '../outside';\n");
+    });
+
     it('resolves a bare . or .. specifier to the directory index', async () => {
         let files = write(root, {
                 'build/a/b/index.js': 'export default 1;\n',
                 'build/a/b/use.js': "import x from '..';\nimport y from '.';\n",
-                'build/a/index.js': 'export default 1;\n'
+                'build/a/index.js': 'export default 1;\n',
+                'src/a/b/index.ts': 'export default 1;\n',
+                'src/a/b/use.ts': "import x from '..';\nimport y from '.';\n",
+                'src/a/index.ts': 'export default 1;\n'
             }),
             config = specifiers.configure({ outDir: path.join(root, 'build'), rootDir: path.join(root, 'src') }, []);
 
