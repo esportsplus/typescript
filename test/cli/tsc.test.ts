@@ -3,6 +3,7 @@ import { API, type Diagnostic, DiagnosticCategory } from 'typescript/sync';
 import { build, classifyFlags, isPlugin, loadPlugins, main, normalizePath, projectPath, resolvePluginConfigs, runAnalyze } from '~/cli/tsc';
 import { flatten, format } from '~/cli/diagnostics';
 import { createFixtureDir } from './fixtures';
+import checkers from '~/guard/checker';
 import sourcemap from '~/compiler/sourcemap';
 
 import fs from 'fs';
@@ -339,6 +340,23 @@ describe('build', () => {
 
         expect(exits).toContain(1);
         expect(fs.existsSync(path.join(tmpDir, 'out'))).toBe(false);
+    });
+
+    // Unattached, every analyzer query would be a round-trip of its own
+    it('analyzes through the program its own requests are batched against', async () => {
+        let tsconfigPath = path.join(tmpDir, 'tsconfig.json'),
+            attach = vi.spyOn(checkers, 'attach');
+
+        fs.writeFileSync(path.join(tmpDir, 'index.ts'), 'export const value = 1;\n');
+        fs.writeFileSync(tsconfigPath, JSON.stringify({
+            compilerOptions: { module: 'esnext', moduleResolution: 'bundler', outDir: './out', skipLibCheck: true, target: 'esnext' },
+            files: ['./index.ts']
+        }));
+
+        await expect(build(tsconfigPath, [], api, true)).rejects.toThrow(/process\.exit/);
+
+        expect(attach).toHaveBeenCalledWith(api, expect.objectContaining({ configFileName: expect.stringContaining('tsconfig.json') }));
+        attach.mockRestore();
     });
 
     it('--noEmit runs the transform + typecheck gate but writes no artifacts', async () => {

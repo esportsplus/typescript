@@ -9,6 +9,7 @@ import { PACKAGE_NAME } from '../constants';
 import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
 
+import checkers from '../guard/checker';
 import coordinator from '../compiler/coordinator';
 import fs from 'fs';
 import languageService from '../compiler/language-service';
@@ -115,7 +116,7 @@ async function build(tsconfig: string, pluginConfigs: PluginConfig[], instance?:
         plugins: Plugin[],
         transformedFiles = new Map<string, TransformedFile>();
 
-    runAnalyze(tsconfig, project.program, project.checker);
+    runAnalyze(tsconfig, project.program, checkers.attach(api, project).checker);
 
     try {
         plugins = await loadPlugins(pluginConfigs, root);
